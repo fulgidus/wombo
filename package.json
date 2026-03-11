@@ -8,7 +8,8 @@
     },
     "files": [
         "src/**/*.ts",
-        "src/templates/.features.yml"
+        "src/templates/.features.yml",
+        "src/templates/wave-worker.md"
     ],
     "scripts": {
         "dev": "bun src/index.ts",
