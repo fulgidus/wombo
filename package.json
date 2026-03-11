@@ -1,48 +1,50 @@
 {
-  "name": "wombo-combo",
-  "version": "0.0.1",
-  "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
-  "type": "module",
-  "bin": {
-    "wombo": "./src/index.ts"
-  },
-  "files": [
-    "src/**/*.ts",
-    "src/templates/.features.yml"
-  ],
-  "scripts": {
-    "start": "bun src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target node",
-    "typecheck": "tsc --noEmit"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/fulgidus/wombo.git"
-  },
-  "homepage": "https://github.com/fulgidus/wombo",
-  "bugs": {
-    "url": "https://github.com/fulgidus/wombo/issues"
-  },
-  "keywords": [
-    "ai",
-    "agent",
-    "orchestration",
-    "parallel",
-    "feature-development",
-    "cli"
-  ],
-  "author": "fulgidus",
-  "license": "MIT",
-  "engines": {
-    "bun": ">=1.0.0"
-  },
-  "dependencies": {
-    "neo-blessed": "^0.2.0",
-    "yaml": "^2.7.1"
-  },
-  "devDependencies": {
-    "@types/blessed": "^0.1.25",
-    "@types/bun": "latest",
-    "typescript": "^5.8.2"
-  }
+    "name": "wombo",
+    "version": "0.0.1",
+    "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
+    "type": "module",
+    "bin": {
+        "wombo": "./src/index.ts"
+    },
+    "files": [
+        "src/**/*.ts",
+        "src/templates/.features.yml"
+    ],
+    "scripts": {
+        "dev": "bun src/index.ts",
+        "wombo": "bun src/index.ts",
+        "start": "bun src/index.ts",
+        "build": "bun build src/index.ts --outdir dist --target node",
+        "typecheck": "tsc --noEmit"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/fulgidus/wombo.git"
+    },
+    "homepage": "https://github.com/fulgidus/wombo",
+    "bugs": {
+        "url": "https://github.com/fulgidus/wombo/issues"
+    },
+    "keywords": [
+        "ai",
+        "agent",
+        "orchestration",
+        "parallel",
+        "feature-development",
+        "cli"
+    ],
+    "author": "fulgidus",
+    "license": "MIT",
+    "engines": {
+        "bun": ">=1.0.0"
+    },
+    "dependencies": {
+        "neo-blessed": "^0.2.0",
+        "yaml": "^2.7.1"
+    },
+    "devDependencies": {
+        "@types/blessed": "^0.1.25",
+        "@types/bun": "latest",
+        "typescript": "^5.8.2"
+    }
 }
