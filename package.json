@@ -1,6 +1,6 @@
 {
-    "name": "woco",
-    "version": "0.0.5",
+    "name": "wombo-combo",
+    "version": "0.0.6",
     "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
     "type": "module",
     "bin": {

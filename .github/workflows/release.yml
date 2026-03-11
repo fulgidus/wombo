@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -25,7 +26,7 @@ jobs:
       - name: Setup Node (for npm publish)
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
@@ -74,7 +75,7 @@ jobs:
             echo "From npm:"
             echo ""
             echo '```sh'
-            echo "npm install -g woco"
+            echo "npm install -g wombo-combo"
             echo '```'
             echo ""
             echo "From GitHub (bun):"
@@ -86,7 +87,7 @@ jobs:
             echo "Or pin to this version:"
             echo ""
             echo '```sh'
-            echo "npm install -g woco@${GITHUB_REF#refs/tags/v}"
+            echo "npm install -g wombo-combo@${GITHUB_REF#refs/tags/v}"
             echo "bun install -g github:fulgidus/wombo#${GITHUB_REF#refs/tags/}"
             echo '```'
           } > RELEASE_BODY.md
@@ -101,6 +102,4 @@ jobs:
             dist/*
 
       - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.WOMBO_NPMJS }}
+        run: npm publish --access public --provenance
