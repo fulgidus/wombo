@@ -37,7 +37,8 @@ import {
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { pushBaseBranch } from "../lib/merger.js";
-import { printDashboard } from "../lib/ui.js";
+import { runBuild } from "../lib/verifier.js";
+import { printDashboard, printAgentUpdate } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import {
   launchSingleHeadless,
@@ -45,6 +46,7 @@ import {
   handleRetry,
   launchNextQueued,
   markFeatureDone,
+  attemptMerge,
 } from "./launch.js";
 
 // ---------------------------------------------------------------------------
@@ -189,40 +191,119 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
   saveState(projectRoot, state);
 
-  // Run build verification on agents that were mid-flight or have salvageable work
-  for (const agent of toVerify) {
-    const feature = featureMap.get(agent.feature_id);
-    if (!feature) continue;
-    console.log(`\n  Verifying ${agent.feature_id}...`);
+  // ---------------------------------------------------------------------------
+  // Phase 1: Parallel build verification
+  // Each agent's worktree is independent, so dep install + build can run
+  // concurrently. Merges must remain sequential (they mutate the project root).
+  // ---------------------------------------------------------------------------
+  if (toVerify.length > 0) {
+    console.log(`\nVerifying ${toVerify.length} agent(s) in parallel...\n`);
 
-    // Ensure deps are installed — worktree may exist without node_modules
-    // (e.g., failed agents whose setup was interrupted)
-    if (!worktreeReady(agent.worktree) && worktreeExists(agent.worktree)) {
-      try {
-        console.log(`  ${agent.feature_id}: installing deps...`);
-        await installDeps(agent.worktree, agent.feature_id, config);
-      } catch (depErr: any) {
-        console.log(`  ${agent.feature_id}: dep install failed: ${depErr.message}`);
-        updateAgent(state, agent.feature_id, {
-          status: "failed",
-          error: `Dependency install failed: ${depErr.message}`,
-          retries: agent.retries + 1,
-          completed_at: new Date().toISOString(),
-        });
-        saveState(projectRoot, state);
-        continue;
+    const verifyResults = await Promise.all(
+      toVerify.map(async (agent): Promise<{ agent: AgentState; needsMerge: boolean }> => {
+        const feature = featureMap.get(agent.feature_id);
+        if (!feature) return { agent, needsMerge: false };
+
+        // Already verified — skip build, go straight to merge
+        if (agent.status === "verified") {
+          printAgentUpdate(agent, "already verified — queued for merge");
+          return { agent, needsMerge: true };
+        }
+
+        printAgentUpdate(agent, "verifying build...");
+
+        // Ensure deps are installed — worktree may exist without node_modules
+        // (e.g., failed agents whose setup was interrupted)
+        if (!worktreeReady(agent.worktree) && worktreeExists(agent.worktree)) {
+          try {
+            printAgentUpdate(agent, "installing deps...");
+            await installDeps(agent.worktree, agent.feature_id, config);
+          } catch (depErr: any) {
+            printAgentUpdate(agent, `dep install failed: ${depErr.message}`);
+            updateAgent(state, agent.feature_id, {
+              status: "failed",
+              error: `Dependency install failed: ${depErr.message}`,
+              retries: agent.retries + 1,
+              completed_at: new Date().toISOString(),
+            });
+            saveState(projectRoot, state);
+            return { agent, needsMerge: false };
+          }
+        }
+
+        try {
+          const buildResult = await runBuild(agent.worktree, config);
+          if (buildResult.passed) {
+            updateAgent(state, agent.feature_id, {
+              status: "verified",
+              build_passed: true,
+              build_output: null,
+            });
+            saveState(projectRoot, state);
+            printAgentUpdate(agent, `BUILD PASSED (${Math.round(buildResult.durationMs / 1000)}s)`);
+            return { agent, needsMerge: true };
+          } else {
+            // Build failed
+            if (agent.retries < agent.max_retries) {
+              updateAgent(state, agent.feature_id, {
+                status: "retry",
+                retries: agent.retries + 1,
+                build_passed: false,
+                build_output: buildResult.errorSummary,
+              });
+              saveState(projectRoot, state);
+              printAgentUpdate(agent, `BUILD FAILED — will retry (${agent.retries + 1}/${agent.max_retries})`);
+            } else {
+              updateAgent(state, agent.feature_id, {
+                status: "failed",
+                build_passed: false,
+                build_output: buildResult.errorSummary,
+                error: `Build failed after ${agent.max_retries} retries`,
+                completed_at: new Date().toISOString(),
+              });
+              saveState(projectRoot, state);
+              printAgentUpdate(agent, "BUILD FAILED — max retries reached");
+            }
+            return { agent, needsMerge: false };
+          }
+        } catch (err: any) {
+          printAgentUpdate(agent, `verify error: ${err.message}`);
+          updateAgent(state, agent.feature_id, {
+            status: "failed",
+            error: `Build verification error: ${err.message}`,
+            completed_at: new Date().toISOString(),
+          });
+          saveState(projectRoot, state);
+          return { agent, needsMerge: false };
+        }
+      })
+    );
+
+    saveState(projectRoot, state);
+
+    // -------------------------------------------------------------------------
+    // Phase 2: Sequential merge for verified agents
+    // Merges must be sequential because they operate on the project root.
+    // -------------------------------------------------------------------------
+    const toMerge = verifyResults.filter((r) => r.needsMerge);
+    if (toMerge.length > 0) {
+      console.log(`\nMerging ${toMerge.length} verified agent(s)...\n`);
+      for (const { agent } of toMerge) {
+        const feature = featureMap.get(agent.feature_id);
+        if (!feature) continue;
+        try {
+          await attemptMerge(projectRoot, state, agent, feature, config, opts.model);
+        } catch (err: any) {
+          printAgentUpdate(agent, `merge error: ${err.message}`);
+        }
       }
     }
 
-    try {
-      await handleBuildVerification(projectRoot, state, agent, feature, config, opts.model);
-    } catch (err: any) {
-      console.log(`  Verify error for ${agent.feature_id}: ${err.message}`);
-    }
-
-    // If build failed and retries remain, queue for re-launch
-    if (agent.status === "retry" || agent.status === "running") {
-      toRelaunch.push(agent);
+    // Collect agents that need re-launching from verify results
+    for (const { agent } of verifyResults) {
+      if (agent.status === "retry" || agent.status === "running") {
+        toRelaunch.push(agent);
+      }
     }
   }
 
