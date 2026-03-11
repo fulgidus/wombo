@@ -1,111 +1,26 @@
-# =============================================================================
-# WOMBO Tracking File - YAML v1.2
-# =============================================================================
-#
-# PURPOSE:
-#   Track planned features, their progress, subtasks, and metadata for the
-#   project. This file serves as a single source of truth for what's being worked
-#   on, what's coming up next, and the history of completed work.
-#
-# SCHEMA (for LLM and human consumers):
-#
-#   Each top-level item under `features` is a feature object with these fields:
-#
-#   id          : string   - Unique kebab-case identifier for the feature.
-#   title       : string   - Human-readable short name.
-#   description : string   - Detailed explanation of the feature's goal.
-#   status      : enum     - One of: backlog, planned, in_progress, blocked,
-#                             in_review, done, cancelled.
-#   completion  : integer  - Percentage 0–100. Must be 0 when status is
-#                             backlog/planned, 100 when done, and reflect
-#                             actual progress otherwise.
-#   difficulty  : enum     - One of: trivial, easy, medium, hard, very_hard.
-#   priority    : enum     - One of: critical, high, medium, low, wishlist.
-#   depends_on  : list[string] - IDs of features or subtasks that must be
-#                                 completed before this item can start. Use
-#                                 an empty list [] when there are no hard
-#                                 dependencies. Soft dependencies (recommended
-#                                 ordering) should be documented in `notes`
-#                                 instead.
-#   effort      : string   - Estimated human effort in ISO 8601 duration
-#                             (e.g. "PT2H" = 2 hours, "P1D" = 1 day,
-#                             "P1DT4H" = 1 day 4 hours).
-#   started_at  : string|null - ISO 8601 datetime with timezone when work
-#                                began, or null if not yet started.
-#   ended_at    : string|null - ISO 8601 datetime with timezone when work
-#                                was completed, or null if not yet finished.
-#   constraints : list[string] - Technical or process constraints.
-#   forbidden   : list[string] - Explicitly forbidden tools, approaches, or
-#                                 features (things NOT to do/use).
-#   references  : list[string] - URLs or file paths for relevant docs/specs.
-#   notes       : list[string] - Free-form status updates, newest first.
-#                                 Each entry should be prefixed with an
-#                                 ISO 8601 date for chronological tracking.
-#   subtasks    : list[subtask] - Ordered breakdown of work. Subtasks use
-#                                  the same schema recursively (all fields
-#                                  apply, including nested subtasks).
-#
-# TOP-LEVEL STRUCTURE:
-#   features : list[feature]  - Active features in the pipeline (backlog through
-#                                in_review). This is where work is planned and
-#                                tracked.
-#   archive  : list[feature]  - Completed or cancelled features that have
-#                                reached the end of their life-cycle (status is
-#                                done or cancelled). Move features here once
-#                                finished to keep the active list focused.
-#                                Same schema as features — full history is
-#                                preserved for reference.
-#
-# STATUS UPDATE CONVENTION:
-#   When updating progress, prepend a new entry to the `notes` list with the
-#   current ISO 8601 date and a short description of what changed. Example:
-#     - "2026-03-10: Created feature file with initial backlog items."
-#   This allows chronological tracking while keeping the latest update first.
-#
-# COMPLETION RULES:
-#   - A parent feature's completion should reflect the weighted average of its
-#     subtasks, or be set manually if subtask weights are uneven.
-#   - When all subtasks are done, the parent must also be marked done (100%).
-#   - If any subtask is blocked, consider whether the parent should be blocked.
-#
-# SUBTASK NESTING:
-#   Subtasks can contain their own subtasks to arbitrary depth. The schema is
-#   fully recursive. Deeply nested subtasks should be used sparingly - prefer
-#   2–3 levels maximum for readability.
-#
-# =============================================================================
-
 version: "1.0"
-
-# Metadata about this tracking file
 meta:
-  created_at: "2026-03-11T11:00:00+01:00"
-  updated_at: "2026-03-11T11:00:00+01:00"
-  project: wombo-combo
+  created_at: 2026-03-11T11:00:00+01:00
+  updated_at: 2026-03-11T11:37:34.110Z
+  project: wombo
   generator: wombo
   maintainer: fulgidus
-
-# =============================================================================
-# Active features in the pipeline (backlog through in_review)
-# =============================================================================
 features:
   - id: release-workflow
     title: GitHub Actions release workflow
     description: >
-      Create a .github/workflows/release.yml that triggers when a new v* tag
-      is pushed to the main branch. The workflow should install bun, run the
-      build, create a GitHub Release with the tag name, and attach the dist
-      bundle so users can install a specific version via
-      `bun install -g github:fulgidus/wombo#vX.Y.Z`. The release body should
-      be auto-generated from commits since the previous tag.
-    status: backlog
-    completion: 0
+      Create a .github/workflows/release.yml that triggers when a new v* tag is pushed to the main branch. The workflow
+      should install bun, run the build, create a GitHub Release with the tag name, and attach the dist bundle so users
+      can install a specific version via `bun install -g github:fulgidus/wombo#vX.Y.Z`. The release body should be
+      auto-generated from commits since the previous tag.
+    status: done
+    completion: 100
     difficulty: easy
     priority: high
     depends_on: []
     effort: PT2H
-    started_at: null
-    ended_at: null
+    started_at: 2026-03-11T11:13:33.636Z
+    ended_at: 2026-03-11T11:13:58.737Z
     constraints:
       - Must trigger only on tags matching v* pushed to main.
       - Must use bun (not npm/yarn) for install and build steps.
@@ -118,21 +33,21 @@ features:
       - https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#push
       - https://docs.github.com/en/rest/releases/releases#create-a-release
     notes:
-      - "2026-03-11: Feature created. Package is already installable from GitHub; this adds proper release artifacts and changelogs."
+      - "2026-03-11: Feature created. Package is already installable from GitHub; this adds proper release artifacts and
+        changelogs."
     subtasks:
       - id: release-workflow-yaml
         title: Create release.yml workflow file
-        description: >
-          Write .github/workflows/release.yml with the trigger, build steps,
-          and gh release create call.
-        status: backlog
-        completion: 0
+        description: |
+          Write .github/workflows/release.yml with the trigger, build steps, and gh release create call.
+        status: done
+        completion: 100
         difficulty: easy
         priority: high
         depends_on: []
         effort: PT1H
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:58.415Z
         constraints: []
         forbidden: []
         references: []
@@ -141,17 +56,17 @@ features:
       - id: release-changelog-gen
         title: Auto-generate changelog in release body
         description: >
-          Use git log --oneline between the previous tag and HEAD to build a
-          markdown changelog and pass it as the release body.
-        status: backlog
-        completion: 0
+          Use git log --oneline between the previous tag and HEAD to build a markdown changelog and pass it as the
+          release body.
+        status: done
+        completion: 100
         difficulty: trivial
         priority: medium
         depends_on:
           - release-workflow-yaml
         effort: PT30M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:58.526Z
         constraints: []
         forbidden: []
         references: []
@@ -160,44 +75,41 @@ features:
       - id: release-version-sync
         title: Verify package.json version matches tag
         description: >
-          Add a step that checks the git tag matches the version field in
-          package.json and fails the workflow if they diverge.
-        status: backlog
-        completion: 0
+          Add a step that checks the git tag matches the version field in package.json and fails the workflow if they
+          diverge.
+        status: done
+        completion: 100
         difficulty: trivial
         priority: medium
         depends_on:
           - release-workflow-yaml
         effort: PT30M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:58.632Z
         constraints: []
         forbidden: []
         references: []
         notes: []
         subtasks: []
-
   - id: self-upgrade
-    title: "wombo upgrade command"
+    title: wombo upgrade command
     description: >
-      Add a `wombo upgrade` command that pulls the latest version of wombo-combo
-      from GitHub and reinstalls it globally via bun. Should show the current
-      version, check for a newer version, and prompt before upgrading. Must also
-      support `--force` to skip the prompt and `--version vX.Y.Z` to pin to a
-      specific release.
-    status: backlog
-    completion: 0
+      Add a `wombo upgrade` command that pulls the latest version of wombo-combo from GitHub and reinstalls it globally
+      via bun. Should show the current version, check for a newer version, and prompt before upgrading. Must also
+      support `--force` to skip the prompt and `--version vX.Y.Z` to pin to a specific release.
+    status: done
+    completion: 100
     difficulty: medium
     priority: high
     depends_on: []
     effort: PT3H
-    started_at: null
-    ended_at: null
+    started_at: 2026-03-11T11:14:11.510Z
+    ended_at: 2026-03-11T11:15:50.325Z
     constraints:
       - Must work on Linux and macOS where bun is available.
       - Must display current version (from package.json) and latest remote version before prompting.
       - Must gracefully handle network failures and missing GitHub tags.
-      - The upgrade itself must use `bun install -g github:fulgidus/wombo` (or #tag variant).
+      - The upgrade itself must use `bun install -g github:fulgidus/wombo` (or
     forbidden:
       - Do not shell out to npm or yarn.
       - Do not download and replace files manually — use bun's package manager.
@@ -210,17 +122,16 @@ features:
       - id: upgrade-version-check
         title: Fetch latest version from GitHub
         description: >
-          Query GitHub API (or git ls-remote) to find the latest v* tag and
-          compare it with the local package.json version. Display both to the
-          user.
-        status: backlog
-        completion: 0
+          Query GitHub API (or git ls-remote) to find the latest v* tag and compare it with the local package.json
+          version. Display both to the user.
+        status: done
+        completion: 100
         difficulty: easy
         priority: high
         depends_on: []
         effort: PT1H
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:15:50.024Z
         constraints: []
         forbidden: []
         references: []
@@ -229,17 +140,17 @@ features:
       - id: upgrade-prompt-and-install
         title: Prompt and run bun install -g
         description: >
-          Show version diff, ask for confirmation (unless --force), then exec
-          `bun install -g github:fulgidus/wombo#<tag>`.
-        status: backlog
-        completion: 0
+          Show version diff, ask for confirmation (unless --force), then exec `bun install -g
+          github:fulgidus/wombo#<tag>`.
+        status: done
+        completion: 100
         difficulty: easy
         priority: high
         depends_on:
           - upgrade-version-check
         effort: PT1H
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:15:50.123Z
         constraints: []
         forbidden: []
         references: []
@@ -247,46 +158,43 @@ features:
         subtasks: []
       - id: upgrade-cli-wiring
         title: Wire upgrade command into CLI router
-        description: >
-          Add the `upgrade` case to index.ts parseArgs and command switch,
-          with --force and --version flags.
-        status: backlog
-        completion: 0
+        description: |
+          Add the `upgrade` case to index.ts parseArgs and command switch, with --force and --version flags.
+        status: done
+        completion: 100
         difficulty: trivial
         priority: high
         depends_on: []
         effort: PT30M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:15:50.226Z
         constraints: []
         forbidden: []
         references: []
         notes: []
         subtasks: []
-
   - id: agent-ready-cli
     title: Make wombo agent-ready
     description: >
-      Retrofit the wombo CLI to be first-class usable by AI coding agents,
-      following the principles in Justin Poehnelt's "You Need to Rewrite Your
-      CLI for AI Agents". This means: machine-readable JSON output on every
-      command, input validation/hardening against hallucinations, schema
-      introspection (--describe/--help --json), dry-run support on all mutating
-      commands, field masks or compact output modes to protect agent context
-      windows, and shipping CONTEXT.md/AGENTS.md files that encode invariants
-      agents cannot intuit from --help alone.
-    status: backlog
-    completion: 0
+      Retrofit the wombo CLI to be first-class usable by AI coding agents, following the principles in Justin Poehnelt's
+      "You Need to Rewrite Your CLI for AI Agents". This means: machine-readable JSON output on every command, input
+      validation/hardening against hallucinations, schema introspection (--describe/--help --json), dry-run support on
+      all mutating commands, field masks or compact output modes to protect agent context windows, and shipping
+      CONTEXT.md/AGENTS.md files that encode invariants agents cannot intuit from --help alone.
+    status: done
+    completion: 100
     difficulty: hard
     priority: critical
     depends_on: []
     effort: P2D
-    started_at: null
-    ended_at: null
+    started_at: 2026-03-11T11:16:05.906Z
+    ended_at: 2026-03-11T11:37:34.110Z
     constraints:
-      - Human-friendly output must remain the default on TTY; JSON is used when --output json is passed or stdout is not a TTY.
+      - Human-friendly output must remain the default on TTY; JSON is used when --output json is passed or stdout is not
+        a TTY.
       - All existing commands must keep working — this is additive, not a rewrite.
-      - Input validation must reject control characters, path traversals, embedded query params in IDs, and double-encoded strings.
+      - Input validation must reject control characters, path traversals, embedded query params in IDs, and
+        double-encoded strings.
     forbidden:
       - Do not remove or break any existing human-facing CLI flags or output.
       - Do not add a dependency on an external validation library — keep validation self-contained.
@@ -294,23 +202,23 @@ features:
       - https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/
       - https://modelcontextprotocol.io/
     notes:
-      - "2026-03-11: Feature created from article reference. Prioritized as critical because dogfooding with wombo agents requires agent-friendly output."
+      - "2026-03-11: Feature created from article reference. Prioritized as critical because dogfooding with wombo
+        agents requires agent-friendly output."
     subtasks:
       - id: agent-json-output
         title: Add --output json to every command
         description: >
-          Introduce a global --output flag (json | text, default text). When
-          json is selected, every command must emit structured JSON to stdout
-          instead of human-formatted text. Also auto-detect: if stdout is not
-          a TTY, default to json.
-        status: backlog
-        completion: 0
+          Introduce a global --output flag (json | text, default text). When json is selected, every command must emit
+          structured JSON to stdout instead of human-formatted text. Also auto-detect: if stdout is not a TTY, default
+          to json.
+        status: done
+        completion: 100
         difficulty: medium
         priority: critical
         depends_on: []
         effort: PT4H
-        started_at: null
-        ended_at: null
+        started_at: 2026-03-11T11:20:57.464Z
+        ended_at: 2026-03-11T11:21:01.752Z
         constraints:
           - JSON output must be valid, parseable JSON on a single line (or NDJSON for streaming).
           - 'Errors must also be JSON when --output json is active, e.g. {"error": "message"}.'
@@ -321,18 +229,17 @@ features:
       - id: agent-input-validation
         title: Input hardening against hallucinations
         description: >
-          Add validation to all user/agent-supplied inputs: feature IDs, file
-          paths, branch names, config values. Reject control characters (below
-          ASCII 0x20), path traversals (../), embedded query params (?/#) in
-          IDs, and percent-encoded strings that would be double-encoded.
-        status: backlog
-        completion: 0
+          Add validation to all user/agent-supplied inputs: feature IDs, file paths, branch names, config values. Reject
+          control characters (below ASCII 0x20), path traversals (../), embedded query params (?/#) in IDs, and
+          percent-encoded strings that would be double-encoded.
+        status: done
+        completion: 100
         difficulty: medium
         priority: high
         depends_on: []
         effort: PT3H
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:22:31.151Z
         constraints:
           - Validation must happen at the CLI boundary (parseArgs or command entry), not deep in library code.
           - Error messages must clearly state what was rejected and why.
@@ -343,19 +250,18 @@ features:
       - id: agent-schema-introspection
         title: Schema introspection (--describe / --help --json)
         description: >
-          Add a --describe flag to each command (or a top-level `wombo describe
-          <command>`) that emits a JSON schema of accepted arguments, flags,
-          types, defaults, and descriptions. Agents can introspect what the CLI
-          accepts at runtime without pre-stuffed docs.
-        status: backlog
-        completion: 0
+          Add a --describe flag to each command (or a top-level `wombo describe <command>`) that emits a JSON schema of
+          accepted arguments, flags, types, defaults, and descriptions. Agents can introspect what the CLI accepts at
+          runtime without pre-stuffed docs.
+        status: done
+        completion: 100
         difficulty: medium
         priority: high
         depends_on:
           - agent-json-output
         effort: PT4H
-        started_at: null
-        ended_at: null
+        started_at: 2026-03-11T11:32:35.941Z
+        ended_at: 2026-03-11T11:32:39.924Z
         constraints:
           - Schema must be generated from the actual parseArgs definitions, not hand-maintained.
         forbidden: []
@@ -365,19 +271,18 @@ features:
       - id: agent-dry-run-everywhere
         title: Extend --dry-run to all mutating commands
         description: >
-          Currently only launch supports --dry-run. Extend it to all commands
-          that mutate state: features add, features set-status, features archive,
-          merge, retry, cleanup, init. Dry-run should print what would happen
-          (in JSON when --output json) without performing the action.
-        status: backlog
-        completion: 0
+          Currently only launch supports --dry-run. Extend it to all commands that mutate state: features add, features
+          set-status, features archive, merge, retry, cleanup, init. Dry-run should print what would happen (in JSON
+          when --output json) without performing the action.
+        status: done
+        completion: 100
         difficulty: easy
         priority: high
         depends_on:
           - agent-json-output
         effort: PT3H
-        started_at: null
-        ended_at: null
+        started_at: 2026-03-11T11:35:12.376Z
+        ended_at: 2026-03-11T11:35:12.479Z
         constraints: []
         forbidden: []
         references: []
@@ -386,19 +291,18 @@ features:
       - id: agent-context-files
         title: Ship AGENTS.md and CONTEXT.md
         description: >
-          Create AGENTS.md (for AI agents operating ON wombo's codebase) and
-          CONTEXT.md (for agents USING wombo as a tool). Encode invariants,
-          safety rules, preferred patterns, and anti-patterns that agents
-          cannot intuit from --help. AGENTS.md must include the hard constraint
-          that all development on wombo uses `bun dev` (see dogfood-dev feature).
-        status: backlog
-        completion: 0
+          Create AGENTS.md (for AI agents operating ON wombo's codebase) and CONTEXT.md (for agents USING wombo as a
+          tool). Encode invariants, safety rules, preferred patterns, and anti-patterns that agents cannot intuit from
+          --help. AGENTS.md must include the hard constraint that all development on wombo uses `bun dev` (see
+          dogfood-dev feature).
+        status: done
+        completion: 100
         difficulty: easy
         priority: critical
         depends_on: []
         effort: PT2H
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:23:16.383Z
         constraints:
           - AGENTS.md is for agents developing wombo itself.
           - CONTEXT.md is for agents using wombo as an orchestration tool in other projects.
@@ -410,42 +314,38 @@ features:
       - id: agent-compact-output
         title: Context-window-friendly output modes
         description: >
-          Add --compact or --fields flags that let agents request minimal
-          output. For example, `wombo features list --fields id,status,priority`
-          returns only those columns. Reduces token consumption when agents
-          query wombo for state.
-        status: backlog
-        completion: 0
+          Add --compact or --fields flags that let agents request minimal output. For example, `wombo features list
+          --fields id,status,priority` returns only those columns. Reduces token consumption when agents query wombo for
+          state.
+        status: done
+        completion: 100
         difficulty: easy
         priority: medium
         depends_on:
           - agent-json-output
         effort: PT2H
-        started_at: null
-        ended_at: null
+        started_at: 2026-03-11T11:37:09.441Z
+        ended_at: 2026-03-11T11:37:09.550Z
         constraints: []
         forbidden: []
         references: []
         notes: []
         subtasks: []
-
   - id: dogfood-dev
     title: Dogfood wombo for its own development
     description: >
-      Make all future wombo development happen through wombo itself. Add a
-      `bun dev` script alias that runs the local source directly
-      (`bun src/index.ts`), so agents and developers use `bun dev <command>`
-      instead of the globally installed binary. Document this as a hard
-      constraint in AGENTS.md so any AI agent working on the wombo codebase
+      Make all future wombo development happen through wombo itself. Add a `bun dev` script alias that runs the local
+      source directly (`bun src/index.ts`), so agents and developers use `bun dev <command>` instead of the globally
+      installed binary. Document this as a hard constraint in AGENTS.md so any AI agent working on the wombo codebase
       uses the local dev build, never the installed version.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: critical
     depends_on: []
     effort: PT1H30M
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-11T11:13:17.376Z
     constraints:
       - The `bun dev` alias must forward all arguments to src/index.ts.
       - AGENTS.md must state this as a hard, non-negotiable constraint.
@@ -454,22 +354,22 @@ features:
       - Do not use the globally installed wombo binary during development — always use `bun dev`.
     references: []
     notes:
-      - "2026-03-11: Feature created. package.json already has \"start\": \"bun src/index.ts\" but agents need a dev alias and a documented constraint."
+      - '2026-03-11: Feature created. package.json already has "start": "bun src/index.ts" but agents need a dev alias
+        and a documented constraint.'
     subtasks:
       - id: dogfood-dev-script
         title: Add bun dev script to package.json
         description: >
-          Add a "dev" script to package.json that runs
-          `bun src/index.ts --` so `bun dev launch --all-ready` works.
-          The trailing `--` ensures bun forwards all subsequent args.
-        status: backlog
-        completion: 0
+          Add a "dev" script to package.json that runs `bun src/index.ts --` so `bun dev launch --all-ready` works. The
+          trailing `--` ensures bun forwards all subsequent args.
+        status: done
+        completion: 100
         difficulty: trivial
         priority: critical
         depends_on: []
         effort: PT15M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:12.744Z
         constraints: []
         forbidden: []
         references: []
@@ -478,18 +378,17 @@ features:
       - id: dogfood-agents-md
         title: Document dev workflow constraint in AGENTS.md
         description: >
-          Create or update AGENTS.md with a prominent section stating that all
-          development and testing of wombo must use `bun dev <command>`, never
-          the globally installed `wombo` binary. Include examples and rationale.
-        status: backlog
-        completion: 0
+          Create or update AGENTS.md with a prominent section stating that all development and testing of wombo must use
+          `bun dev <command>`, never the globally installed `wombo` binary. Include examples and rationale.
+        status: done
+        completion: 100
         difficulty: trivial
         priority: critical
         depends_on:
           - dogfood-dev-script
         effort: PT30M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:17.149Z
         constraints:
           - Must be marked as a HARD CONSTRAINT, not a suggestion.
         forbidden: []
@@ -499,25 +398,20 @@ features:
       - id: dogfood-verify-local
         title: Add dev-mode guard to prevent global binary during development
         description: >
-          Optionally detect when running inside the wombo repo itself and warn
-          if the global binary is being used instead of `bun dev`. This could
-          check if cwd contains wombo's own package.json with name wombo-combo.
-        status: backlog
-        completion: 0
+          Optionally detect when running inside the wombo repo itself and warn if the global binary is being used
+          instead of `bun dev`. This could check if cwd contains wombo's own package.json with name wombo-combo.
+        status: done
+        completion: 100
         difficulty: easy
         priority: medium
         depends_on:
           - dogfood-dev-script
         effort: PT45M
         started_at: null
-        ended_at: null
+        ended_at: 2026-03-11T11:13:17.259Z
         constraints: []
         forbidden: []
         references: []
         notes: []
         subtasks: []
-
-# =============================================================================
-# Archive - completed or cancelled features (end of life-cycle)
-# =============================================================================
-archive:
+archive: []

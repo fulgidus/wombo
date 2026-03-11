@@ -449,7 +449,7 @@ export function allCommandSchemas(): Record<string, unknown> {
 
   return {
     tool: "wombo",
-    version: "0.0.1",
+    version: "0.0.2",
     global_flags: GLOBAL_FLAGS.map((f) => ({
       name: f.name,
       alias: f.alias,
