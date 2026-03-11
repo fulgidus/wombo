@@ -15,14 +15,10 @@ bun add -g github:fulgidus/wombo-combo
 ## Quick start
 
 ```sh
-# Initialize a project
+# Initialize project (generates wombo.json and .features.yml)
 woco init
 
-# Define features
-woco features add auth-flow "User authentication" --priority high
-woco features add search-api "Search endpoint" --priority medium
-
-# Launch agents
+# Edit .features.yml to define your features, then launch agents
 woco launch --all-ready
 
 # Monitor, verify, merge
