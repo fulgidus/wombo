@@ -168,6 +168,54 @@ export async function deleteBranch(
 }
 
 /**
+ * Merge the base branch INTO a feature worktree to create conflict markers.
+ *
+ * This is the inverse of `mergeBranch()` — instead of merging the feature into
+ * base (in the project root), we merge the base into the feature branch (in the
+ * worktree). The merge is NOT aborted on conflict; the conflict markers are left
+ * in the working tree so an agent can resolve them.
+ *
+ * Returns:
+ *   - { conflicting: true, files: [...] } if there are conflicts to resolve
+ *   - { conflicting: false } if the merge completed cleanly (no conflicts)
+ */
+export async function mergeBaseIntoFeature(
+  worktreePath: string,
+  baseBranch: string,
+  config: WomboConfig
+): Promise<{ conflicting: boolean; files: string[]; error?: string }> {
+  // Fetch latest from remote so the base branch ref is up to date
+  await runSafe(`git fetch ${config.git.remote} "${baseBranch}"`, worktreePath);
+
+  // Attempt the merge — use remote ref to get latest base
+  const mergeRef = `${config.git.remote}/${baseBranch}`;
+  const result = await runSafe(
+    `git merge "${mergeRef}" -m "Merge ${baseBranch} into feature branch for conflict resolution"`,
+    worktreePath
+  );
+
+  if (result.ok) {
+    // Clean merge — no conflicts
+    return { conflicting: false, files: [] };
+  }
+
+  // Check if there are actually conflict markers (vs some other merge error)
+  const statusResult = await runSafe("git diff --name-only --diff-filter=U", worktreePath);
+  if (!statusResult.ok || !statusResult.output.trim()) {
+    // Merge failed but no unmerged files — something else went wrong
+    await runSafe("git merge --abort", worktreePath);
+    return { conflicting: false, files: [], error: result.output };
+  }
+
+  const conflictingFiles = statusResult.output
+    .trim()
+    .split("\n")
+    .filter((f) => f.length > 0);
+
+  return { conflicting: true, files: conflictingFiles };
+}
+
+/**
  * Push the base branch to its remote.
  */
 export async function pushBaseBranch(

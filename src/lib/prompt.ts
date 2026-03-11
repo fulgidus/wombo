@@ -131,6 +131,76 @@ export function generatePrompt(
 // Subtask Formatting
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Conflict Resolution Prompt
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a prompt for an agent that resolves merge conflicts.
+ *
+ * The agent is launched in the feature worktree AFTER `git merge <baseBranch>`
+ * has been run there, leaving conflict markers in the working tree.
+ */
+export function generateConflictResolutionPrompt(
+  feature: Feature,
+  baseBranch: string,
+  mergeError: string,
+  config: WomboConfig
+): string {
+  const sections: string[] = [];
+
+  sections.push(`# Merge Conflict Resolution: ${feature.title}`);
+  sections.push(`**Feature ID:** \`${feature.id}\``);
+  sections.push(`**Feature Branch:** \`${config.git.branchPrefix}${feature.id}\``);
+  sections.push(`**Base Branch:** \`${baseBranch}\``);
+
+  sections.push(`\n## Situation\n`);
+  sections.push(
+    `The feature branch \`${config.git.branchPrefix}${feature.id}\` has been completed and build-verified, ` +
+    `but merging it into \`${baseBranch}\` produced conflicts. The base branch (\`${baseBranch}\`) has been ` +
+    `merged INTO this feature branch's worktree, so the conflict markers are present in the working tree right now.`
+  );
+
+  sections.push(`\n## Merge Error Output\n`);
+  sections.push("```");
+  sections.push(mergeError);
+  sections.push("```");
+
+  sections.push(`\n## Feature Description\n`);
+  sections.push(feature.description.trim());
+
+  sections.push(`\n## Your Task\n`);
+  sections.push("1. Find all files with conflict markers (`<<<<<<<`, `=======`, `>>>>>>>`)");
+  sections.push("2. Resolve each conflict by combining both sides intelligently:");
+  sections.push(`   - The \`HEAD\` side is the feature's work (keep this intent)`);
+  sections.push(`   - The \`${baseBranch}\` side is upstream changes (integrate these)`);
+  sections.push("3. Remove ALL conflict markers — no `<<<<<<<`, `=======`, or `>>>>>>>` should remain");
+  sections.push("4. Run the build to verify everything compiles:");
+  sections.push("   ```bash");
+  sections.push(`   ${config.build.command}`);
+  sections.push("   ```");
+  sections.push("5. If the build fails, fix the errors");
+  sections.push("6. Stage all resolved files and commit the merge:");
+  sections.push("   ```bash");
+  sections.push("   git add -A");
+  sections.push('   git commit --no-edit');
+  sections.push("   ```");
+
+  sections.push(`\n## Rules\n`);
+  sections.push("- Do NOT abort the merge (`git merge --abort`)");
+  sections.push("- Do NOT create new branches or rebase");
+  sections.push("- Do NOT push to remote");
+  sections.push(`- Do NOT modify \`${config.featuresFile}\``);
+  sections.push("- Keep BOTH the feature's changes and the upstream changes where possible");
+  sections.push("- If in doubt, prefer the feature's implementation but ensure upstream additions are not lost");
+
+  return sections.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Subtask Formatting
+// ---------------------------------------------------------------------------
+
 function formatSubtask(
   subtask: Subtask,
   index: number,
