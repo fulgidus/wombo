@@ -26,6 +26,7 @@ export interface MergeCommandOptions {
   config: WomboConfig;
   featureId?: string;
   autoPush?: boolean;
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +50,18 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
 
   if (toMerge.length === 0) {
     console.log("No verified agents to merge.");
+    return;
+  }
+
+  // Dry-run: show what would be merged without merging
+  if (opts.dryRun) {
+    console.log(`\n[dry-run] Would merge ${toMerge.length} branch(es):\n`);
+    for (const agent of toMerge) {
+      console.log(`  ${agent.feature_id} — branch: ${agent.branch}`);
+    }
+    if (opts.autoPush) {
+      console.log(`\n  Would push ${state.base_branch} to remote after merge.`);
+    }
     return;
   }
 

@@ -14,6 +14,7 @@ import {
   findFeatureById,
   type FeatureStatus,
 } from "../../lib/features.js";
+import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -34,6 +35,8 @@ export interface FeaturesSetStatusOptions {
   config: WomboConfig;
   featureId: string;
   newStatus: string;
+  outputFmt?: OutputFormat;
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -42,19 +45,16 @@ export interface FeaturesSetStatusOptions {
 
 export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newStatus) {
-    console.error("Usage: wombo features set-status <feature-id> <new-status>");
-    console.error(`Valid statuses: ${VALID_STATUSES.join(", ")}`);
-    process.exit(1);
+    outputError(fmt, `Usage: wombo features set-status <feature-id> <new-status>\nValid statuses: ${VALID_STATUSES.join(", ")}`);
     return;
   }
 
   // Validate status
   if (!VALID_STATUSES.includes(opts.newStatus as FeatureStatus)) {
-    console.error(`Invalid status: "${opts.newStatus}"`);
-    console.error(`Valid statuses: ${VALID_STATUSES.join(", ")}`);
-    process.exit(1);
+    outputError(fmt, `Invalid status: "${opts.newStatus}"\nValid statuses: ${VALID_STATUSES.join(", ")}`);
     return;
   }
 
@@ -62,8 +62,7 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    console.error(`Feature "${opts.featureId}" not found.`);
-    process.exit(1);
+    outputError(fmt, `Feature "${opts.featureId}" not found.`);
     return;
   }
 
@@ -71,7 +70,23 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
   const newStatus = opts.newStatus as FeatureStatus;
 
   if (oldStatus === newStatus) {
-    console.log(`Feature "${opts.featureId}" is already in status "${newStatus}".`);
+    outputMessage(fmt, `Feature "${opts.featureId}" is already in status "${newStatus}".`, {
+      id: opts.featureId,
+      status: newStatus,
+      changed: false,
+    });
+    return;
+  }
+
+  // Dry-run: show what would change without writing
+  if (opts.dryRun) {
+    outputMessage(fmt, `[dry-run] Would change "${opts.featureId}": ${oldStatus} → ${newStatus}`, {
+      dry_run: true,
+      id: opts.featureId,
+      old_status: oldStatus,
+      new_status: newStatus,
+      changed: false,
+    });
     return;
   }
 
@@ -91,5 +106,10 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
 
   saveFeatures(projectRoot, config, data);
 
-  console.log(`Feature "${opts.featureId}": ${oldStatus} → ${newStatus}`);
+  outputMessage(fmt, `Feature "${opts.featureId}": ${oldStatus} → ${newStatus}`, {
+    id: opts.featureId,
+    old_status: oldStatus,
+    new_status: newStatus,
+    changed: true,
+  });
 }

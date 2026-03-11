@@ -16,10 +16,59 @@ import { cleanupAllWorktrees } from "../lib/worktree.js";
 export interface CleanupOptions {
   projectRoot: string;
   config: WomboConfig;
+  dryRun?: boolean;
 }
 
 export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   const { projectRoot, config } = opts;
+
+  // Dry-run: show what would be cleaned up without doing it
+  if (opts.dryRun) {
+    console.log("\n[dry-run] Would perform the following cleanup:\n");
+
+    // List tmux sessions that would be killed
+    try {
+      const sessions = execSync("tmux list-sessions -F '#{session_name}'", {
+        encoding: "utf-8",
+      }).trim();
+      const prefix = config.agent.tmuxPrefix;
+      const matching = sessions
+        .split("\n")
+        .filter((s) => s.startsWith(prefix));
+      console.log(`  tmux sessions to kill: ${matching.length}`);
+      for (const s of matching) {
+        console.log(`    ${s}`);
+      }
+    } catch {
+      console.log("  tmux sessions to kill: 0 (no tmux server running)");
+    }
+
+    // List worktrees that would be removed
+    try {
+      const worktrees = execSync("git worktree list --porcelain", {
+        cwd: projectRoot,
+        encoding: "utf-8",
+      }).trim();
+      const prefix = config.git.worktreePrefix;
+      const matching = worktrees
+        .split("\n")
+        .filter((line) => line.startsWith("worktree ") && line.includes(prefix))
+        .map((line) => line.replace("worktree ", ""));
+      console.log(`  worktrees to remove: ${matching.length}`);
+      for (const w of matching) {
+        console.log(`    ${w}`);
+      }
+    } catch {
+      console.log("  worktrees to remove: 0");
+    }
+
+    const statePath = resolve(projectRoot, ".wombo-state.json");
+    const logDir = resolve(projectRoot, ".wombo-logs");
+    if (existsSync(statePath)) console.log("  Would remove: .wombo-state.json");
+    if (existsSync(logDir)) console.log("  Would remove: .wombo-logs/");
+
+    return;
+  }
 
   console.log("\n--- Wombo: Cleanup ---\n");
 

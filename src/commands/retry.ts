@@ -30,6 +30,7 @@ export interface RetryCommandOptions {
   featureId: string;
   model?: string;
   interactive: boolean;
+  dryRun?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +65,17 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
     );
     process.exit(1);
     return; // unreachable — helps TypeScript narrow
+  }
+
+  // Dry-run: show what would be retried without doing it
+  if (opts.dryRun) {
+    console.log(`\n[dry-run] Would retry agent: ${opts.featureId}`);
+    console.log(`  Current status: ${agent.status}`);
+    console.log(`  Retries so far: ${agent.retries}`);
+    console.log(`  Worktree: ${agent.worktree}`);
+    console.log(`  Mode: ${opts.interactive ? "interactive (tmux)" : "headless"}`);
+    if (opts.model) console.log(`  Model: ${opts.model}`);
+    return;
   }
 
   // Reset retry count and re-run

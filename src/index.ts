@@ -28,8 +28,46 @@
  */
 
 import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { loadConfig, validateConfig } from "./config.js";
 import { loadState, saveState } from "./lib/state.js";
+
+// ---------------------------------------------------------------------------
+// Dev-mode guard: warn if running the global binary inside the wombo repo
+// ---------------------------------------------------------------------------
+
+function checkDevModeGuard(): void {
+  const cwd = process.cwd();
+  const pkgPath = resolve(cwd, "package.json");
+
+  // Are we inside the wombo repo?
+  if (!existsSync(pkgPath)) return;
+
+  let pkgName: string | undefined;
+  try {
+    const raw = readFileSync(pkgPath, "utf-8");
+    pkgName = JSON.parse(raw).name;
+  } catch {
+    return;
+  }
+  if (pkgName !== "wombo") return;
+
+  // We're in the wombo repo. Is the source being run from a different location?
+  // import.meta.dir = directory of THIS file (index.ts). If it's under cwd,
+  // we're running local source (bun dev). If it's elsewhere (e.g. ~/.bun/install),
+  // we're running the globally installed binary.
+  const sourceDir = resolve(import.meta.dir);
+  const projectSrc = resolve(cwd, "src");
+
+  if (!sourceDir.startsWith(projectSrc)) {
+    console.warn(
+      "\x1b[33m[WARNING]\x1b[0m You are running the globally installed wombo binary " +
+      "inside the wombo repo.\n" +
+      "  Use \x1b[1mbun dev <command>\x1b[0m instead to run from local source.\n" +
+      "  See AGENTS.md for details.\n"
+    );
+  }
+}
 
 import { cmdInit } from "./commands/init.js";
 import { cmdLaunch } from "./commands/launch.js";
@@ -39,6 +77,7 @@ import { cmdVerify } from "./commands/verify.js";
 import { cmdMerge } from "./commands/merge.js";
 import { cmdRetry } from "./commands/retry.js";
 import { cmdCleanup } from "./commands/cleanup.js";
+import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
@@ -48,6 +87,9 @@ import { cmdFeaturesShow } from "./commands/features/show.js";
 
 import { ensureFeaturesFile } from "./lib/features.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/features.js";
+import { resolveOutputFormat, type OutputFormat } from "./lib/output.js";
+import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
+import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,6 +117,11 @@ interface CLIArgs {
   // General
   featureId?: string;
   force: boolean;
+  // Output format
+  outputFmt: OutputFormat;
+  // Upgrade options
+  checkOnly: boolean;
+  version?: string;
   // Features subcommand extras
   status?: string;
   ready?: boolean;
@@ -83,6 +130,8 @@ interface CLIArgs {
   description?: string;
   effort?: string;
   dependsOn?: string[];
+  // Compact output
+  fields?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +147,8 @@ function parseArgs(argv: string[]): CLIArgs {
     noTui: false,
     autoPush: false,
     force: false,
+    checkOnly: false,
+    outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
   };
 
   // If the first arg is "features", treat the second positional as the subcommand
@@ -161,6 +212,16 @@ function parseArgs(argv: string[]): CLIArgs {
       case "--force":
         result.force = true;
         break;
+      case "--check":
+        result.checkOnly = true;
+        break;
+      case "--version":
+        result.version = args[++i];
+        break;
+      case "--output":
+      case "-o":
+        result.outputFmt = resolveOutputFormat(args[++i]);
+        break;
 
       // --- Features subcommand options ---
       case "--status":
@@ -184,6 +245,9 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       case "--depends-on":
         result.dependsOn = args[++i].split(",").map((s) => s.trim());
+        break;
+      case "--fields":
+        result.fields = args[++i].split(",").map((s) => s.trim());
         break;
 
       // --- Positional (feature-id, title for add, etc.) ---
@@ -222,6 +286,8 @@ Commands:
   retry          Retry a failed agent
   cleanup        Remove all wave worktrees and tmux sessions
   features       Manage .features.yml (see below)
+  upgrade        Check for updates and upgrade wombo
+  describe       Emit JSON schema of a command (for AI agents)
   help           Show this help
 
 Features Subcommands:
@@ -253,7 +319,15 @@ Launch Options:
   --max-retries N          Max retries per agent (default: from config)
 
 General:
-  --force                  Force overwrite (e.g., for init)
+  --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
+  --output <fmt>           Output format: text (default on TTY) or json (default when piped)
+  -o <fmt>                 Alias for --output
+  --dry-run                Show what would happen without performing the action
+  --fields <list>          Comma-separated fields to include (e.g., id,status,priority)
+
+Upgrade Options:
+  --check                  Only check for updates, don't install
+  --version <tag>          Install a specific version (e.g., v0.1.0)
 
 Examples:
   wombo init
@@ -267,11 +341,15 @@ Examples:
   wombo retry auth-flow
   wombo cleanup
   wombo features list --status ready --priority high
+  wombo features list --fields id,status,priority --output json
   wombo features add my-feature "My Cool Feature" --priority high --difficulty easy
   wombo features set-status my-feature in-progress
   wombo features check
   wombo features archive --dry-run
   wombo features show my-feature
+  wombo describe                           # list all commands as JSON
+  wombo describe launch                    # describe a specific command
+  wombo describe features add              # describe a subcommand
 `);
 }
 
@@ -280,8 +358,39 @@ Examples:
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
+  checkDevModeGuard();
+
   const PROJECT_ROOT = resolve(process.cwd());
   const args = parseArgs(process.argv);
+
+  // -----------------------------------------------------------------------
+  // Input validation at the CLI boundary
+  // -----------------------------------------------------------------------
+  if (args.featureId) {
+    assertValid(validateId(args.featureId, "feature ID"));
+  }
+  if (args.title) {
+    assertValid(validateText(args.title, "title"));
+  }
+  if (args.description) {
+    assertValid(validateText(args.description, "description"));
+  }
+  if (args.baseBranch) {
+    assertValid(validateBranchName(args.baseBranch, "base branch"));
+  }
+  if (args.effort) {
+    assertValid(validateDuration(args.effort, "effort"));
+  }
+  if (args.features) {
+    for (const fid of args.features) {
+      assertValid(validateId(fid, "feature ID in --features"));
+    }
+  }
+  if (args.dependsOn) {
+    for (const dep of args.dependsOn) {
+      assertValid(validateId(dep, "dependency ID in --depends-on"));
+    }
+  }
 
   // Commands that don't need config loading
   if (args.command === "help" || args.command === "--help" || args.command === "-h") {
@@ -289,8 +398,39 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.command === "describe") {
+    // Schema introspection: `wombo describe [command]`
+    if (!args.featureId) {
+      // No command specified — list all commands
+      console.log(JSON.stringify(allCommandSchemas(), null, 2));
+    } else {
+      // Describe a specific command. Handle compound names: "features list"
+      const cmdName = args.title
+        ? `${args.featureId} ${args.title}`
+        : args.featureId;
+      const def = findCommandDef(cmdName);
+      if (!def) {
+        console.error(`Unknown command: "${cmdName}"`);
+        console.error("Run 'wombo describe' to list all commands.");
+        process.exit(1);
+        return;
+      }
+      console.log(JSON.stringify(commandToSchema(def), null, 2));
+    }
+    return;
+  }
+
   if (args.command === "init") {
     await cmdInit({ projectRoot: PROJECT_ROOT, force: args.force });
+    return;
+  }
+
+  if (args.command === "upgrade") {
+    await cmdUpgrade({
+      force: args.force,
+      version: args.version,
+      checkOnly: args.checkOnly,
+    });
     return;
   }
 
@@ -360,6 +500,7 @@ async function main(): Promise<void> {
         config,
         featureId: args.featureId,
         autoPush: args.autoPush,
+        dryRun: args.dryRun,
       });
       break;
 
@@ -375,12 +516,13 @@ async function main(): Promise<void> {
         featureId: args.featureId,
         model: args.model,
         interactive: args.interactive,
+        dryRun: args.dryRun,
       });
       break;
     }
 
     case "cleanup":
-      await cmdCleanup({ projectRoot: PROJECT_ROOT, config });
+      await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
       break;
 
     case "features":
@@ -415,6 +557,8 @@ async function handleFeaturesSubcommand(
         difficulty: args.difficulty,
         ready: args.ready,
         includeArchive: args.includeArchive,
+        outputFmt: args.outputFmt,
+        fields: args.fields,
       });
       break;
 
@@ -434,6 +578,8 @@ async function handleFeaturesSubcommand(
         difficulty: args.difficulty,
         effort: args.effort,
         dependsOn: args.dependsOn,
+        outputFmt: args.outputFmt,
+        dryRun: args.dryRun,
       });
       break;
     }
@@ -453,6 +599,8 @@ async function handleFeaturesSubcommand(
           config,
           featureId: args.featureId,
           newStatus,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
         });
       } else {
         await cmdFeaturesSetStatus({
@@ -460,6 +608,8 @@ async function handleFeaturesSubcommand(
           config,
           featureId: args.featureId,
           newStatus: args.title, // second positional = new status
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
         });
       }
       break;
@@ -489,6 +639,8 @@ async function handleFeaturesSubcommand(
         projectRoot,
         config,
         featureId: args.featureId,
+        outputFmt: args.outputFmt,
+        fields: args.fields,
       });
       break;
     }

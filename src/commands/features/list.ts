@@ -22,6 +22,7 @@ import {
   type Difficulty,
   type FeaturesFile,
 } from "../../lib/features.js";
+import { output, filterFieldsArray, renderCompactTable, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,6 +36,8 @@ export interface FeaturesListOptions {
   difficulty?: Difficulty;
   ready?: boolean;
   includeArchive?: boolean;
+  outputFmt?: OutputFormat;
+  fields?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -93,7 +96,9 @@ export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> 
   }
 
   if (features.length === 0) {
-    console.log("No features match the given filters.");
+    output(opts.outputFmt ?? "text", { features: [], total: 0, effort: "0m" }, () => {
+      console.log("No features match the given filters.");
+    });
     return;
   }
 
@@ -111,33 +116,73 @@ export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> 
     0
   );
 
-  console.log(`\n${BOLD}Features (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
+  const fmt = opts.outputFmt ?? "text";
 
-  const statusOrder: FeatureStatus[] = [
-    "in_progress",
-    "planned",
-    "backlog",
-    "blocked",
-    "in_review",
-    "done",
-    "cancelled",
-  ];
+  // Build the structured data for each feature
+  const featureData = features.map((f) => ({
+    id: f.id,
+    title: f.title,
+    status: f.status,
+    priority: f.priority,
+    difficulty: f.difficulty,
+    effort: f.effort,
+    completion: f.completion,
+    depends_on: f.depends_on,
+  }));
 
-  for (const status of statusOrder) {
-    const group = byStatus.get(status);
-    if (!group?.length) continue;
-
-    const color = STATUS_COLOR[status] ?? "";
-    console.log(`  ${color}${BOLD}${status.toUpperCase()}${RESET} (${group.length})`);
-
-    for (const f of group) {
-      const effort = formatDuration(parseDurationMinutes(f.effort));
-      const deps = f.depends_on.length > 0 ? ` ${DIM}deps: ${f.depends_on.join(", ")}${RESET}` : "";
-      const completion = f.completion > 0 ? ` ${DIM}${f.completion}%${RESET}` : "";
-      console.log(
-        `    ${color}${f.id}${RESET} — ${f.title} [${f.priority}/${f.difficulty}] (${effort})${completion}${deps}`
-      );
-    }
-    console.log("");
+  // If --fields is specified, use compact output mode
+  if (opts.fields?.length) {
+    const filtered = filterFieldsArray(featureData, opts.fields);
+    output(
+      fmt,
+      { features: filtered, total: features.length, effort: formatDuration(totalEffort) },
+      () => {
+        renderCompactTable(
+          featureData as Record<string, unknown>[],
+          opts.fields!
+        );
+      }
+    );
+    return;
   }
+
+  output(
+    fmt,
+    {
+      features: featureData,
+      total: features.length,
+      effort: formatDuration(totalEffort),
+    },
+    () => {
+      console.log(`\n${BOLD}Features (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
+
+      const statusOrder: FeatureStatus[] = [
+        "in_progress",
+        "planned",
+        "backlog",
+        "blocked",
+        "in_review",
+        "done",
+        "cancelled",
+      ];
+
+      for (const status of statusOrder) {
+        const group = byStatus.get(status);
+        if (!group?.length) continue;
+
+        const color = STATUS_COLOR[status] ?? "";
+        console.log(`  ${color}${BOLD}${status.toUpperCase()}${RESET} (${group.length})`);
+
+        for (const f of group) {
+          const effort = formatDuration(parseDurationMinutes(f.effort));
+          const deps = f.depends_on.length > 0 ? ` ${DIM}deps: ${f.depends_on.join(", ")}${RESET}` : "";
+          const completion = f.completion > 0 ? ` ${DIM}${f.completion}%${RESET}` : "";
+          console.log(
+            `    ${color}${f.id}${RESET} — ${f.title} [${f.priority}/${f.difficulty}] (${effort})${completion}${deps}`
+          );
+        }
+        console.log("");
+      }
+    }
+  );
 }

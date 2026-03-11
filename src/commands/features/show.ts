@@ -16,6 +16,7 @@ import {
   type Feature,
   type Subtask,
 } from "../../lib/features.js";
+import { output, outputError, filterFields, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,6 +26,8 @@ export interface FeaturesShowOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId: string;
+  outputFmt?: OutputFormat;
+  fields?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -75,10 +78,10 @@ function renderSubtask(st: Subtask, indent: number): void {
 
 export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId) {
-    console.error("Usage: wombo features show <feature-id>");
-    process.exit(1);
+    outputError(fmt, "Usage: wombo features show <feature-id>");
     return;
   }
 
@@ -86,8 +89,7 @@ export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> 
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    console.error(`Feature "${opts.featureId}" not found.`);
-    process.exit(1);
+    outputError(fmt, `Feature "${opts.featureId}" not found.`);
     return;
   }
 
@@ -95,72 +97,96 @@ export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> 
   const depsMet = areDependenciesMet(feature, doneIds);
   const effort = formatDuration(parseDurationMinutes(feature.effort));
 
-  console.log(`\n${BOLD}Feature: ${feature.title}${RESET}`);
-  console.log(`  ID:          ${feature.id}`);
-  console.log(`  Status:      ${statusColor(feature.status)}${feature.status}${RESET}`);
-  console.log(`  Priority:    ${feature.priority}`);
-  console.log(`  Difficulty:  ${feature.difficulty}`);
-  console.log(`  Effort:      ${effort}`);
-  console.log(`  Completion:  ${feature.completion}%`);
-  console.log(`  Deps met:    ${depsMet ? `${GREEN}yes${RESET}` : `${RED}no${RESET}`}`);
+  const fullData = {
+    ...feature,
+    deps_met: depsMet,
+    effort_formatted: effort,
+  };
 
-  if (feature.started_at) {
-    console.log(`  Started:     ${feature.started_at}`);
-  }
-  if (feature.ended_at) {
-    console.log(`  Ended:       ${feature.ended_at}`);
+  // If --fields is specified, emit only those fields
+  if (opts.fields?.length) {
+    const filtered = filterFields(fullData as Record<string, unknown>, opts.fields);
+    output(fmt, filtered, () => {
+      for (const [key, val] of Object.entries(filtered)) {
+        const display = Array.isArray(val) ? val.join(", ") : String(val ?? "");
+        console.log(`${key}: ${display}`);
+      }
+    });
+    return;
   }
 
-  if (feature.description) {
-    console.log(`\n  ${BOLD}Description:${RESET}`);
-    for (const line of feature.description.split("\n")) {
-      console.log(`    ${line}`);
+  output(
+    fmt,
+    fullData,
+    () => {
+      console.log(`\n${BOLD}Feature: ${feature.title}${RESET}`);
+      console.log(`  ID:          ${feature.id}`);
+      console.log(`  Status:      ${statusColor(feature.status)}${feature.status}${RESET}`);
+      console.log(`  Priority:    ${feature.priority}`);
+      console.log(`  Difficulty:  ${feature.difficulty}`);
+      console.log(`  Effort:      ${effort}`);
+      console.log(`  Completion:  ${feature.completion}%`);
+      console.log(`  Deps met:    ${depsMet ? `${GREEN}yes${RESET}` : `${RED}no${RESET}`}`);
+
+      if (feature.started_at) {
+        console.log(`  Started:     ${feature.started_at}`);
+      }
+      if (feature.ended_at) {
+        console.log(`  Ended:       ${feature.ended_at}`);
+      }
+
+      if (feature.description) {
+        console.log(`\n  ${BOLD}Description:${RESET}`);
+        for (const line of feature.description.split("\n")) {
+          console.log(`    ${line}`);
+        }
+      }
+
+      if (feature.depends_on.length > 0) {
+        console.log(`\n  ${BOLD}Dependencies:${RESET}`);
+        for (const dep of feature.depends_on) {
+          const met = doneIds.has(dep);
+          const icon = met ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;
+          console.log(`    ${icon} ${dep}`);
+        }
+      }
+
+      if (feature.constraints.length > 0) {
+        console.log(`\n  ${BOLD}Constraints:${RESET}`);
+        for (const c of feature.constraints) {
+          console.log(`    - ${c}`);
+        }
+      }
+
+      if (feature.forbidden.length > 0) {
+        console.log(`\n  ${BOLD}Forbidden:${RESET}`);
+        for (const f of feature.forbidden) {
+          console.log(`    - ${RED}${f}${RESET}`);
+        }
+      }
+
+      if (feature.references.length > 0) {
+        console.log(`\n  ${BOLD}References:${RESET}`);
+        for (const r of feature.references) {
+          console.log(`    - ${DIM}${r}${RESET}`);
+        }
+      }
+
+      if (feature.notes.length > 0) {
+        console.log(`\n  ${BOLD}Notes:${RESET}`);
+        for (const n of feature.notes) {
+          console.log(`    - ${n}`);
+        }
+      }
+
+      if (feature.subtasks.length > 0) {
+        console.log(`\n  ${BOLD}Subtasks (${feature.subtasks.length}):${RESET}`);
+        for (const st of feature.subtasks) {
+          renderSubtask(st, 2);
+        }
+      }
+
+      console.log("");
     }
-  }
-
-  if (feature.depends_on.length > 0) {
-    console.log(`\n  ${BOLD}Dependencies:${RESET}`);
-    for (const dep of feature.depends_on) {
-      const met = doneIds.has(dep);
-      const icon = met ? `${GREEN}✓${RESET}` : `${RED}✗${RESET}`;
-      console.log(`    ${icon} ${dep}`);
-    }
-  }
-
-  if (feature.constraints.length > 0) {
-    console.log(`\n  ${BOLD}Constraints:${RESET}`);
-    for (const c of feature.constraints) {
-      console.log(`    - ${c}`);
-    }
-  }
-
-  if (feature.forbidden.length > 0) {
-    console.log(`\n  ${BOLD}Forbidden:${RESET}`);
-    for (const f of feature.forbidden) {
-      console.log(`    - ${RED}${f}${RESET}`);
-    }
-  }
-
-  if (feature.references.length > 0) {
-    console.log(`\n  ${BOLD}References:${RESET}`);
-    for (const r of feature.references) {
-      console.log(`    - ${DIM}${r}${RESET}`);
-    }
-  }
-
-  if (feature.notes.length > 0) {
-    console.log(`\n  ${BOLD}Notes:${RESET}`);
-    for (const n of feature.notes) {
-      console.log(`    - ${n}`);
-    }
-  }
-
-  if (feature.subtasks.length > 0) {
-    console.log(`\n  ${BOLD}Subtasks (${feature.subtasks.length}):${RESET}`);
-    for (const st of feature.subtasks) {
-      renderSubtask(st, 2);
-    }
-  }
-
-  console.log("");
+  );
 }

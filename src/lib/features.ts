@@ -423,15 +423,30 @@ export function featureSummary(f: Feature): string {
 }
 
 /**
- * Find a feature by ID across both active and archive lists.
+ * Recursively search a list of features (and their subtasks) for a matching ID.
+ */
+function findInList(features: Feature[], id: string): Feature | undefined {
+  for (const f of features) {
+    if (f.id === id) return f;
+    if (f.subtasks?.length) {
+      const found = findInList(f.subtasks, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Find a feature or subtask by ID across active features, their subtasks
+ * (recursively), and the archive list.
  */
 export function findFeatureById(
   data: FeaturesFile,
   id: string
 ): Feature | undefined {
   return (
-    data.features.find((f) => f.id === id) ??
-    data.archive?.find((f) => f.id === id)
+    findInList(data.features, id) ??
+    (data.archive ? findInList(data.archive, id) : undefined)
   );
 }
 
