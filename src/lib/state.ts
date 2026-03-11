@@ -23,7 +23,8 @@ export type AgentStatus =
   | "verified"
   | "failed"
   | "merged"
-  | "retry";
+  | "retry"
+  | "resolving_conflict";
 
 export interface AgentState {
   feature_id: string;
@@ -208,6 +209,7 @@ export function agentCounts(state: WaveState): Record<AgentStatus, number> {
     failed: 0,
     merged: 0,
     retry: 0,
+    resolving_conflict: 0,
   };
   for (const a of state.agents) {
     counts[a.status]++;
@@ -220,7 +222,7 @@ export function agentCounts(state: WaveState): Record<AgentStatus, number> {
  */
 export function activeAgents(state: WaveState): AgentState[] {
   return state.agents.filter(
-    (a) => a.status === "running" || a.status === "installing"
+    (a) => a.status === "running" || a.status === "installing" || a.status === "resolving_conflict"
   );
 }
 
