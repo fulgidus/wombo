@@ -1,0 +1,143 @@
+/**
+ * features/list.ts — List and filter features from the features file.
+ *
+ * Usage:
+ *   wombo features list                     # list all features
+ *   wombo features list --status backlog    # filter by status
+ *   wombo features list --priority high     # filter by priority
+ *   wombo features list --ready             # show only ready features
+ *   wombo features list --archive           # include archived features
+ */
+
+import type { WomboConfig } from "../../config.js";
+import {
+  loadFeatures,
+  getReadyFeatures,
+  featureSummary,
+  formatDuration,
+  parseDurationMinutes,
+  type Feature,
+  type FeatureStatus,
+  type Priority,
+  type Difficulty,
+  type FeaturesFile,
+} from "../../lib/features.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface FeaturesListOptions {
+  projectRoot: string;
+  config: WomboConfig;
+  status?: FeatureStatus;
+  priority?: Priority;
+  difficulty?: Difficulty;
+  ready?: boolean;
+  includeArchive?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// ANSI Helpers
+// ---------------------------------------------------------------------------
+
+const RESET = "\x1b[0m";
+const BOLD = "\x1b[1m";
+const DIM = "\x1b[2m";
+
+const STATUS_COLOR: Record<FeatureStatus, string> = {
+  backlog: "\x1b[37m",     // white
+  planned: "\x1b[36m",     // cyan
+  in_progress: "\x1b[34m", // blue
+  blocked: "\x1b[31m",     // red
+  in_review: "\x1b[33m",   // yellow
+  done: "\x1b[32m",        // green
+  cancelled: "\x1b[90m",   // gray
+};
+
+// ---------------------------------------------------------------------------
+// Command
+// ---------------------------------------------------------------------------
+
+export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> {
+  const { projectRoot, config } = opts;
+  const data = loadFeatures(projectRoot, config);
+
+  let features: Feature[] = [...data.features];
+
+  // Include archive if requested
+  if (opts.includeArchive && data.archive?.length) {
+    features = [...features, ...data.archive];
+  }
+
+  // Filter by status
+  if (opts.status) {
+    features = features.filter((f) => f.status === opts.status);
+  }
+
+  // Filter by priority
+  if (opts.priority) {
+    features = features.filter((f) => f.priority === opts.priority);
+  }
+
+  // Filter by difficulty
+  if (opts.difficulty) {
+    features = features.filter((f) => f.difficulty === opts.difficulty);
+  }
+
+  // Filter to ready-only
+  if (opts.ready) {
+    const readyFeatures = getReadyFeatures(data);
+    const readyIds = new Set(readyFeatures.map((f) => f.id));
+    features = features.filter((f) => readyIds.has(f.id));
+  }
+
+  if (features.length === 0) {
+    console.log("No features match the given filters.");
+    return;
+  }
+
+  // Group by status for display
+  const byStatus = new Map<FeatureStatus, Feature[]>();
+  for (const f of features) {
+    const list = byStatus.get(f.status) ?? [];
+    list.push(f);
+    byStatus.set(f.status, list);
+  }
+
+  // Display
+  const totalEffort = features.reduce(
+    (sum, f) => sum + parseDurationMinutes(f.effort),
+    0
+  );
+
+  console.log(`\n${BOLD}Features (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
+
+  const statusOrder: FeatureStatus[] = [
+    "in_progress",
+    "planned",
+    "backlog",
+    "blocked",
+    "in_review",
+    "done",
+    "cancelled",
+  ];
+
+  for (const status of statusOrder) {
+    const group = byStatus.get(status);
+    if (!group?.length) continue;
+
+    const color = STATUS_COLOR[status] ?? "";
+    console.log(`  ${color}${BOLD}${status.toUpperCase()}${RESET} (${group.length})`);
+
+    for (const f of group) {
+      const effort = formatDuration(parseDurationMinutes(f.effort));
+      const deps = f.depends_on.length > 0 ? ` ${DIM}deps: ${f.depends_on.join(", ")}${RESET}` : "";
+      const completion = f.completion > 0 ? ` ${DIM}${f.completion}%${RESET}` : "";
+      console.log(
+        `    ${color}${f.id}${RESET} — ${f.title} [${f.priority}/${f.difficulty}] (${effort})${completion}${deps}`
+      );
+    }
+    console.log("");
+  }
+}

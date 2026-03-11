@@ -1,0 +1,147 @@
+/**
+ * verifier.ts — Build verification in worktrees.
+ *
+ * Responsibilities:
+ *   - Run the project build command in a worktree
+ *   - Capture and parse build output
+ *   - Determine pass/fail
+ *   - Extract error messages for retry prompts
+ *
+ * IMPORTANT: runBuild is ASYNC — does not block the event loop.
+ */
+
+import { exec } from "node:child_process";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import type { WomboConfig } from "../config.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface BuildResult {
+  passed: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  /** Combined output, truncated for use in retry prompts */
+  errorSummary: string;
+  /** Duration in milliseconds */
+  durationMs: number;
+}
+
+// ---------------------------------------------------------------------------
+// Build Verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the build command in a worktree directory.
+ * Uses config for the build command and timeout.
+ */
+export function runBuild(
+  worktreePath: string,
+  config: WomboConfig
+): Promise<BuildResult> {
+  return new Promise((resolvePromise) => {
+    const start = Date.now();
+
+    exec(
+      config.build.command,
+      {
+        cwd: worktreePath,
+        encoding: "utf-8",
+        timeout: config.build.timeout,
+        maxBuffer: 10 * 1024 * 1024,
+      },
+      (error, stdout, stderr) => {
+        const durationMs = Date.now() - start;
+        const exitCode = error ? (error as any).code ?? 1 : 0;
+        const passed = !error;
+
+        let errorSummary = "";
+        if (!passed) {
+          errorSummary = extractErrorSummary(stdout ?? "", stderr ?? "");
+        }
+
+        resolvePromise({
+          passed,
+          exitCode,
+          stdout: stdout ?? "",
+          stderr: stderr ?? "",
+          errorSummary,
+          durationMs,
+        });
+      }
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Error Extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract a concise error summary from build output.
+ */
+function extractErrorSummary(stdout: string, stderr: string): string {
+  const combined = stdout + "\n" + stderr;
+  const lines = combined.split("\n");
+
+  const errorLines: string[] = [];
+  let capturing = false;
+  let contextLines = 0;
+
+  for (const line of lines) {
+    const isError =
+      /error/i.test(line) &&
+      !/warning/i.test(line) &&
+      !/^info/i.test(line);
+    const isTypeError = /TS\d+/.test(line);
+
+    if (isError || isTypeError) {
+      capturing = true;
+      contextLines = 0;
+      errorLines.push(line);
+    } else if (capturing) {
+      contextLines++;
+      if (contextLines <= 3) {
+        errorLines.push(line);
+      } else {
+        capturing = false;
+      }
+    }
+  }
+
+  if (errorLines.length === 0) {
+    const tail = lines.slice(-50).join("\n");
+    return truncate(tail, 4000);
+  }
+
+  return truncate(errorLines.join("\n"), 4000);
+}
+
+/**
+ * Truncate a string to maxLen characters.
+ */
+function truncate(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  return s.slice(0, maxLen) + "\n\n[... truncated, showing first 4000 chars]";
+}
+
+// ---------------------------------------------------------------------------
+// Quick Check
+// ---------------------------------------------------------------------------
+
+/**
+ * Quick check if the build artifacts exist.
+ */
+export function hasBuildArtifacts(
+  worktreePath: string,
+  config: WomboConfig
+): boolean {
+  try {
+    return existsSync(resolve(worktreePath, config.build.artifactDir));
+  } catch {
+    return false;
+  }
+}

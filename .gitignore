@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.wombo-state.json
+.wombo-logs/
+*.tmp
+*.log
+bun.lock

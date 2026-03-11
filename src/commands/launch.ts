@@ -1,0 +1,690 @@
+/**
+ * launch.ts — Launch a wave of agents.
+ *
+ * Usage: wombo launch [selection options] [launch options]
+ *
+ * This is the primary entry point for starting a new wave. It selects features
+ * from the features file, creates a wave state, sets up worktrees, and launches
+ * agent processes (either headless or interactive via tmux).
+ *
+ * IMPORTANT: This file also exports shared helper functions that are reused
+ * by resume.ts and other commands:
+ *   - launchSingleHeadless
+ *   - handleBuildVerification
+ *   - handleRetry
+ *   - launchNextQueued
+ */
+
+import type { WomboConfig } from "../config.js";
+import type { Feature, SelectionOptions, Priority, Difficulty } from "../lib/features.js";
+import { loadFeatures, selectFeatures, parseDurationMinutes } from "../lib/features.js";
+import {
+  loadState,
+  saveState,
+  createWaveState,
+  createAgentState,
+  updateAgent,
+  activeAgents,
+  queuedAgents,
+  isWaveComplete,
+  type WaveState,
+  type AgentState,
+} from "../lib/state.js";
+import {
+  createWorktree,
+  installDeps,
+  featureBranchName,
+  worktreePath,
+  worktreeReady,
+  removeWorktree,
+  log as wtLog,
+} from "../lib/worktree.js";
+import { generatePrompt } from "../lib/prompt.js";
+import {
+  launchHeadless,
+  retryHeadless,
+  launchInteractive,
+  retryInteractive,
+  isProcessRunning,
+} from "../lib/launcher.js";
+import { ProcessMonitor } from "../lib/monitor.js";
+import { runBuild } from "../lib/verifier.js";
+import { mergeBranch, pushBaseBranch } from "../lib/merger.js";
+import {
+  printDashboard,
+  printFeatureSelection,
+  printAgentUpdate,
+} from "../lib/ui.js";
+import { WomboTUI } from "../lib/tui.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface LaunchCommandOptions {
+  projectRoot: string;
+  config: WomboConfig;
+  // Selection
+  topPriority?: number;
+  quickestWins?: number;
+  priority?: Priority;
+  difficulty?: Difficulty;
+  features?: string[];
+  allReady?: boolean;
+  // Launch
+  maxConcurrent: number;
+  model?: string;
+  interactive: boolean;
+  dryRun: boolean;
+  baseBranch: string;
+  maxRetries: number;
+  noTui: boolean;
+  autoPush: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Shared Helpers (exported for resume.ts and others)
+// ---------------------------------------------------------------------------
+
+/**
+ * Launch a single agent in headless mode.
+ * Sets up worktree, installs deps, generates prompt, launches agent process.
+ */
+export async function launchSingleHeadless(
+  projectRoot: string,
+  state: WaveState,
+  agent: AgentState,
+  feature: Feature,
+  monitor: ProcessMonitor,
+  config: WomboConfig,
+  model?: string
+): Promise<void> {
+  updateAgent(state, agent.feature_id, {
+    status: "installing",
+    started_at: new Date().toISOString(),
+    activity: "setting up worktree...",
+  });
+  saveState(projectRoot, state);
+
+  try {
+    // Skip worktree setup if already ready (resume case)
+    if (worktreeReady(agent.worktree)) {
+      wtLog(agent.feature_id, "worktree already exists, skipping setup");
+    } else {
+      // Create worktree (async — doesn't block other agents)
+      await createWorktree(projectRoot, feature.id, state.base_branch, config);
+
+      // Install dependencies (async)
+      updateAgent(state, agent.feature_id, { activity: "installing deps..." });
+      await installDeps(agent.worktree, feature.id, config);
+    }
+
+    // Generate prompt
+    const prompt = generatePrompt(feature, state.base_branch, config);
+
+    // Launch agent
+    wtLog(agent.feature_id, "launching agent...");
+    const result = launchHeadless({
+      worktreePath: agent.worktree,
+      featureId: feature.id,
+      prompt,
+      model,
+      config,
+    });
+
+    updateAgent(state, agent.feature_id, {
+      status: "running",
+      pid: result.pid,
+      activity: "starting...",
+    });
+    saveState(projectRoot, state);
+
+    monitor.addProcess(feature.id, result.process);
+    wtLog(agent.feature_id, `running (PID: ${result.pid})`);
+  } catch (err: any) {
+    updateAgent(state, agent.feature_id, {
+      status: "failed",
+      error: err.message,
+      activity: null,
+      completed_at: new Date().toISOString(),
+    });
+    saveState(projectRoot, state);
+    wtLog(agent.feature_id, `SETUP FAILED: ${err.message.split("\n")[0]}`);
+  }
+}
+
+/**
+ * Handle build verification after agent completion.
+ * Runs build, auto-merges on pass, retries on failure if retries remain.
+ *
+ * ASYNC — runs build and merge without blocking the event loop.
+ */
+export async function handleBuildVerification(
+  projectRoot: string,
+  state: WaveState,
+  agent: AgentState,
+  feature: Feature,
+  config: WomboConfig,
+  model?: string,
+  monitor?: ProcessMonitor
+): Promise<void> {
+  try {
+    printAgentUpdate(agent, "verifying build...");
+
+    const buildResult = await runBuild(agent.worktree, config);
+
+    if (buildResult.passed) {
+      updateAgent(state, agent.feature_id, {
+        status: "verified",
+        build_passed: true,
+        build_output: null,
+      });
+      saveState(projectRoot, state);
+      printAgentUpdate(agent, `BUILD PASSED (${Math.round(buildResult.durationMs / 1000)}s)`);
+
+      // Auto-merge: merge verified branch into base immediately
+      printAgentUpdate(agent, "auto-merging...");
+      try {
+        const mergeResult = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
+
+        if (mergeResult.success) {
+          updateAgent(state, agent.feature_id, {
+            status: "merged",
+            completed_at: new Date().toISOString(),
+          });
+          saveState(projectRoot, state);
+          printAgentUpdate(agent, `MERGED (${mergeResult.commitHash?.slice(0, 7)})`);
+
+          // Clean up worktree after successful merge
+          try {
+            removeWorktree(projectRoot, agent.worktree, false);
+            printAgentUpdate(agent, "worktree removed");
+          } catch {
+            // Not critical — worktree cleanup is best-effort
+          }
+        } else {
+          // Merge failed (conflicts, etc.) — leave as verified for manual resolution
+          printAgentUpdate(agent, `AUTO-MERGE FAILED: ${mergeResult.error}`);
+        }
+      } catch (mergeErr: any) {
+        printAgentUpdate(agent, `AUTO-MERGE ERROR: ${mergeErr.message?.slice(0, 100)}`);
+      }
+    } else {
+      if (agent.retries < agent.max_retries) {
+        updateAgent(state, agent.feature_id, {
+          status: "retry",
+          retries: agent.retries + 1,
+          build_passed: false,
+          build_output: buildResult.errorSummary,
+        });
+        saveState(projectRoot, state);
+        printAgentUpdate(
+          agent,
+          `BUILD FAILED — retrying (${agent.retries}/${agent.max_retries})`
+        );
+
+        // Retry with build errors
+        if (agent.session_id) {
+          const retryResult = retryHeadless({
+            worktreePath: agent.worktree,
+            featureId: agent.feature_id,
+            sessionId: agent.session_id,
+            buildErrors: buildResult.errorSummary,
+            model,
+            config,
+          });
+
+          updateAgent(state, agent.feature_id, {
+            status: "running",
+            pid: retryResult.pid,
+          });
+          saveState(projectRoot, state);
+
+          // Add retry process to monitor so events are tracked
+          if (monitor) {
+            monitor.addProcess(agent.feature_id, retryResult.process);
+          }
+        }
+      } else {
+        updateAgent(state, agent.feature_id, {
+          status: "failed",
+          build_passed: false,
+          build_output: buildResult.errorSummary,
+          error: `Build failed after ${agent.max_retries} retries`,
+          completed_at: new Date().toISOString(),
+        });
+        saveState(projectRoot, state);
+        printAgentUpdate(agent, "BUILD FAILED — max retries reached");
+      }
+    }
+  } catch (err: any) {
+    // Catch-all — never let build verification crash the process
+    printAgentUpdate(agent, `VERIFY ERROR: ${err.message?.slice(0, 100)}`);
+    updateAgent(state, agent.feature_id, {
+      status: "failed",
+      error: `Build verification error: ${err.message}`,
+      completed_at: new Date().toISOString(),
+    });
+    saveState(projectRoot, state);
+  }
+}
+
+/**
+ * Handle retry of a failed agent (error-based, not build-based).
+ */
+export function handleRetry(
+  projectRoot: string,
+  state: WaveState,
+  agent: AgentState,
+  monitor: ProcessMonitor,
+  config: WomboConfig,
+  model?: string
+): void {
+  if (!agent.session_id || !agent.error) return;
+
+  const retryResult = retryHeadless({
+    worktreePath: agent.worktree,
+    featureId: agent.feature_id,
+    sessionId: agent.session_id,
+    buildErrors: agent.error,
+    model,
+    config,
+  });
+
+  updateAgent(state, agent.feature_id, {
+    status: "running",
+    pid: retryResult.pid,
+  });
+  saveState(projectRoot, state);
+
+  monitor.addProcess(agent.feature_id, retryResult.process);
+}
+
+/**
+ * Launch the next queued agent if capacity allows.
+ */
+export function launchNextQueued(
+  projectRoot: string,
+  state: WaveState,
+  featureMap: Map<string, Feature>,
+  monitor: ProcessMonitor,
+  config: WomboConfig,
+  model?: string
+): void {
+  const active = activeAgents(state);
+  const queued = queuedAgents(state);
+
+  if (active.length < state.max_concurrent && queued.length > 0) {
+    const next = queued[0];
+    const feature = featureMap.get(next.feature_id);
+    if (feature) {
+      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Headless Wave Launch
+// ---------------------------------------------------------------------------
+
+async function launchWaveHeadless(
+  projectRoot: string,
+  state: WaveState,
+  features: Feature[],
+  opts: LaunchCommandOptions
+): Promise<void> {
+  const { config, model } = opts;
+  const featureMap = new Map(features.map((f) => [f.id, f]));
+
+  const monitor = new ProcessMonitor(projectRoot, {
+    onSessionId: (featureId, sessionId) => {
+      updateAgent(state, featureId, { session_id: sessionId });
+      saveState(projectRoot, state);
+    },
+    onComplete: (featureId) => {
+      updateAgent(state, featureId, {
+        status: "completed",
+        completed_at: new Date().toISOString(),
+      });
+      saveState(projectRoot, state);
+
+      // Run build verification — fire-and-forget
+      const agent = state.agents.find((a) => a.feature_id === featureId)!;
+      handleBuildVerification(projectRoot, state, agent, featureMap.get(featureId)!, config, model, monitor)
+        .then(() => launchNextQueued(projectRoot, state, featureMap, monitor, config, model))
+        .catch((err) => {
+          wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
+          launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+        });
+    },
+    onError: (featureId, error) => {
+      const agent = state.agents.find((a) => a.feature_id === featureId)!;
+      if (agent.retries < agent.max_retries) {
+        updateAgent(state, featureId, {
+          status: "retry",
+          retries: agent.retries + 1,
+          error,
+        });
+        saveState(projectRoot, state);
+
+        // Retry
+        handleRetry(projectRoot, state, agent, monitor, config, model);
+      } else {
+        updateAgent(state, featureId, {
+          status: "failed",
+          error,
+          completed_at: new Date().toISOString(),
+        });
+        saveState(projectRoot, state);
+      }
+
+      // Try to launch next queued agent
+      launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+    },
+    onOutput: (_featureId, _data) => {
+      // Raw output — logged to file by ProcessMonitor
+    },
+    onActivity: (featureId, activity) => {
+      updateAgent(state, featureId, {
+        activity,
+        activity_updated_at: new Date().toISOString(),
+      });
+      // Don't save to disk on every activity — too frequent.
+    },
+  });
+
+  // Create the TUI — it will auto-refresh and show activity from the monitor
+  const tuiRef = { current: null as WomboTUI | null };
+  const startTUI = () => {
+    tuiRef.current = new WomboTUI({
+      state,
+      monitor,
+      projectRoot,
+      interactive: false,
+      config,
+      onQuit: () => {
+        // Same as SIGINT — save state and exit
+        for (const agent of state.agents) {
+          if (agent.status === "running") {
+            updateAgent(state, agent.feature_id, { activity: "interrupted" });
+          }
+        }
+        monitor.killAll();
+        saveState(projectRoot, state);
+        console.log("State saved. Use 'wombo resume' to continue.");
+        process.exit(0);
+      },
+    });
+    tuiRef.current.start();
+  };
+
+  // Handle graceful shutdown
+  process.on("SIGINT", () => {
+    if (tuiRef.current) tuiRef.current.stop();
+    for (const agent of state.agents) {
+      if (agent.status === "running") {
+        updateAgent(state, agent.feature_id, { activity: "interrupted" });
+      }
+    }
+    monitor.killAll();
+    saveState(projectRoot, state);
+    console.log("\nState saved. Use 'wombo resume' to continue.");
+    process.exit(0);
+  });
+
+  // Launch initial batch — set up worktrees in parallel
+  const tolaunch = queuedAgents(state).slice(0, opts.maxConcurrent);
+  console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
+
+  await Promise.all(
+    tolaunch.map((agent) =>
+      launchSingleHeadless(
+        projectRoot,
+        state,
+        agent,
+        featureMap.get(agent.feature_id)!,
+        monitor,
+        config,
+        model
+      )
+    )
+  );
+
+  const launched = state.agents.filter((a) => a.status === "running").length;
+
+  // Start the TUI dashboard (or skip if --no-tui)
+  if (opts.noTui) {
+    console.log(`${launched} agent(s) running. (--no-tui mode, dashboard prints every 15s)\n`);
+    printDashboard(state);
+  } else {
+    console.log(`${launched} agent(s) running. Launching TUI...\n`);
+    startTUI();
+  }
+
+  // Background monitoring loop — checks for dead processes and launches queued
+  const POLL_INTERVAL = 5000;
+  let dashboardCounter = 0;
+  while (!isWaveComplete(state)) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+
+    // Check for completed processes that weren't caught by event handlers
+    for (const agent of state.agents) {
+      if (
+        agent.status === "running" &&
+        agent.pid &&
+        !isProcessRunning(agent.pid) &&
+        !monitor.isRunning(agent.feature_id)
+      ) {
+        // Process exited but we didn't get a callback
+        updateAgent(state, agent.feature_id, {
+          status: "completed",
+          completed_at: new Date().toISOString(),
+          activity: "done",
+        });
+        saveState(projectRoot, state);
+        try {
+          await handleBuildVerification(projectRoot, state, agent, featureMap.get(agent.feature_id)!, config, model, monitor);
+        } catch (err: any) {
+          wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
+        }
+        launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+      }
+    }
+
+    // Persist state periodically
+    saveState(projectRoot, state);
+
+    // Update TUI state reference (or print dashboard in --no-tui mode)
+    if (tuiRef.current) {
+      tuiRef.current.updateState(state);
+    } else if (opts.noTui) {
+      dashboardCounter++;
+      if (dashboardCounter % 3 === 0) {
+        printDashboard(state);
+
+        // Auto-push base branch if requested
+        if (opts.autoPush) {
+          const anyMerged = state.agents.some((a) => a.status === "merged");
+          if (anyMerged) {
+            await pushBaseBranch(projectRoot, state.base_branch, config);
+          } else {
+            console.log("No branches were merged — skipping push.");
+          }
+        }
+      }
+    }
+  }
+
+  // Wave complete — tear down TUI and show final summary
+  if (tuiRef.current) tuiRef.current.stop();
+  printDashboard(state);
+
+  // Auto-push base branch if requested
+  if (opts.autoPush) {
+    await pushBaseBranch(projectRoot, state.base_branch, config);
+  }
+
+  console.log("Wave complete.");
+}
+
+// ---------------------------------------------------------------------------
+// Interactive Wave Launch
+// ---------------------------------------------------------------------------
+
+async function launchWaveInteractive(
+  projectRoot: string,
+  state: WaveState,
+  features: Feature[],
+  opts: LaunchCommandOptions
+): Promise<void> {
+  const { config, model } = opts;
+  const featureMap = new Map(features.map((f) => [f.id, f]));
+
+  // Show dashboard immediately
+  printDashboard(state);
+
+  // Launch initial batch in tmux — parallelize setup
+  const tolaunch = queuedAgents(state).slice(0, opts.maxConcurrent);
+  console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
+
+  await Promise.all(
+    tolaunch.map(async (agent) => {
+      updateAgent(state, agent.feature_id, {
+        status: "installing",
+        started_at: new Date().toISOString(),
+        activity: "setting up worktree...",
+      });
+      saveState(projectRoot, state);
+
+      try {
+        if (worktreeReady(agent.worktree)) {
+          wtLog(agent.feature_id, "worktree already exists, skipping setup");
+        } else {
+          await createWorktree(projectRoot, agent.feature_id, state.base_branch, config);
+          updateAgent(state, agent.feature_id, { activity: "installing deps..." });
+          await installDeps(agent.worktree, agent.feature_id, config);
+        }
+
+        const prompt = generatePrompt(
+          featureMap.get(agent.feature_id)!,
+          state.base_branch,
+          config
+        );
+
+        wtLog(agent.feature_id, "launching tmux session...");
+        const result = launchInteractive({
+          worktreePath: agent.worktree,
+          featureId: agent.feature_id,
+          prompt,
+          model,
+          interactive: true,
+          config,
+        });
+
+        updateAgent(state, agent.feature_id, {
+          status: "running",
+          pid: result.pid,
+          activity: "tmux session active",
+        });
+        saveState(projectRoot, state);
+        wtLog(agent.feature_id, `tmux session: ${config.agent.tmuxPrefix}-${agent.feature_id}`);
+      } catch (err: any) {
+        updateAgent(state, agent.feature_id, {
+          status: "failed",
+          error: err.message,
+          activity: null,
+          completed_at: new Date().toISOString(),
+        });
+        saveState(projectRoot, state);
+        wtLog(agent.feature_id, `SETUP FAILED: ${err.message.split("\n")[0]}`);
+      }
+    })
+  );
+
+  console.log("\nInteractive sessions launched. Use these commands:");
+  console.log(`  tmux attach -t ${config.agent.tmuxPrefix}-<feature-id>   # attach to a session`);
+  console.log("  tmux ls                                                  # list sessions");
+  console.log("  wombo status                                             # check status");
+  console.log("  wombo verify                                             # verify builds");
+  console.log("  wombo merge                                              # merge verified");
+  console.log("  wombo cleanup                                            # remove worktrees");
+
+  printDashboard(state);
+}
+
+// ---------------------------------------------------------------------------
+// Main Command
+// ---------------------------------------------------------------------------
+
+export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
+  const { projectRoot, config } = opts;
+
+  console.log("\n--- Wombo: Launch ---\n");
+
+  // Load features
+  const data = loadFeatures(projectRoot, config);
+
+  // Build selection options
+  const selOpts: SelectionOptions = {};
+  if (opts.topPriority) selOpts.topPriority = opts.topPriority;
+  if (opts.quickestWins) selOpts.quickestWins = opts.quickestWins;
+  if (opts.priority) selOpts.priority = opts.priority;
+  if (opts.difficulty) selOpts.difficulty = opts.difficulty;
+  if (opts.features) selOpts.featureIds = opts.features;
+  if (opts.allReady) selOpts.allReady = true;
+
+  // Select features
+  const selected = selectFeatures(data, selOpts);
+
+  if (selected.length === 0) {
+    console.error(
+      "No features matched the selection criteria. Use --all-ready to see all available."
+    );
+    process.exit(1);
+  }
+
+  // Show selection
+  printFeatureSelection(
+    selected.map((f) => ({
+      id: f.id,
+      title: f.title,
+      priority: f.priority,
+      difficulty: f.difficulty,
+      effort: f.effort,
+    }))
+  );
+
+  if (opts.dryRun) {
+    console.log("Dry run — not launching agents.");
+    return;
+  }
+
+  // Create wave state
+  const state = createWaveState({
+    baseBranch: opts.baseBranch,
+    maxConcurrent: opts.maxConcurrent,
+    model: opts.model ?? null,
+    interactive: opts.interactive,
+  });
+
+  // Create agent entries for all selected features
+  for (const feature of selected) {
+    const branch = featureBranchName(feature.id, config);
+    const wtPath = worktreePath(projectRoot, feature.id, config);
+    const agent = createAgentState(feature.id, branch, wtPath, opts.maxRetries);
+    // Set effort estimate from feature spec
+    const effortMinutes = parseDurationMinutes(feature.effort);
+    agent.effort_estimate_ms = effortMinutes === Infinity ? null : effortMinutes * 60 * 1000;
+    state.agents.push(agent);
+  }
+
+  saveState(projectRoot, state);
+  console.log(`Wave ${state.wave_id} created with ${selected.length} agents.`);
+
+  // Launch agents up to max_concurrent
+  if (opts.interactive) {
+    await launchWaveInteractive(projectRoot, state, selected, opts);
+  } else {
+    await launchWaveHeadless(projectRoot, state, selected, opts);
+  }
+}
