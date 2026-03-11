@@ -101,7 +101,9 @@ function runSync(
 // ---------------------------------------------------------------------------
 
 /**
- * Create a feature branch from the base branch. If it already exists, reset it.
+ * Create a feature branch from the base branch.
+ * If it already exists and is NOT checked out in a worktree, reset it.
+ * If it's checked out in a worktree, leave it alone (resume case).
  */
 async function createBranch(
   projectRoot: string,
@@ -113,10 +115,14 @@ async function createBranch(
     { cwd: projectRoot }
   );
   if (existing.trim()) {
+    // Branch exists — try to delete and recreate.
+    // If deletion fails (e.g. checked out in worktree), that's fine —
+    // we'll reuse the existing branch with its work intact.
     try {
       await runAsync(`git branch -D "${branchName}"`, { cwd: projectRoot });
     } catch {
-      // May fail if checked out in a worktree
+      // Branch is checked out in a worktree — reuse as-is
+      return;
     }
   }
   await runAsync(`git branch "${branchName}" "${baseBranch}"`, {
@@ -153,6 +159,10 @@ export function worktreePath(
 /**
  * Create a git worktree for a feature branch.
  * Returns the absolute path to the worktree.
+ *
+ * If a valid worktree already exists at the expected path (has .git file),
+ * reuses it — this is essential for the resume case where worktrees have
+ * real work but may be missing node_modules.
  */
 export async function createWorktree(
   projectRoot: string,
@@ -163,11 +173,20 @@ export async function createWorktree(
   const branch = featureBranchName(featureId, config);
   const wtPath = worktreePath(projectRoot, featureId, config);
 
+  // If a valid worktree already exists, reuse it (resume case).
+  // A git worktree has a .git *file* (not directory) pointing to the main repo.
+  if (existsSync(wtPath) && existsSync(resolve(wtPath, ".git"))) {
+    log(featureId, "reusing existing worktree (has work)");
+    // Still copy config files in case they're missing
+    copyConfigFiles(projectRoot, wtPath, featureId, config);
+    return wtPath;
+  }
+
   // Create the branch if it doesn't exist
   log(featureId, "creating branch...");
   await createBranch(projectRoot, branch, baseBranch);
 
-  // Remove existing worktree if present
+  // Remove existing worktree directory if present but invalid
   if (existsSync(wtPath)) {
     log(featureId, "removing old worktree...");
     try {
@@ -187,6 +206,22 @@ export async function createWorktree(
   });
 
   // Copy agent config files into worktree
+  copyConfigFiles(projectRoot, wtPath, featureId, config);
+
+  log(featureId, "worktree ready");
+  return wtPath;
+}
+
+/**
+ * Copy agent config files from project root into a worktree.
+ * Best-effort — logs warnings but doesn't throw.
+ */
+function copyConfigFiles(
+  projectRoot: string,
+  wtPath: string,
+  featureId: string,
+  config: WomboConfig
+): void {
   for (const configFile of config.agent.configFiles) {
     const srcPath = resolve(projectRoot, configFile);
     if (!existsSync(srcPath)) continue;
@@ -206,9 +241,6 @@ export async function createWorktree(
 
   // Verify all config files were copied successfully
   verifyConfigFiles(projectRoot, wtPath, featureId, config);
-
-  log(featureId, "worktree ready");
-  return wtPath;
 }
 
 // ---------------------------------------------------------------------------
@@ -267,13 +299,21 @@ export async function installDeps(
 }
 
 /**
- * Check if a worktree already exists and has node_modules.
+ * Check if a worktree already exists and has node_modules (fully ready).
  */
 export function worktreeReady(wtPath: string): boolean {
   return (
     existsSync(wtPath) &&
     existsSync(resolve(wtPath, "node_modules"))
   );
+}
+
+/**
+ * Check if a valid git worktree exists at the path (may lack node_modules).
+ * A git worktree has a .git *file* (not directory) pointing to the main repo.
+ */
+export function worktreeExists(wtPath: string): boolean {
+  return existsSync(wtPath) && existsSync(resolve(wtPath, ".git"));
 }
 
 // ---------------------------------------------------------------------------
