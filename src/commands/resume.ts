@@ -25,7 +25,9 @@ import {
   createWorktree,
   installDeps,
   worktreeReady,
+  worktreeExists,
   branchHasChanges,
+  removeWorktree,
   log as wtLog,
 } from "../lib/worktree.js";
 import { generatePrompt } from "../lib/prompt.js";
@@ -42,6 +44,7 @@ import {
   handleBuildVerification,
   handleRetry,
   launchNextQueued,
+  markFeatureDone,
 } from "./launch.js";
 
 // ---------------------------------------------------------------------------
@@ -89,18 +92,21 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       case "running":
       case "installing":
       case "retry":
+      case "resolving_conflict":
         // Was in-flight when we stopped — check if PID is still alive
         if (agent.pid && isProcessRunning(agent.pid)) {
           console.log(`  ${agent.feature_id}: still running (PID ${agent.pid}), leaving alone`);
         } else {
-          // Process is dead — check if worktree has meaningful changes
-          if (worktreeReady(agent.worktree) && branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
+          // Process is dead — check if worktree exists with meaningful changes.
+          // Use worktreeExists (not worktreeReady) because node_modules may be
+          // missing — the worktree still has code that should be verified.
+          if (worktreeExists(agent.worktree) && branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
             // Worktree exists AND branch has commits — try build verification
             console.log(`  ${agent.feature_id}: process dead, worktree has changes — will verify build`);
             toVerify.push(agent);
           } else {
             // No worktree, or worktree exists but branch has no commits (agent did nothing)
-            const reason = worktreeReady(agent.worktree)
+            const reason = worktreeExists(agent.worktree)
               ? "worktree exists but no code changes"
               : "no worktree";
             console.log(`  ${agent.feature_id}: process dead, ${reason} — will re-launch`);
@@ -127,23 +133,87 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         break;
 
       case "verified":
+        // Build passed but NOT yet merged — need to attempt merge (+ conflict resolution)
+        console.log(`  ${agent.feature_id}: verified — will attempt merge`);
+        toVerify.push(agent);
+        break;
+
       case "merged":
-        console.log(`  ${agent.feature_id}: ${agent.status} — nothing to do`);
+        console.log(`  ${agent.feature_id}: merged — marking feature as done`);
+        markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
+        try {
+          removeWorktree(projectRoot, agent.worktree, true);
+          console.log(`  ${agent.feature_id}: worktree and branch removed`);
+        } catch {
+          // Already cleaned — not critical
+        }
         break;
 
       case "failed":
-        console.log(`  ${agent.feature_id}: failed — skipping (use 'wombo retry' to re-run)`);
+        // If the worktree exists with code changes and retries remain,
+        // attempt build verification rather than discarding the work.
+        if (agent.retries < agent.max_retries &&
+            worktreeExists(agent.worktree) &&
+            branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
+          console.log(`  ${agent.feature_id}: failed but has work (retry ${agent.retries}/${agent.max_retries}) — will verify build`);
+          // Clear stale error and mark as completed so handleBuildVerification
+          // processes it correctly (it expects a non-failed agent)
+          updateAgent(state, agent.feature_id, {
+            status: "completed",
+            error: null,
+            build_passed: null,
+            build_output: null,
+            completed_at: new Date().toISOString(),
+          });
+          toVerify.push(agent);
+        } else if (agent.retries < agent.max_retries) {
+          // No worktree or no changes — re-launch from scratch
+          console.log(`  ${agent.feature_id}: failed, no salvageable work (retry ${agent.retries}/${agent.max_retries}) — will re-launch`);
+          updateAgent(state, agent.feature_id, {
+            status: "queued",
+            pid: null,
+            error: null,
+            build_passed: null,
+            build_output: null,
+            activity: null,
+            session_id: null,
+            completed_at: null,
+          });
+          toRelaunch.push(agent);
+        } else {
+          console.log(`  ${agent.feature_id}: failed — max retries reached (use 'wombo retry' to reset)`);
+        }
         break;
     }
   }
 
   saveState(projectRoot, state);
 
-  // Run build verification on agents that were mid-flight
+  // Run build verification on agents that were mid-flight or have salvageable work
   for (const agent of toVerify) {
     const feature = featureMap.get(agent.feature_id);
     if (!feature) continue;
     console.log(`\n  Verifying ${agent.feature_id}...`);
+
+    // Ensure deps are installed — worktree may exist without node_modules
+    // (e.g., failed agents whose setup was interrupted)
+    if (!worktreeReady(agent.worktree) && worktreeExists(agent.worktree)) {
+      try {
+        console.log(`  ${agent.feature_id}: installing deps...`);
+        await installDeps(agent.worktree, agent.feature_id, config);
+      } catch (depErr: any) {
+        console.log(`  ${agent.feature_id}: dep install failed: ${depErr.message}`);
+        updateAgent(state, agent.feature_id, {
+          status: "failed",
+          error: `Dependency install failed: ${depErr.message}`,
+          retries: agent.retries + 1,
+          completed_at: new Date().toISOString(),
+        });
+        saveState(projectRoot, state);
+        continue;
+      }
+    }
+
     try {
       await handleBuildVerification(projectRoot, state, agent, feature, config, opts.model);
     } catch (err: any) {
@@ -280,7 +350,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     process.on("SIGINT", () => {
       if (tuiRef.current) tuiRef.current.stop();
       for (const agent of state.agents) {
-        if (agent.status === "running") {
+        if (agent.status === "running" || agent.status === "resolving_conflict") {
           updateAgent(state, agent.feature_id, {
             activity: "interrupted",
           });
@@ -334,11 +404,24 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
       for (const agent of state.agents) {
         if (
-          agent.status === "running" &&
+          (agent.status === "running" || agent.status === "resolving_conflict") &&
           agent.pid &&
           !isProcessRunning(agent.pid) &&
           !monitor.isRunning(agent.feature_id)
         ) {
+          if (agent.status === "resolving_conflict") {
+            // Conflict resolver died unexpectedly — mark as failed
+            updateAgent(state, agent.feature_id, {
+              status: "failed",
+              error: "Conflict resolver process died unexpectedly",
+              activity: null,
+              completed_at: new Date().toISOString(),
+            });
+            saveState(projectRoot, state);
+            wtLog(agent.feature_id, "conflict resolver died — marked failed");
+            launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+            continue;
+          }
           // Check if the agent actually made any commits
           if (!branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
             // Agent died without producing any code — mark as failed
