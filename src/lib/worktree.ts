@@ -204,8 +204,48 @@ export async function createWorktree(
     }
   }
 
+  // Verify all config files were copied successfully
+  verifyConfigFiles(projectRoot, wtPath, featureId, config);
+
   log(featureId, "worktree ready");
   return wtPath;
+}
+
+// ---------------------------------------------------------------------------
+// Config File Verification
+// ---------------------------------------------------------------------------
+
+/**
+ * Verify that all expected config files were copied into the worktree.
+ * Logs a warning for any that are missing. This is a safety net on top
+ * of the best-effort cpSync logic in createWorktree.
+ */
+function verifyConfigFiles(
+  projectRoot: string,
+  wtPath: string,
+  featureId: string,
+  config: WomboConfig
+): void {
+  const missing: string[] = [];
+
+  for (const configFile of config.agent.configFiles) {
+    const srcPath = resolve(projectRoot, configFile);
+    const destPath = resolve(wtPath, configFile);
+
+    // Only check files/dirs that exist in the source project
+    if (!existsSync(srcPath)) continue;
+
+    if (!existsSync(destPath)) {
+      missing.push(configFile);
+    }
+  }
+
+  if (missing.length > 0) {
+    log(
+      featureId,
+      `\x1b[33mWARNING\x1b[0m: config files missing in worktree: ${missing.join(", ")}`
+    );
+  }
 }
 
 /**
