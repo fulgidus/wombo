@@ -4,5 +4,3 @@ dist/
 .wombo-logs/
 *.tmp
 *.log
-wombo.json
-.features.yml
