@@ -7,10 +7,11 @@
  * accepting overrides.  Press Enter on any prompt to keep the default.
  */
 
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { CONFIG_FILE, DEFAULT_CONFIG, type WomboConfig } from "../config.js";
+import { FEATURES_TEMPLATE_PATH } from "../lib/features.js";
 
 export interface InitOptions {
   projectRoot: string;
@@ -144,11 +145,27 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     cfg.defaults.maxConcurrent = await p.number("Max concurrent agents", cfg.defaults.maxConcurrent);
     cfg.defaults.maxRetries = await p.number("Max retries per agent", cfg.defaults.maxRetries);
 
-    // -- Write ------------------------------------------------------------
+    // -- Write config ------------------------------------------------------
     console.log(`\n${"─".repeat(60)}`);
     const json = JSON.stringify(cfg, null, 2) + "\n";
     writeFileSync(configPath, json, "utf-8");
-    console.log(`\nCreated ${CONFIG_FILE}\n`);
+    console.log(`\nCreated ${CONFIG_FILE}`);
+
+    // -- Create features file from template -------------------------------
+    const featuresPath = resolve(opts.projectRoot, cfg.featuresFile);
+    if (existsSync(featuresPath) && !opts.force) {
+      console.log(`${cfg.featuresFile} already exists, skipping.`);
+    } else {
+      const template = readFileSync(FEATURES_TEMPLATE_PATH, "utf-8");
+      const now = new Date().toISOString();
+      const content = template
+        .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
+        .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`);
+      writeFileSync(featuresPath, content, "utf-8");
+      console.log(`Created ${cfg.featuresFile} from template.`);
+    }
+
+    console.log(`\nYou're all set! Run 'wombo help' to see available commands.\n`);
   } finally {
     p.close();
   }

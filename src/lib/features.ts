@@ -20,7 +20,7 @@ import type { WomboConfig } from "../config.js";
 // Template path (resolved relative to this source file)
 // ---------------------------------------------------------------------------
 
-const TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", ".features.yml");
+export const FEATURES_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", ".features.yml");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -190,7 +190,7 @@ export async function ensureFeaturesFile(
   }
 
   // Read template, update timestamps, write to project root
-  const template = readFileSync(TEMPLATE_PATH, "utf-8");
+  const template = readFileSync(FEATURES_TEMPLATE_PATH, "utf-8");
   const now = new Date().toISOString();
   const content = template
     .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
