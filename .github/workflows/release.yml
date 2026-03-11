@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for changelog generation
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify version matches tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION="$(bun -e "console.log(require('./package.json').version)")"
+          if [ "$TAG" != "$PKG_VERSION" ]; then
+            echo "::error::Tag v${TAG} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+          echo "Version verified: v${TAG}"
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Build
+        run: bun run build
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Find the previous tag
+          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | sed -n '2p')
+          if [ -z "$PREV_TAG" ]; then
+            # First release — use all commits
+            CHANGELOG=$(git log --oneline --no-decorate)
+          else
+            CHANGELOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD")
+          fi
+
+          # Write to file for the release body
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$CHANGELOG" | while IFS= read -r line; do
+              echo "- ${line}"
+            done
+            echo ""
+            echo "---"
+            echo ""
+            echo "### Install"
+            echo ""
+            echo '```sh'
+            echo "bun install -g github:fulgidus/wombo"
+            echo '```'
+            echo ""
+            echo "Or pin to this version:"
+            echo ""
+            echo '```sh'
+            echo "bun install -g github:fulgidus/wombo#${GITHUB_REF#refs/tags/}"
+            echo '```'
+          } > RELEASE_BODY.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "${{ github.ref_name }}" \
+            --notes-file RELEASE_BODY.md \
+            dist/*
