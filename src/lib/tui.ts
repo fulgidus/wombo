@@ -60,6 +60,7 @@ const STATUS_COLORS: Record<AgentStatus, string> = {
   failed: "red",
   merged: "magenta",
   retry: "yellow",
+  resolving_conflict: "cyan",
 };
 
 const STATUS_ICONS: Record<AgentStatus, string> = {
@@ -71,11 +72,23 @@ const STATUS_ICONS: Record<AgentStatus, string> = {
   failed: "✗",
   merged: "◆",
   retry: "↻",
+  resolving_conflict: "⚡",
 };
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Escape curly braces so blessed doesn't interpret them as formatting tags.
+ * Blessed uses {color-fg}...{/color-fg} syntax; unmatched or malformed braces
+ * in user-provided text (JSON, Python dicts, shell commands, etc.) crash the
+ * renderer. We replace { and } with the Unicode fullwidth equivalents which
+ * render visually similar but are not parsed by blessed.
+ */
+function escapeBlessedTags(text: string): string {
+  return text.replace(/\{/g, "｛").replace(/\}/g, "｝");
+}
 
 function elapsed(startedAt: string | null): string {
   if (!startedAt) return "-";
@@ -421,6 +434,8 @@ export class WomboTUI {
       line2 += `  {gray-fg}${counts.queued} queued{/gray-fg}`;
     if (counts.retry > 0)
       line2 += `  {yellow-fg}${counts.retry} retrying{/yellow-fg}`;
+    if (counts.resolving_conflict > 0)
+      line2 += `  {cyan-fg}${counts.resolving_conflict} resolving{/cyan-fg}`;
 
     this.headerBox.setContent(`${line1}\n${line2}`);
   }
@@ -444,7 +459,7 @@ export class WomboTUI {
 
       // Progress bar
       let pbar = "";
-      if (a.status === "running" && a.started_at) {
+      if ((a.status === "running" || a.status === "resolving_conflict") && a.started_at) {
         const elapsedMs = Date.now() - new Date(a.started_at).getTime();
         // Use actual effort estimate from feature data, fallback to 1h
         const estimateMs = a.effort_estimate_ms ?? 60 * 60 * 1000;
@@ -455,11 +470,12 @@ export class WomboTUI {
         pbar = ` {red-fg}${"█".repeat(8)}{/red-fg}`;
       }
 
-      // Activity (for running agents)
+      // Activity (for running/resolving agents)
       let act = "";
-      if (a.status === "running" && a.activity) {
-        const actText =
+      if ((a.status === "running" || a.status === "resolving_conflict") && a.activity) {
+        const rawAct =
           a.activity.length > 25 ? a.activity.slice(0, 24) + "…" : a.activity;
+        const actText = escapeBlessedTags(rawAct);
         act = ` {cyan-fg}${actText}{/cyan-fg}`;
       } else if (a.status === "installing") {
         act = " {cyan-fg}setting up…{/cyan-fg}";
@@ -523,7 +539,7 @@ export class WomboTUI {
       lines.push("{yellow-fg}-- system --{/yellow-fg}");
       for (const entry of relevantSys) {
         const ts = `{gray-fg}${entry.timestamp}{/gray-fg}`;
-        lines.push(`${ts} {yellow-fg}${entry.text}{/yellow-fg}`);
+        lines.push(`${ts} {yellow-fg}${escapeBlessedTags(entry.text)}{/yellow-fg}`);
       }
     }
 
@@ -537,7 +553,7 @@ export class WomboTUI {
 
   private formatActivityLine(entry: ActivityEntry): string {
     const ts = `{gray-fg}${entry.timestamp}{/gray-fg}`;
-    let text = entry.text;
+    let text = escapeBlessedTags(entry.text);
 
     // Color-code different line types
     if (text.startsWith(">>")) {
@@ -686,7 +702,7 @@ export class WomboTUI {
     const lines = content.split("\n");
     const truncated =
       lines.length > 200 ? lines.slice(-200).join("\n") : content;
-    this.logFileBox.setContent(truncated);
+    this.logFileBox.setContent(escapeBlessedTags(truncated));
     this.logFileBox.setScrollPerc(100);
     this.logFileBox.focus();
     this.showingLogFile = true;
@@ -706,7 +722,7 @@ export class WomboTUI {
       this.buildLogBox.setLabel(` Build Log — ${agent.feature_id} `);
 
       if (agent.build_output) {
-        this.buildLogBox.setContent(agent.build_output);
+        this.buildLogBox.setContent(escapeBlessedTags(agent.build_output));
       } else if (agent.build_passed === true) {
         this.buildLogBox.setContent(
           "{green-fg}Build passed — no errors.{/green-fg}"
