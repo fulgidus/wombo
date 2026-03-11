@@ -230,114 +230,8 @@ export async function handleBuildVerification(
       saveState(projectRoot, state);
       printAgentUpdate(agent, `BUILD PASSED (${Math.round(buildResult.durationMs / 1000)}s)`);
 
-      // Auto-merge: merge verified branch into base immediately
-      printAgentUpdate(agent, "auto-merging...");
-      try {
-        const mergeResult = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
-
-        if (mergeResult.success) {
-          updateAgent(state, agent.feature_id, {
-            status: "merged",
-            completed_at: new Date().toISOString(),
-          });
-          saveState(projectRoot, state);
-          printAgentUpdate(agent, `MERGED (${mergeResult.commitHash?.slice(0, 7)})`);
-
-          // Mark feature as done in .features.yml so it won't be re-selected
-          markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
-
-          // Clean up worktree after successful merge
-          try {
-            removeWorktree(projectRoot, agent.worktree, true);
-            printAgentUpdate(agent, "worktree and branch removed");
-          } catch {
-            // Not critical — worktree cleanup is best-effort
-          }
-        } else {
-          // Merge failed — attempt automatic conflict resolution
-          const mergeError = mergeResult.error ?? "Unknown merge error";
-          printAgentUpdate(agent, `MERGE CONFLICT — attempting resolution...`);
-
-          try {
-            // Merge base INTO the feature worktree to create conflict markers
-            const conflictResult = await mergeBaseIntoFeature(
-              agent.worktree,
-              state.base_branch,
-              config
-            );
-
-            if (conflictResult.error && !conflictResult.conflicting) {
-              // mergeBaseIntoFeature itself errored out (not a conflict, e.g., network)
-              printAgentUpdate(agent, `CONFLICT SETUP FAILED: ${conflictResult.error.slice(0, 100)}`);
-              return; // Leave as "verified" for manual resolution
-            }
-
-            if (!conflictResult.conflicting) {
-              // Base merged cleanly into feature — retry merge into base.
-              printAgentUpdate(agent, "base merged cleanly into feature — retrying merge...");
-              const retryMerge = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
-              if (retryMerge.success) {
-                updateAgent(state, agent.feature_id, {
-                  status: "merged",
-                  completed_at: new Date().toISOString(),
-                });
-                saveState(projectRoot, state);
-                printAgentUpdate(agent, `MERGED after rebase (${retryMerge.commitHash?.slice(0, 7)})`);
-                markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
-                try {
-                  removeWorktree(projectRoot, agent.worktree, true);
-                } catch {}
-                return;
-              }
-
-              // Retry still failed — the clean base→feature merge didn't help.
-              // Re-run mergeBaseIntoFeature: since base was already merged in,
-              // this should be a no-op or reveal the real conflicts.
-              printAgentUpdate(agent, `retry merge still failed — launching resolver agent...`);
-
-              // We need conflict markers in the worktree for the resolver.
-              // The previous mergeBranch aborted its merge in the project root,
-              // so the project root is clean. Now merge base into feature AGAIN
-              // to see if there are conflicts visible from the feature side.
-              const secondConflict = await mergeBaseIntoFeature(
-                agent.worktree,
-                state.base_branch,
-                config
-              );
-
-              // Whether or not the second merge shows conflicts, we have a real
-              // problem that needs an agent to investigate and fix.
-              const conflictFiles = secondConflict.conflicting
-                ? secondConflict.files
-                : ["(unknown — merge direction mismatch)"];
-              const resolverMergeError = retryMerge.error ?? mergeError;
-
-              // Fall through to the resolver agent below with these values
-              await launchResolverAndRetryMerge(
-                projectRoot, state, agent, feature, config, model,
-                resolverMergeError, conflictFiles
-              );
-              return;
-            }
-
-            // There are real conflicts — launch a resolver agent
-            printAgentUpdate(
-              agent,
-              `${conflictResult.files.length} conflicting file(s): ${conflictResult.files.join(", ")}`
-            );
-
-            await launchResolverAndRetryMerge(
-              projectRoot, state, agent, feature, config, model,
-              mergeError, conflictResult.files
-            );
-          } catch (conflictErr: any) {
-            printAgentUpdate(agent, `CONFLICT RESOLUTION ERROR: ${conflictErr.message?.slice(0, 100)}`);
-            // Leave as "verified" for manual resolution
-          }
-        }
-      } catch (mergeErr: any) {
-        printAgentUpdate(agent, `AUTO-MERGE ERROR: ${mergeErr.message?.slice(0, 100)}`);
-      }
+      // Auto-merge: attempt merge + conflict resolution
+      await attemptMerge(projectRoot, state, agent, feature, config, model);
     } else {
       if (agent.retries < agent.max_retries) {
         updateAgent(state, agent.feature_id, {
@@ -395,6 +289,120 @@ export async function handleBuildVerification(
       completed_at: new Date().toISOString(),
     });
     saveState(projectRoot, state);
+  }
+}
+
+/**
+ * Attempt to merge a verified agent's branch into the base branch.
+ *
+ * Handles conflict detection, base-into-feature merge, and resolver agent
+ * launch. Extracted from handleBuildVerification so it can be called
+ * independently (e.g., from resume's sequential merge phase).
+ */
+export async function attemptMerge(
+  projectRoot: string,
+  state: WaveState,
+  agent: AgentState,
+  feature: Feature,
+  config: WomboConfig,
+  model?: string,
+): Promise<void> {
+  printAgentUpdate(agent, "auto-merging...");
+  try {
+    const mergeResult = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
+
+    if (mergeResult.success) {
+      updateAgent(state, agent.feature_id, {
+        status: "merged",
+        completed_at: new Date().toISOString(),
+      });
+      saveState(projectRoot, state);
+      printAgentUpdate(agent, `MERGED (${mergeResult.commitHash?.slice(0, 7)})`);
+
+      // Mark feature as done in .features.yml so it won't be re-selected
+      markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
+
+      // Clean up worktree after successful merge
+      try {
+        removeWorktree(projectRoot, agent.worktree, true);
+        printAgentUpdate(agent, "worktree and branch removed");
+      } catch {
+        // Not critical — worktree cleanup is best-effort
+      }
+    } else {
+      // Merge failed — attempt automatic conflict resolution
+      const mergeError = mergeResult.error ?? "Unknown merge error";
+      printAgentUpdate(agent, `MERGE CONFLICT — attempting resolution...`);
+
+      try {
+        // Merge base INTO the feature worktree to create conflict markers
+        const conflictResult = await mergeBaseIntoFeature(
+          agent.worktree,
+          state.base_branch,
+          config
+        );
+
+        if (conflictResult.error && !conflictResult.conflicting) {
+          printAgentUpdate(agent, `CONFLICT SETUP FAILED: ${conflictResult.error.slice(0, 100)}`);
+          return; // Leave as "verified" for manual resolution
+        }
+
+        if (!conflictResult.conflicting) {
+          // Base merged cleanly into feature — retry merge into base.
+          printAgentUpdate(agent, "base merged cleanly into feature — retrying merge...");
+          const retryMerge = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
+          if (retryMerge.success) {
+            updateAgent(state, agent.feature_id, {
+              status: "merged",
+              completed_at: new Date().toISOString(),
+            });
+            saveState(projectRoot, state);
+            printAgentUpdate(agent, `MERGED after rebase (${retryMerge.commitHash?.slice(0, 7)})`);
+            markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
+            try {
+              removeWorktree(projectRoot, agent.worktree, true);
+            } catch {}
+            return;
+          }
+
+          // Retry still failed — launch resolver agent
+          printAgentUpdate(agent, `retry merge still failed — launching resolver agent...`);
+
+          const secondConflict = await mergeBaseIntoFeature(
+            agent.worktree,
+            state.base_branch,
+            config
+          );
+
+          const conflictFiles = secondConflict.conflicting
+            ? secondConflict.files
+            : ["(unknown — merge direction mismatch)"];
+          const resolverMergeError = retryMerge.error ?? mergeError;
+
+          await launchResolverAndRetryMerge(
+            projectRoot, state, agent, feature, config, model,
+            resolverMergeError, conflictFiles
+          );
+          return;
+        }
+
+        // There are real conflicts — launch a resolver agent
+        printAgentUpdate(
+          agent,
+          `${conflictResult.files.length} conflicting file(s): ${conflictResult.files.join(", ")}`
+        );
+
+        await launchResolverAndRetryMerge(
+          projectRoot, state, agent, feature, config, model,
+          mergeError, conflictResult.files
+        );
+      } catch (conflictErr: any) {
+        printAgentUpdate(agent, `CONFLICT RESOLUTION ERROR: ${conflictErr.message?.slice(0, 100)}`);
+        // Leave as "verified" for manual resolution
+      }
+    }
+  } catch (mergeErr: any) {
+    printAgentUpdate(agent, `AUTO-MERGE ERROR: ${mergeErr.message?.slice(0, 100)}`);
   }
 }
 
