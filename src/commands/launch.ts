@@ -637,9 +637,15 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   const selected = selectFeatures(data, selOpts);
 
   if (selected.length === 0) {
-    console.error(
-      "No features matched the selection criteria. Use --all-ready to see all available."
-    );
+    if (opts.allReady) {
+      console.error(
+        "No launchable features found. All features may be done, cancelled, or have unmet dependencies."
+      );
+    } else {
+      console.error(
+        "No features matched the selection criteria. Use --all-ready to see all available."
+      );
+    }
     process.exit(1);
   }
 
