@@ -1,7 +1,7 @@
 version: "1.0"
 meta:
   created_at: 2026-03-11T11:00:00+01:00
-  updated_at: 2026-03-11T11:37:34.110Z
+  updated_at: 2026-03-11T12:13:10.766Z
   project: wombo
   generator: wombo
   maintainer: fulgidus
@@ -409,6 +409,227 @@ features:
         effort: PT45M
         started_at: null
         ended_at: 2026-03-11T11:13:17.259Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: cli-bugs
+    title: Fix bugs found during test drive
+    description: Fix crashes, validation gaps, and error handling issues discovered during comprehensive CLI testing.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT3H
+    started_at: null
+    ended_at: null
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: bug-enum-validation
+        title: Validate priority/difficulty enums on features add
+        description: >
+          --priority and --difficulty flags on `features add` accept any string without validation.
+          Should reject values not in the allowed enums (critical/high/medium/low/wishlist for priority,
+          trivial/easy/medium/hard/very_hard for difficulty).
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes:
+          - "Test: bun dev features add x Title --priority invalid → should error"
+        subtasks: []
+      - id: bug-yaml-schema-crash
+        title: Graceful error on invalid YAML schema
+        description: >
+          When .features.yml has valid YAML but invalid schema (e.g. `features: not-an-array`),
+          wombo crashes with "Attempted to assign to readonly property" instead of a helpful error.
+          Should catch this in loadFeatures() and emit a clear message.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes:
+          - "Test: echo 'features: not-an-array' > .features.yml && bun dev features list"
+        subtasks: []
+      - id: bug-yaml-parse-error
+        title: Wrap YAML parse errors with user-friendly message
+        description: >
+          When .features.yml is corrupted YAML, the raw yaml library error is shown. Wrap it
+          with "Failed to parse .features.yml: <reason>" for better UX.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: low
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: bug-archive-error-json
+        title: Fix features archive to use outputError() for JSON errors
+        description: >
+          `features archive nonexistent --output json` outputs plain text instead of JSON error.
+          The error path needs to use outputError() from output.ts.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: json-output-complete
+    title: Finish --output json retrofit across all commands
+    description: The agent-ready JSON output was only retrofitted on features subcommands. Operational commands (status,
+      launch, upgrade, cleanup, verify, merge, resume, retry) and remaining features subcommands (check, archive) still
+      ignore --output json.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: null
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: json-features-check
+        title: Retrofit features check with --output json
+        description: >
+          `features check --output json` still outputs text. Needs to emit JSON with
+          {ok: bool, issues: [...], items_checked: N} structure.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: json-features-archive
+        title: Retrofit features archive with --output json
+        description: >
+          `features archive` success path outputs text regardless of --output flag.
+          Needs to emit JSON with {archived: [...], count: N} structure.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: json-operational-commands
+        title: Retrofit operational commands with --output json
+        description: >
+          status, launch, upgrade, cleanup, verify, merge, resume, retry all ignore --output json.
+          Each needs structured JSON output for agent consumption. This is the bulk of the work.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - json-features-check
+          - json-features-archive
+        effort: PT5H
+        started_at: null
+        ended_at: null
+        constraints:
+          - Human-friendly text output must remain the default
+          - JSON schemas should be consistent with features subcommand patterns
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: cli-ux-polish
+    title: "UX polish: --version flag, better error messages"
+    description: Add missing standard CLI conventions (--version/-V) and improve misleading error messages found during testing.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: null
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: ux-version-flag
+        title: Add --version / -V flag
+        description: >
+          `wombo --version` shows "Unknown command" + full help dump. Should print the version
+          from package.json and exit. Standard CLI convention.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: ux-launch-no-features-msg
+        title: Fix misleading launch --all-ready message
+        description: >
+          `launch --all-ready` with no launchable features says "Use --all-ready to see all available"
+          which contradicts the flag already being passed. Should say "No launchable features found
+          (all features are done/cancelled)" or similar context-aware message.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
         constraints: []
         forbidden: []
         references: []
