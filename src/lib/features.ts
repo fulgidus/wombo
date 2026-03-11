@@ -10,10 +10,17 @@
  *   - Write-back capability for feature management commands
  */
 
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { createInterface } from "node:readline";
 import type { WomboConfig } from "../config.js";
+
+// ---------------------------------------------------------------------------
+// Template path (resolved relative to this source file)
+// ---------------------------------------------------------------------------
+
+const TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", ".features.yml");
 
 // ---------------------------------------------------------------------------
 // Types
@@ -141,6 +148,59 @@ export function formatDuration(minutes: number): string {
 }
 
 // ---------------------------------------------------------------------------
+// Features File Existence Guard
+// ---------------------------------------------------------------------------
+
+/**
+ * Prompt the user with a yes/no question via stdin.
+ */
+function promptYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase().startsWith("y"));
+    });
+  });
+}
+
+/**
+ * Ensure the features file exists before any command that needs it.
+ * If the file is missing, prompt the user to generate one from the template.
+ */
+export async function ensureFeaturesFile(
+  projectRoot: string,
+  config: WomboConfig
+): Promise<void> {
+  const filePath = resolve(projectRoot, config.featuresFile);
+
+  if (existsSync(filePath)) return;
+
+  console.log(`\nFeatures file not found: ${config.featuresFile}`);
+
+  const generate = await promptYesNo(
+    "Generate a new features file from template? (y/N): "
+  );
+
+  if (!generate) {
+    console.error(
+      `Cannot proceed without a features file. Create one manually or run again and accept the prompt.`
+    );
+    process.exit(1);
+  }
+
+  // Read template, update timestamps, write to project root
+  const template = readFileSync(TEMPLATE_PATH, "utf-8");
+  const now = new Date().toISOString();
+  const content = template
+    .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
+    .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`);
+
+  writeFileSync(filePath, content, "utf-8");
+  console.log(`Created ${config.featuresFile} from template.\n`);
+}
+
+// ---------------------------------------------------------------------------
 // Loader
 // ---------------------------------------------------------------------------
 
@@ -156,8 +216,12 @@ export function loadFeatures(
   const raw = readFileSync(filePath, "utf-8");
   const parsed = parseYaml(raw) as FeaturesFile;
 
-  // Normalize: ensure arrays are never null/undefined
-  for (const f of [...(parsed.features || []), ...(parsed.archive || [])]) {
+  // Normalize: ensure top-level arrays are never null/undefined (YAML parses
+  // empty keys as null).
+  parsed.features = parsed.features ?? [];
+  parsed.archive = parsed.archive ?? [];
+
+  for (const f of [...parsed.features, ...parsed.archive]) {
     normalizeFeature(f);
   }
 

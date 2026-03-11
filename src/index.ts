@@ -46,6 +46,7 @@ import { cmdFeaturesCheck } from "./commands/features/check.js";
 import { cmdFeaturesArchive } from "./commands/features/archive.js";
 import { cmdFeaturesShow } from "./commands/features/show.js";
 
+import { ensureFeaturesFile } from "./lib/features.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/features.js";
 
 // ---------------------------------------------------------------------------
@@ -296,6 +297,12 @@ async function main(): Promise<void> {
   // Everything else requires config
   const config = loadConfig(PROJECT_ROOT);
   validateConfig(config);
+
+  // Commands that operate on the features file — ensure it exists first
+  const needsFeatures = new Set(["launch", "resume", "verify", "retry", "features"]);
+  if (needsFeatures.has(args.command)) {
+    await ensureFeaturesFile(PROJECT_ROOT, config);
+  }
 
   switch (args.command) {
     case "launch":
