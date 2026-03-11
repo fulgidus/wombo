@@ -44,6 +44,7 @@ const STATUS_COLORS: Record<AgentStatus, string> = {
   failed: FG.red,
   merged: FG.magenta,
   retry: FG.yellow,
+  resolving_conflict: FG.cyan,
 };
 
 const STATUS_ICONS: Record<AgentStatus, string> = {
@@ -55,6 +56,7 @@ const STATUS_ICONS: Record<AgentStatus, string> = {
   failed: "!",
   merged: "#",
   retry: "?",
+  resolving_conflict: "!",
 };
 
 // ---------------------------------------------------------------------------
@@ -128,7 +130,7 @@ export function renderDashboard(state: WaveState): string {
     const icon = STATUS_ICONS[agent.status];
 
     let activityText = "-";
-    if (agent.status === "running" && agent.activity) {
+    if ((agent.status === "running" || agent.status === "resolving_conflict") && agent.activity) {
       activityText = agent.activity;
     } else if (agent.status === "installing") {
       activityText = "setting up worktree...";
@@ -178,6 +180,8 @@ export function renderDashboard(state: WaveState): string {
     summaryParts.push(colorize(`${counts.merged} merged`, FG.magenta));
   if (counts.retry > 0)
     summaryParts.push(colorize(`${counts.retry} retrying`, FG.yellow));
+  if (counts.resolving_conflict > 0)
+    summaryParts.push(colorize(`${counts.resolving_conflict} resolving`, FG.cyan));
 
   lines.push(summaryParts.join(" | "));
   lines.push("");
