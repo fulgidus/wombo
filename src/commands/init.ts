@@ -7,11 +7,12 @@
  * accepting overrides.  Press Enter on any prompt to keep the default.
  */
 
-import { existsSync, writeFileSync, readFileSync } from "node:fs";
+import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { CONFIG_FILE, DEFAULT_CONFIG, type WomboConfig } from "../config.js";
 import { FEATURES_TEMPLATE_PATH } from "../lib/features.js";
+import { AGENT_TEMPLATE_PATH } from "../lib/templates.js";
 
 export interface InitOptions {
   projectRoot: string;
@@ -69,6 +70,13 @@ class Prompter {
     const answer = await this.ask(`  ${label} [${display}]: `);
     if (!answer) return defaultVal;
     return answer.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  async yesNo(label: string, defaultVal: boolean): Promise<boolean> {
+    const display = defaultVal ? "Y/n" : "y/N";
+    const answer = await this.ask(`  ${label} [${display}]: `);
+    if (!answer) return defaultVal;
+    return answer.toLowerCase().startsWith("y");
   }
 
   close(): void {
@@ -163,6 +171,36 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
         .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`);
       writeFileSync(featuresPath, content, "utf-8");
       console.log(`Created ${cfg.featuresFile} from template.`);
+    }
+
+    // -- Install agent definition template --------------------------------
+    const agentDir = resolve(opts.projectRoot, "agent");
+    const agentDefPath = resolve(agentDir, `${cfg.agent.name}.md`);
+
+    let installAgent = true;
+    if (existsSync(agentDefPath) && !opts.force) {
+      installAgent = await p.yesNo(
+        `agent/${cfg.agent.name}.md already exists. Overwrite?`,
+        false
+      );
+    }
+
+    if (installAgent) {
+      mkdirSync(agentDir, { recursive: true });
+      const agentTemplate = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
+      writeFileSync(agentDefPath, agentTemplate, "utf-8");
+      console.log(`Created agent/${cfg.agent.name}.md from template.`);
+    } else {
+      console.log(`agent/${cfg.agent.name}.md already exists, skipping.`);
+    }
+
+    // Ensure agent/ is in configFiles
+    if (!cfg.agent.configFiles.includes("agent/")) {
+      cfg.agent.configFiles.push("agent/");
+      // Re-write config with updated configFiles
+      const updatedJson = JSON.stringify(cfg, null, 2) + "\n";
+      writeFileSync(configPath, updatedJson, "utf-8");
+      console.log(`Added agent/ to configFiles in ${CONFIG_FILE}.`);
     }
 
     console.log(`\nYou're all set! Run 'wombo help' to see available commands.\n`);
