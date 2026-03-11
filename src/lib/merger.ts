@@ -48,6 +48,37 @@ async function runSafe(cmd: string, cwd: string): Promise<{ ok: boolean; output:
   }
 }
 
+/**
+ * Parse untracked file paths from a git merge error message.
+ *
+ * Git emits this when a merge would overwrite untracked files:
+ *   error: The following untracked working tree files would be overwritten by merge:
+ *   	agent/wave-worker.md
+ *   Please move or remove them before you merge.
+ *   Aborting
+ */
+function parseUntrackedFiles(errorOutput: string): string[] {
+  const lines = errorOutput.split("\n");
+  const files: string[] = [];
+  let capturing = false;
+  for (const line of lines) {
+    if (line.includes("untracked working tree files would be overwritten")) {
+      capturing = true;
+      continue;
+    }
+    if (capturing) {
+      if (line.includes("Please move or remove") || line.includes("Aborting")) {
+        break;
+      }
+      const trimmed = line.trim();
+      if (trimmed.length > 0) {
+        files.push(trimmed);
+      }
+    }
+  }
+  return files;
+}
+
 // ---------------------------------------------------------------------------
 // Merge Operations
 // ---------------------------------------------------------------------------
@@ -80,10 +111,25 @@ export async function mergeBranch(
   await runSafe(`git pull --ff-only ${config.git.remote} "${baseBranch}"`, projectRoot);
 
   // Attempt the merge
-  const mergeResult = await runSafe(
-    `git merge ${config.git.mergeStrategy} "${featureBranch}" -m "Merge branch '${featureBranch}' into ${baseBranch}"`,
-    projectRoot
-  );
+  const mergeCmd = `git merge ${config.git.mergeStrategy} "${featureBranch}" -m "Merge branch '${featureBranch}' into ${baseBranch}"`;
+  let mergeResult = await runSafe(mergeCmd, projectRoot);
+
+  // If merge failed because untracked files would be overwritten, remove them
+  // and retry. The merge will bring in the tracked versions of these files, so
+  // the untracked copies are redundant (typically agent/ config files created
+  // by ensureAgentDefinition that the feature branch also committed).
+  if (
+    !mergeResult.ok &&
+    mergeResult.output.includes("untracked working tree files would be overwritten")
+  ) {
+    const untrackedFiles = parseUntrackedFiles(mergeResult.output);
+    if (untrackedFiles.length > 0) {
+      for (const file of untrackedFiles) {
+        await runSafe(`rm -f "${file}"`, projectRoot);
+      }
+      mergeResult = await runSafe(mergeCmd, projectRoot);
+    }
+  }
 
   if (!mergeResult.ok) {
     await runSafe("git merge --abort", projectRoot);
