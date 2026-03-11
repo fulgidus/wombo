@@ -25,6 +25,7 @@ import {
   createWorktree,
   installDeps,
   worktreeReady,
+  branchHasChanges,
   log as wtLog,
 } from "../lib/worktree.js";
 import { generatePrompt } from "../lib/prompt.js";
@@ -93,13 +94,16 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           console.log(`  ${agent.feature_id}: still running (PID ${agent.pid}), leaving alone`);
         } else {
           // Process is dead — check if worktree has meaningful changes
-          if (worktreeReady(agent.worktree)) {
-            // Worktree exists, try build verification first
-            console.log(`  ${agent.feature_id}: process dead, worktree exists — will verify build`);
+          if (worktreeReady(agent.worktree) && branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
+            // Worktree exists AND branch has commits — try build verification
+            console.log(`  ${agent.feature_id}: process dead, worktree has changes — will verify build`);
             toVerify.push(agent);
           } else {
-            // Worktree gone or incomplete — re-launch from scratch
-            console.log(`  ${agent.feature_id}: process dead, no worktree — will re-launch`);
+            // No worktree, or worktree exists but branch has no commits (agent did nothing)
+            const reason = worktreeReady(agent.worktree)
+              ? "worktree exists but no code changes"
+              : "no worktree";
+            console.log(`  ${agent.feature_id}: process dead, ${reason} — will re-launch`);
             updateAgent(state, agent.feature_id, {
               status: "queued",
               pid: null,
@@ -335,17 +339,30 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           !isProcessRunning(agent.pid) &&
           !monitor.isRunning(agent.feature_id)
         ) {
-          updateAgent(state, agent.feature_id, {
-            status: "completed",
-            completed_at: new Date().toISOString(),
-            activity: "done",
-          });
-          saveState(projectRoot, state);
-          const feature = featureMap.get(agent.feature_id)!;
-          try {
-            await handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor);
-          } catch (err: any) {
-            wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
+          // Check if the agent actually made any commits
+          if (!branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
+            // Agent died without producing any code — mark as failed
+            updateAgent(state, agent.feature_id, {
+              status: "failed",
+              error: "Agent process exited without making any commits",
+              activity: null,
+              completed_at: new Date().toISOString(),
+            });
+            saveState(projectRoot, state);
+            wtLog(agent.feature_id, "process died with no code changes — marked failed");
+          } else {
+            updateAgent(state, agent.feature_id, {
+              status: "completed",
+              completed_at: new Date().toISOString(),
+              activity: "done",
+            });
+            saveState(projectRoot, state);
+            const feature = featureMap.get(agent.feature_id)!;
+            try {
+              await handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor);
+            } catch (err: any) {
+              wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
+            }
           }
           launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
         }

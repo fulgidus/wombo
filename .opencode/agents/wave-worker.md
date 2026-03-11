@@ -1,0 +1,1 @@
+../../src/templates/wave-worker.md

@@ -1,7 +1,7 @@
 version: "1.0"
 meta:
   created_at: 2026-03-11T11:00:00+01:00
-  updated_at: 2026-03-11T12:13:10.766Z
+  updated_at: 2026-03-11T15:58:31.332Z
   project: wombo
   generator: wombo
   maintainer: fulgidus
@@ -433,9 +433,9 @@ features:
       - id: bug-enum-validation
         title: Validate priority/difficulty enums on features add
         description: >
-          --priority and --difficulty flags on `features add` accept any string without validation.
-          Should reject values not in the allowed enums (critical/high/medium/low/wishlist for priority,
-          trivial/easy/medium/hard/very_hard for difficulty).
+          --priority and --difficulty flags on `features add` accept any string without validation. Should reject values
+          not in the allowed enums (critical/high/medium/low/wishlist for priority, trivial/easy/medium/hard/very_hard
+          for difficulty).
         status: backlog
         completion: 0
         difficulty: trivial
@@ -453,9 +453,9 @@ features:
       - id: bug-yaml-schema-crash
         title: Graceful error on invalid YAML schema
         description: >
-          When .features.yml has valid YAML but invalid schema (e.g. `features: not-an-array`),
-          wombo crashes with "Attempted to assign to readonly property" instead of a helpful error.
-          Should catch this in loadFeatures() and emit a clear message.
+          When .features.yml has valid YAML but invalid schema (e.g. `features: not-an-array`), wombo crashes with
+          "Attempted to assign to readonly property" instead of a helpful error. Should catch this in loadFeatures() and
+          emit a clear message.
         status: backlog
         completion: 0
         difficulty: easy
@@ -473,8 +473,8 @@ features:
       - id: bug-yaml-parse-error
         title: Wrap YAML parse errors with user-friendly message
         description: >
-          When .features.yml is corrupted YAML, the raw yaml library error is shown. Wrap it
-          with "Failed to parse .features.yml: <reason>" for better UX.
+          When .features.yml is corrupted YAML, the raw yaml library error is shown. Wrap it with "Failed to parse
+          .features.yml: <reason>" for better UX.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -491,8 +491,8 @@ features:
       - id: bug-archive-error-json
         title: Fix features archive to use outputError() for JSON errors
         description: >
-          `features archive nonexistent --output json` outputs plain text instead of JSON error.
-          The error path needs to use outputError() from output.ts.
+          `features archive nonexistent --output json` outputs plain text instead of JSON error. The error path needs to
+          use outputError() from output.ts.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -527,8 +527,8 @@ features:
       - id: json-features-check
         title: Retrofit features check with --output json
         description: >
-          `features check --output json` still outputs text. Needs to emit JSON with
-          {ok: bool, issues: [...], items_checked: N} structure.
+          `features check --output json` still outputs text. Needs to emit JSON with {ok: bool, issues: [...],
+          items_checked: N} structure.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -545,8 +545,8 @@ features:
       - id: json-features-archive
         title: Retrofit features archive with --output json
         description: >
-          `features archive` success path outputs text regardless of --output flag.
-          Needs to emit JSON with {archived: [...], count: N} structure.
+          `features archive` success path outputs text regardless of --output flag. Needs to emit JSON with {archived:
+          [...], count: N} structure.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -563,8 +563,8 @@ features:
       - id: json-operational-commands
         title: Retrofit operational commands with --output json
         description: >
-          status, launch, upgrade, cleanup, verify, merge, resume, retry all ignore --output json.
-          Each needs structured JSON output for agent consumption. This is the bulk of the work.
+          status, launch, upgrade, cleanup, verify, merge, resume, retry all ignore --output json. Each needs structured
+          JSON output for agent consumption. This is the bulk of the work.
         status: backlog
         completion: 0
         difficulty: medium
@@ -601,8 +601,8 @@ features:
       - id: ux-version-flag
         title: Add --version / -V flag
         description: >
-          `wombo --version` shows "Unknown command" + full help dump. Should print the version
-          from package.json and exit. Standard CLI convention.
+          `wombo --version` shows "Unknown command" + full help dump. Should print the version from package.json and
+          exit. Standard CLI convention.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -619,9 +619,9 @@ features:
       - id: ux-launch-no-features-msg
         title: Fix misleading launch --all-ready message
         description: >
-          `launch --all-ready` with no launchable features says "Use --all-ready to see all available"
-          which contradicts the flag already being passed. Should say "No launchable features found
-          (all features are done/cancelled)" or similar context-aware message.
+          `launch --all-ready` with no launchable features says "Use --all-ready to see all available" which contradicts
+          the flag already being passed. Should say "No launchable features found (all features are done/cancelled)" or
+          similar context-aware message.
         status: backlog
         completion: 0
         difficulty: trivial
@@ -635,4 +635,82 @@ features:
         references: []
         notes: []
         subtasks: []
+  - id: agent-template-lifecycle
+    title: Auto-install and maintain wave-worker agent template
+    description: Wombo should ship a wave-worker agent template in src/templates/, install it into the project agent/
+      directory during 'wombo init', and verify it exists on 'wombo launch' (reinstalling if absent). This prevents the
+      failure mode where agents launch without their agent definition.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: critical
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: null
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: agent-template-file
+        title: Ship wave-worker.md as a bundled template in src/templates/
+        description: >
+          Move/copy the current agent/wave-worker.md content into src/templates/wave-worker.md
+          so wombo always has a canonical agent definition to install. The template should use
+          placeholders (e.g. {{project}}) where appropriate so it can be customized per-project.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+      - id: agent-init-install
+        title: Install agent template into project during 'wombo init'
+        description: >
+          During 'wombo init', create the agent/ directory and write the wave-worker.md template
+          into it. Also ensure agent/ is added to the configFiles array in the generated wombo.json.
+          If agent/wave-worker.md already exists, prompt the user before overwriting.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on:
+          - agent-template-file
+        effort: PT1H
+        started_at: null
+        ended_at: null
+      - id: agent-launch-guard
+        title: Check agent definition exists on launch, reinstall if absent
+        description: >
+          At the start of 'wombo launch', verify that the agent definition file exists at the
+          expected path (agent/<agentName>.md based on config). If missing, reinstall from the
+          bundled template and warn the user. This prevents the failure mode where agents spawn
+          without their agent definition file and fall back to defaults.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on:
+          - agent-template-file
+        effort: PT1H
+        started_at: null
+        ended_at: null
+      - id: agent-worktree-verify
+        title: Verify agent config files are copied into worktrees
+        description: >
+          Add a post-worktree-creation check that confirms all configFiles (especially agent/)
+          were successfully copied. Log a warning if any are missing. This is a safety net on
+          top of the existing cpSync logic in worktree.ts.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on:
+          - agent-launch-guard
+        effort: PT30M
+        started_at: null
+        ended_at: null
 archive: []

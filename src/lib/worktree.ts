@@ -318,6 +318,27 @@ export function removeWorktree(
 }
 
 /**
+ * Check if a feature branch has any commits beyond the base branch.
+ * Returns true if the branch has diverged (i.e., the agent made commits).
+ */
+export function branchHasChanges(
+  projectRoot: string,
+  branch: string,
+  baseBranch: string
+): boolean {
+  try {
+    const count = runSync(
+      `git rev-list --count "${baseBranch}..${branch}"`,
+      { cwd: projectRoot, silent: true }
+    );
+    return parseInt(count, 10) > 0;
+  } catch {
+    // If the branch doesn't exist or git fails, assume no changes
+    return false;
+  }
+}
+
+/**
  * Remove all wombo-related worktrees and prune.
  */
 export function cleanupAllWorktrees(

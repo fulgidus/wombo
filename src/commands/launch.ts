@@ -36,6 +36,7 @@ import {
   featureBranchName,
   worktreePath,
   worktreeReady,
+  branchHasChanges,
   removeWorktree,
   log as wtLog,
 } from "../lib/worktree.js";
@@ -476,16 +477,29 @@ async function launchWaveHeadless(
         !monitor.isRunning(agent.feature_id)
       ) {
         // Process exited but we didn't get a callback
-        updateAgent(state, agent.feature_id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-          activity: "done",
-        });
-        saveState(projectRoot, state);
-        try {
-          await handleBuildVerification(projectRoot, state, agent, featureMap.get(agent.feature_id)!, config, model, monitor);
-        } catch (err: any) {
-          wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
+        // Check if the agent actually made any commits
+        if (!branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
+          // Agent died without producing any code — mark as failed, not completed
+          updateAgent(state, agent.feature_id, {
+            status: "failed",
+            error: "Agent process exited without making any commits",
+            activity: null,
+            completed_at: new Date().toISOString(),
+          });
+          saveState(projectRoot, state);
+          wtLog(agent.feature_id, "process died with no code changes — marked failed");
+        } else {
+          updateAgent(state, agent.feature_id, {
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            activity: "done",
+          });
+          saveState(projectRoot, state);
+          try {
+            await handleBuildVerification(projectRoot, state, agent, featureMap.get(agent.feature_id)!, config, model, monitor);
+          } catch (err: any) {
+            wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
+          }
         }
         launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
       }
