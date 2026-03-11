@@ -1,6 +1,6 @@
 {
   "featuresFile": ".features.yml",
-  "baseBranch": "develop",
+  "baseBranch": "main",
   "build": {
     "command": "bun run build",
     "timeout": 300000,
@@ -22,7 +22,8 @@
     "configFiles": [
       ".opencode/",
       "opencode.json",
-      "AGENTS.md"
+      "AGENTS.md",
+      "agent/"
     ],
     "tmuxPrefix": "wombo"
   },
