@@ -591,7 +591,7 @@ async function main(): Promise<void> {
       break;
 
     case "status":
-      await cmdStatus({ projectRoot: PROJECT_ROOT, config });
+      await cmdStatus({ projectRoot: PROJECT_ROOT, config, outputFmt: args.outputFmt });
       break;
 
     case "verify":
