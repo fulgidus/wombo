@@ -506,6 +506,165 @@ features:
         references: []
         notes: []
         subtasks: []
+      - id: bug-dev-mode-guard
+        title: Fix dev-mode guard checking wrong package name
+        description: >
+          src/index.ts:54 checks `pkgName !== "wombo"` but package.json has `"name": "wombo-combo"`.
+          The guard that warns users against running the global binary inside the development repo
+          never triggers because the comparison always fails.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must match the actual package name "wombo-combo" in package.json
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-stale-schema-version
+        title: Fix hardcoded stale version in schema output
+        description: >
+          src/lib/schema.ts:452 hardcodes `version: "0.0.2"` while package.json is at "0.0.9".
+          Agents consuming `wombo describe` see the wrong version. Should read version from
+          package.json dynamically instead of hardcoding.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must read version dynamically from package.json, not hardcode
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-version-flag-collision
+        title: "Replace --version flag with dedicated `woco version` / `woco -v` command"
+        description: >
+          --version is documented as "print version and exit" but the arg parser at src/index.ts:219
+          consumes the next arg as a version string (for the upgrade command). Running `wombo launch
+          --version` silently eats the next argument. Fix: remove --version as a flag entirely, add
+          a `version` subcommand and `-v` shorthand that prints the version and exits. The upgrade
+          command should use `--tag` or `--release` for version pinning instead.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - "`woco version` and `woco -v` must print version and exit"
+          - "Upgrade command must use a different flag name for version pinning (e.g. --tag)"
+        forbidden:
+          - Do not use --version as a flag that consumes a value argument
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit. User suggested 'woco version' / 'woco -v' as the fix."
+        subtasks: []
+      - id: bug-trailing-flag-crash
+        title: Fix args[++i] crash when flag is last argument
+        description: >
+          Flags like --priority, --model, --only that use `args[++i]` at src/index.ts:167-251
+          return undefined when no value follows. Flags that call .split(",") on the result
+          (e.g. --only) throw "Cannot read properties of undefined". Must validate that args[i+1]
+          exists before consuming it.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT45M
+        started_at: null
+        ended_at: null
+        constraints:
+          - All flag-consuming cases in parseArgs must check bounds before args[++i]
+          - Should emit a clear error like "Flag --X requires a value"
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-status-marks-dead-completed
+        title: Fix status command marking dead agents as completed without checking changes
+        description: >
+          src/commands/status.ts:28-34 marks any agent whose process is no longer running as
+          "completed" without checking branchHasChanges. Unlike the monitor in launch.ts which
+          distinguishes between agents that made commits and those that crashed, status
+          unconditionally marks dead=completed. This leads to empty merges of agents that crashed
+          without writing code.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must check branchHasChanges before marking completed (consistent with launch.ts monitor logic)
+          - Agents that died without commits should be marked "failed" not "completed"
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-dryrun-cleanup-matching
+        title: Fix dry-run cleanup path using same naive worktree matching
+        description: >
+          src/commands/cleanup.ts:55 dry-run path uses `line.includes(prefix)` to filter worktrees,
+          which is the same bug that caused the main repo to be matched in the real cleanup. The
+          dry-run would show misleading output suggesting the main repo worktree would be removed.
+          Should use the same safe basename-based filtering as listWomboWorktrees.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must use listWomboWorktrees() for consistency, not manual filtering
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit. Same root cause as the cleanup-destroys-project bug."
+        subtasks: []
+      - id: bug-duration-parser-mismatch
+        title: Fix ISO duration validator/parser mismatch
+        description: >
+          src/lib/validate.ts:34 accepts duration formats like P1Y, P2M (years/months) but
+          src/lib/features.ts:120 parser can't handle them and returns Infinity, silently
+          corrupting sort order. Either the validator should reject year/month durations, or the
+          parser must support them.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: medium
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Validator and parser must agree on what formats are accepted
+          - If year/month support is added, use reasonable approximations (1Y=365D, 1M=30D)
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
   - id: json-output-complete
     title: Finish --output json retrofit across all commands
     description: The agent-ready JSON output was only retrofitted on features subcommands. Operational commands (status,
@@ -713,4 +872,703 @@ features:
         effort: PT30M
         started_at: null
         ended_at: null
+  - id: unit-test-suite
+    title: Add unit test suite with bun test
+    description: >
+      Add a comprehensive test suite using Bun's built-in test runner for core modules.
+      Priority targets: features parsing, state management, worktree filtering (the basename
+      bug that rm -rf'd the project), duration parsing, dependency resolution, and YAML
+      schema validation. This is critical — we shipped a bug that destroyed the project root.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: critical
+    depends_on: []
+    effort: P1D
+    started_at: null
+    ended_at: null
+    constraints:
+      - Use Bun's built-in test runner (`bun test`), no external test frameworks
+      - Must cover worktree filtering edge cases (basename vs full-path matching)
+      - Must cover arg parsing edge cases (trailing flags, missing values)
+      - Must cover features YAML parsing (null, empty, invalid schema)
+    forbidden:
+      - Do not add jest, vitest, or any external test runner dependency
+    references: []
+    notes:
+      - "2026-03-12: Created after cleanup bug destroyed the project root. Tests would have caught the .includes() vs .startsWith() issue."
+    subtasks:
+      - id: test-worktree-filtering
+        title: Test worktree listing and filtering
+        description: >
+          Unit tests for listWomboWorktrees, removeWorktree safety guard, and
+          cleanupAllWorktrees. Must include the case where project dir name
+          contains the worktree prefix (e.g. "wombo-combo" with prefix "wombo-").
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-features-parsing
+        title: Test features YAML parsing and validation
+        description: >
+          Tests for loadFeatures with various edge cases: null features, empty arrays,
+          invalid schema, corrupted YAML, duration parsing, dependency resolution.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-arg-parsing
+        title: Test CLI arg parsing edge cases
+        description: >
+          Tests for parseArgs with trailing flags, missing values, flag collisions,
+          and various command/subcommand combinations.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-state-management
+        title: Test wave state persistence and concurrent mutations
+        description: >
+          Tests for saveState/loadState atomicity, updateAgent with concurrent
+          callbacks, and state file corruption recovery.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: medium
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: wombo-logs-command
+    title: "wombo logs <feature-id> command"
+    description: >
+      Add a `wombo logs <feature-id>` command that pretty-prints agent logs from
+      .wombo-logs/<feature-id>.log with activity annotations, timestamps, and optional
+      filtering. Currently debugging failed waves requires manually reading log files.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must support --output json for agent consumption
+      - Must support --tail N to show last N lines
+      - Must support --follow to stream new output (like tail -f)
+      - Must show a helpful error if the log file doesn't exist
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: wombo-abort-command
+    title: "wombo abort <feature-id> — kill single agent"
+    description: >
+      Add a `wombo abort <feature-id>` command that kills a single running agent without
+      nuking the entire wave. Should kill the tmux session, mark the agent as failed (or
+      optionally return it to queued for retry), and update wave state. Currently the only
+      options are `cleanup` (kills everything) or manual `kill` of the PID.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must kill the tmux session cleanly
+      - Must update wave state to reflect the abort
+      - Must support --requeue flag to return the feature to queued instead of failed
+      - Must support --output json
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: status-json-output
+    title: JSON output for status command
+    description: >
+      Add --output json support to the `wombo status` command so other agents can
+      programmatically check wave status. Should emit structured JSON with wave metadata,
+      agent states, timing info, and summary statistics.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: null
+    constraints:
+      - JSON schema must include wave_id, base_branch, agents array with full state, and summary counts
+      - Must be parseable by other woco instances or agents
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit. Partially overlaps with json-output-complete but focused on status specifically."
+    subtasks: []
+  - id: features-set-priority
+    title: "features set-priority and set-difficulty commands"
+    description: >
+      Add `wombo features set-priority <id> <priority>` and `wombo features set-difficulty
+      <id> <difficulty>` commands. Currently changing priority or difficulty requires manually
+      editing the YAML file. We have set-status but no way to reprioritize programmatically.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must validate enum values (same enums as features add)
+      - Must support --output json and --dry-run
+      - Must work on both top-level features and subtasks
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: features-file-backup
+    title: Auto-backup .features.yml before writes
+    description: >
+      Before every saveFeatures() call, create a backup copy of the current .features.yml
+      as .features.yml.bak (or timestamped .features.yml.YYYY-MM-DDTHH-MM-SS.bak). A single
+      YAML serialization bug could destroy the entire feature backlog. Also make saveFeatures
+      atomic (write-to-tmp-then-rename) like saveState already does.
+    status: backlog
+    completion: 0
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT1H30M
+    started_at: null
+    ended_at: null
+    constraints:
+      - Keep only the last N backups (configurable, default 5) to avoid disk bloat
+      - Backups should be gitignored
+      - Must use atomic write (tmp + rename) like saveState
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: wave-history-export
+    title: Wave history and summary export
+    description: >
+      After a wave completes (or on demand), export wave results to a structured file
+      (.wombo-history/<wave-id>.json) with: which features succeeded/failed, how long each
+      took, retry counts, merge conflicts encountered, and resolution details. Currently
+      wave state is lost after cleanup. This enables retrospective analysis and improvement
+      planning.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: medium
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must auto-export on wave completion (not just manual)
+      - Must survive cleanup (stored separately from .wombo-state.json)
+      - Must support `wombo history` command to list/view past waves
+      - Must support --output json
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: base-branch-validation
+    title: Validate base branch exists before launch
+    description: >
+      At the start of `wombo launch`, verify that the configured baseBranch exists as a
+      local branch before creating wave state and worktrees. Currently if baseBranch doesn't
+      exist, `git branch "feature/xxx" "nonexistent-branch"` fails only after the wave state
+      is already created, leaving a broken state file.
+    status: backlog
+    completion: 0
+    difficulty: trivial
+    priority: high
+    depends_on: []
+    effort: PT30M
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must check before any state file is created
+      - Must emit a clear error message with the missing branch name
+      - Must support --output json error format
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: dependency-aware-sequencing
+    title: Dependency-aware sequential agent scheduling
+    description: >
+      When launching a wave with inter-dependent features, wombo must handle dependencies
+      programmatically: dependent features should be queued and only started once their
+      blocking features are verified/merged. Within the same dependency chain, agents should
+      work sequentially in the same worktree, maintaining validation at each step. Cross-wave
+      and cross-stream dependencies (where a feature must wait for 2+ features from different
+      waves/streams to complete) must also be supported. All dependency resolution happens
+      programmatically with no LLM intermediary — LLM decisions happen in the planning phase
+      that produces the .features.yml, not during execution.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: critical
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: null
+    constraints:
+      - Dependency resolution must be fully programmatic, no LLM calls during execution
+      - Must handle diamond dependencies (feature C depends on both A and B)
+      - Must detect circular dependencies and error before launching
+      - Sequential features in the same chain should reuse the same worktree
+      - Build verification must pass at each dependency boundary before the next feature starts
+      - Must handle the case where a dependency fails (cancel downstream or re-queue)
+    forbidden:
+      - Do not invoke LLM/agent for dependency decisions — this is pure graph scheduling
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Waves (parallel) of streams (sequential) can merge downstream. This is topological-sort-based scheduling."
+    subtasks:
+      - id: dep-graph-builder
+        title: Build dependency graph and detect cycles
+        description: >
+          Parse depends_on fields across all features and subtasks to build a DAG.
+          Detect circular dependencies and report them before launch. Compute
+          topological ordering for sequential scheduling.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: critical
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dep-sequential-scheduler
+        title: Sequential scheduling within dependency chains
+        description: >
+          When features A -> B -> C form a chain, schedule them sequentially in the
+          same worktree. After A completes and is verified, start B in the same worktree.
+          Validate at each boundary.
+        status: backlog
+        completion: 0
+        difficulty: hard
+        priority: critical
+        depends_on:
+          - dep-graph-builder
+        effort: PT6H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dep-diamond-merge-gates
+        title: Diamond dependency merge gates
+        description: >
+          When feature C depends on both A and B (different streams), C must wait
+          until both A and B are verified/merged before starting. Implement merge
+          gates that track multi-dependency readiness.
+        status: backlog
+        completion: 0
+        difficulty: hard
+        priority: high
+        depends_on:
+          - dep-sequential-scheduler
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: dynamic-agent-types
+    title: Dynamic agent-worker types from agency-agents registry
+    description: >
+      Support different agent-worker types when launching features. Available agents are
+      dynamically pulled from https://github.com/msitarzewski/agency-agents and converted
+      to woco-compatible agent definitions. Users can specify which agent type to use per
+      feature (e.g. a frontend specialist, a test writer, a refactoring agent). Agents can
+      be pulled on-demand at launch time, or woco can suggest alternatives from the registry
+      based on feature description/tags.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: high
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must pull agent definitions from the agency-agents GitHub repo dynamically
+      - Must convert/adapt agency-agents format to woco's agent template format
+      - Must cache pulled agents locally to avoid repeated network calls
+      - Must support per-feature agent type selection (via features YAML or --agent flag)
+      - Must support offline mode with cached agents
+    forbidden:
+      - Do not bundle all agents statically — they must be pulled from the registry
+    references:
+      - https://github.com/msitarzewski/agency-agents
+    notes:
+      - "2026-03-12: User requirement. Either pull on-demand or suggest alternatives from the registry."
+    subtasks:
+      - id: agent-registry-client
+        title: Build agency-agents registry client
+        description: >
+          Fetch agent definitions from github.com/msitarzewski/agency-agents, parse their
+          format, and cache locally. Support listing available agents and fetching by name.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-format-converter
+        title: Convert agency-agents format to woco agent template
+        description: >
+          Map the agency-agents definition format to woco's wave-worker.md template format.
+          Handle differences in structure, prompt style, and capabilities.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - agent-registry-client
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-selection-per-feature
+        title: Per-feature agent type selection
+        description: >
+          Add an `agent` field to the features YAML schema and --agent flag to launch.
+          When launching, use the specified agent type instead of the default wave-worker.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on:
+          - agent-format-converter
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: portless-integration
+    title: Use portless for localhost server testing
+    description: >
+      When agents start localhost servers for testing, they must always use "portless"
+      to avoid localhost:PORT collisions between concurrent agents in different worktrees.
+      Integrate portless as a required tool for any build/test step that starts a server,
+      and configure it automatically in agent worktrees.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must prevent port collisions between concurrent agents
+      - Must be transparent to agents (they don't need to know about portless)
+      - Must work with any server framework the target project uses
+    forbidden:
+      - Do not hardcode port numbers or use manual port allocation
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Critical for parallel agent execution where multiple agents may start dev servers."
+    subtasks: []
+  - id: dmux-migration
+    title: Switch from tmux to dmux (Rust-based terminal multiplexer)
+    description: >
+      Replace tmux with dmux, a faster Rust-based terminal multiplexer, for agent session
+      management. This should be a drop-in replacement in the launcher module, with all
+      tmux-specific commands translated to their dmux equivalents. Must maintain backward
+      compatibility for systems that only have tmux installed (detect and use whichever is
+      available, preferring dmux).
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: medium
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must detect available multiplexer (dmux preferred, tmux fallback)
+      - Must maintain all existing session management functionality
+      - Must be configurable via wombo.json (multiplexer preference)
+    forbidden:
+      - Do not remove tmux support entirely — it must remain as a fallback
+    references: []
+    notes:
+      - "2026-03-12: User requirement. dmux is faster and more resource-efficient than tmux."
+    subtasks: []
+  - id: agent-browser-integration
+    title: Agent Browser for real browser testing
+    description: >
+      Integrate "Agent Browser" to give agents real browser capabilities for testing
+      web applications. When a feature involves UI/frontend work, the agent should be
+      able to interact with a real browser instance for verification, visual regression
+      testing, and end-to-end testing. This goes beyond headless testing — agents should
+      have actual browser behavior available.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: medium
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must support browser-based verification as part of the build/verify pipeline
+      - Must isolate browser instances per agent (no shared state between concurrent agents)
+      - Must support headless operation for CI environments
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: User requirement. For real browser behavior in agent testing workflows."
+    subtasks: []
+  - id: tdd-red-green-coercion
+    title: Coerce TDD red-green development cycle
+    description: >
+      Enforce test-driven development in the agent workflow. Agents must: (1) write failing
+      tests first (red phase), (2) verify tests fail, (3) implement code to make tests pass
+      (green phase), (4) verify tests pass, (5) optionally refactor. The verification pipeline
+      should enforce this cycle — if an agent commits code without corresponding test changes,
+      the verification should flag it. Build verification should run tests and check that new
+      tests exist for new functionality.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: high
+    depends_on:
+      - unit-test-suite
+    effort: P1DT4H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must detect test files and verify they exist for new source files
+      - Must run tests as part of build verification
+      - Must enforce red-green cycle in agent prompts and verification
+      - Must not block features that are explicitly marked as non-testable (config, docs)
+    forbidden:
+      - Do not make TDD mandatory for trivial changes (config files, documentation)
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Agents should follow TDD discipline."
+    subtasks:
+      - id: tdd-test-detection
+        title: Detect test files and coverage for new code
+        description: >
+          Analyze git diff to identify new source files and verify corresponding test
+          files exist. Flag when code is added without tests.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: tdd-verification-step
+        title: Add TDD verification to build pipeline
+        description: >
+          Add a test-running step to the verification pipeline. Check that tests pass
+          and that new tests were added for new functionality.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - tdd-test-detection
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: tdd-agent-prompt-integration
+        title: Integrate TDD instructions into agent prompts
+        description: >
+          Update the wave-worker agent template to include TDD red-green instructions.
+          Agents should write tests first, verify they fail, then implement.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: medium
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: toon-output
+    title: "TOON: Token-Optimized Output Notation for agent efficiency"
+    description: >
+      Add a `--output toon` format across all commands that emits ultra-compact,
+      token-minimized output designed specifically for LLM agent consumption. Unlike JSON
+      (verbose with repeated keys, quotes, braces) or text (designed for human readability
+      with padding, decorations, headers), TOON strips output to the absolute minimum tokens
+      needed to convey information. Uses short delimiters, abbreviated keys, no whitespace
+      padding, no decorative elements. Example: instead of
+      `{"id":"cli-bugs","status":"backlog","priority":"high"}` emit `cli-bugs|BL|H`.
+      Agents consuming woco output burn fewer tokens on parsing context, leaving more budget
+      for reasoning. The format should be self-describing via `woco describe --output toon`
+      which emits the key legend.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must be a third output format alongside text and json (--output toon)
+      - Must reduce token count by at least 60% compared to JSON output
+      - Key abbreviations must be consistent across all commands
+      - Must include a legend/schema command so agents can learn the format at session start
+      - Pipe-delimited fields, single-char status codes, abbreviated enums
+      - Must auto-detect when an agent is consuming output (heuristic or explicit flag)
+    forbidden:
+      - Do not sacrifice parseability for compactness — agents must be able to split on delimiters reliably
+      - Do not use ambiguous abbreviations that could confuse LLMs
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Token efficiency matters when agents call woco repeatedly — every saved token is more reasoning budget."
+    subtasks:
+      - id: toon-format-spec
+        title: Design TOON format specification and key legend
+        description: >
+          Define the TOON encoding: delimiter choice (pipe), status codes (BL=backlog,
+          IP=in_progress, DN=done, etc.), priority codes (C=critical, H=high, M=medium,
+          L=low, W=wishlist), difficulty codes, and field ordering per command. Document
+          in a legend that `woco describe --output toon` can emit.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: toon-output-formatter
+        title: Implement TOON output formatter module
+        description: >
+          Create a toon formatter in src/lib/output.ts (or new src/lib/toon.ts) that
+          converts structured command results into TOON notation. Must handle all data
+          types: features lists, status dashboards, wave state, verification results.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - toon-format-spec
+        effort: PT3H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: toon-wire-commands
+        title: Wire TOON output into all commands
+        description: >
+          Add toon as a third option to --output flag resolution. Wire it into every
+          command that already supports --output json. Update schema introspection to
+          advertise toon support.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on:
+          - toon-output-formatter
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
 archive: []
