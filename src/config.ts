@@ -7,6 +7,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import type { MultiplexerPreference } from "./lib/multiplexer.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,8 +53,10 @@ export interface WomboConfig {
     name: string;
     /** Config files/dirs to copy into worktrees */
     configFiles: string[];
-    /** tmux session name prefix */
+    /** Session name prefix for terminal multiplexer */
     tmuxPrefix: string;
+    /** Terminal multiplexer preference: "auto" (prefer dmux), "dmux", or "tmux" */
+    multiplexer: MultiplexerPreference;
   };
   /** Backup configuration for features file */
   backup: {
@@ -96,6 +99,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
     name: "wave-worker",
     configFiles: [".opencode/", "opencode.json", "AGENTS.md", "agent/"],
     tmuxPrefix: "wombo",
+    multiplexer: "auto",
   },
   backup: {
     maxBackups: 5,
