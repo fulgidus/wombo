@@ -19,6 +19,7 @@
  *   wombo retry <feature-id>
  *   wombo abort <feature-id> [--requeue] [--output json]
  *   wombo cleanup
+ *   wombo history [wave-id] [--output json]
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
  *   wombo features set-status <feature-id> <status>
@@ -82,6 +83,7 @@ import { cmdRetry } from "./commands/retry.js";
 import { cmdCleanup } from "./commands/cleanup.js";
 import { cmdAbort } from "./commands/abort.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
+import { cmdHistory } from "./commands/history.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
@@ -312,6 +314,7 @@ Commands:
   retry          Retry a failed agent
   abort          Kill a single running agent (--requeue to return to queue)
   cleanup        Remove all wave worktrees and tmux sessions
+  history        List/view past wave results (stored in .wombo-history/)
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
@@ -379,6 +382,9 @@ Examples:
   wombo features check
   wombo features archive --dry-run
   wombo features show my-feature
+  wombo history
+  wombo history wave-2026-03-12-420
+  wombo history --output json
   wombo describe                           # list all commands as JSON
   wombo describe launch                    # describe a specific command
   wombo describe features add              # describe a subcommand
@@ -568,6 +574,15 @@ async function main(): Promise<void> {
 
     case "cleanup":
       await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
+      break;
+
+    case "history":
+      await cmdHistory({
+        projectRoot: PROJECT_ROOT,
+        config,
+        waveId: args.featureId,
+        outputFmt: args.outputFmt,
+      });
       break;
 
     case "abort": {
