@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { CONFIG_FILE, DEFAULT_CONFIG, type WomboConfig } from "../config.js";
 import { FEATURES_TEMPLATE_PATH } from "../lib/features.js";
-import { AGENT_TEMPLATE_PATH } from "../lib/templates.js";
+import { renderAgentTemplate } from "../lib/templates.js";
 
 export interface InitOptions {
   projectRoot: string;
@@ -197,7 +197,7 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
 
     if (installAgent) {
       mkdirSync(agentDir, { recursive: true });
-      const agentTemplate = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
+      const agentTemplate = renderAgentTemplate(cfg, opts.projectRoot);
       writeFileSync(agentDefPath, agentTemplate, "utf-8");
       console.log(`Created agent/${cfg.agent.name}.md from template.`);
     } else {

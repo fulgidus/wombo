@@ -66,6 +66,11 @@ export interface WomboConfig {
     /** Whether to use HTTPS mode */
     https: boolean;
   };
+  /** Backup configuration for features file */
+  backup: {
+    /** Maximum number of timestamped backups to keep */
+    maxBackups: number;
+  };
   /** Default runtime values */
   defaults: {
     /** Max concurrent agents */
@@ -108,6 +113,9 @@ export const DEFAULT_CONFIG: WomboConfig = {
     bin: null,
     proxyPort: 1355,
     https: false,
+  },
+  backup: {
+    maxBackups: 5,
   },
   defaults: {
     maxConcurrent: 6,
@@ -209,6 +217,9 @@ export function validateConfig(config: WomboConfig): void {
   }
   if (config.defaults.maxRetries < 0) {
     throw new Error("config.defaults.maxRetries must be >= 0");
+  }
+  if (config.backup.maxBackups < 0) {
+    throw new Error("config.backup.maxBackups must be >= 0");
   }
 }
 

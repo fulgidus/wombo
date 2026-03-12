@@ -17,6 +17,7 @@
  *   wombo verify [feature-id]
  *   wombo merge [feature-id]
  *   wombo retry <feature-id>
+ *   wombo abort <feature-id> [--requeue] [--output json]
  *   wombo cleanup
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
@@ -79,6 +80,7 @@ import { cmdVerify } from "./commands/verify.js";
 import { cmdMerge } from "./commands/merge.js";
 import { cmdRetry } from "./commands/retry.js";
 import { cmdCleanup } from "./commands/cleanup.js";
+import { cmdAbort } from "./commands/abort.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
@@ -117,6 +119,8 @@ interface CLIArgs {
   maxRetries?: number;
   noTui: boolean;
   autoPush: boolean;
+  // Abort options
+  requeue: boolean;
   // General
   featureId?: string;
   force: boolean;
@@ -153,6 +157,7 @@ function parseArgs(argv: string[]): CLIArgs {
     dryRun: false,
     noTui: false,
     autoPush: false,
+    requeue: false,
     force: false,
     checkOnly: false,
     outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
@@ -207,6 +212,9 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       case "--auto-push":
         result.autoPush = true;
+        break;
+      case "--requeue":
+        result.requeue = true;
         break;
       case "--base-branch":
         result.baseBranch = args[++i];
@@ -302,6 +310,7 @@ Commands:
   verify         Run build verification on completed agents
   merge          Merge verified branches into the base branch
   retry          Retry a failed agent
+  abort          Kill a single running agent (--requeue to return to queue)
   cleanup        Remove all wave worktrees and tmux sessions
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
@@ -359,6 +368,9 @@ Examples:
   wombo verify
   wombo merge
   wombo retry auth-flow
+  wombo abort auth-flow
+  wombo abort auth-flow --requeue
+  wombo abort auth-flow --output json
   wombo cleanup
   wombo features list --status ready --priority high
   wombo features list --fields id,status,priority --output json
@@ -415,10 +427,10 @@ async function main(): Promise<void> {
   // Commands that don't need config loading
   if (args.command === "--version" || args.command === "-V") {
     const pkgPath = resolve(import.meta.dir, "..", "package.json");
+    const pkgFile = Bun.file(pkgPath);
     try {
-      const raw = readFileSync(pkgPath, "utf-8");
-      const pkg = JSON.parse(raw);
-      console.log(`wombo ${pkg.version}`);
+      const pkg = await pkgFile.json();
+      console.log(`wombo ${pkg.version ?? "(unknown version)"}`);
     } catch {
       console.log("wombo (unknown version)");
     }
@@ -495,6 +507,7 @@ async function main(): Promise<void> {
         maxRetries: args.maxRetries ?? config.defaults.maxRetries,
         noTui: args.noTui,
         autoPush: args.autoPush,
+        outputFmt: args.outputFmt,
       });
       break;
 
@@ -556,6 +569,22 @@ async function main(): Promise<void> {
     case "cleanup":
       await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
       break;
+
+    case "abort": {
+      if (!args.featureId) {
+        console.error("Usage: wombo abort <feature-id> [--requeue] [--output json]");
+        process.exit(1);
+        return;
+      }
+      await cmdAbort({
+        projectRoot: PROJECT_ROOT,
+        config,
+        featureId: args.featureId,
+        requeue: args.requeue,
+        outputFmt: args.outputFmt,
+      });
+      break;
+    }
 
     case "features":
       await handleFeaturesSubcommand(args, PROJECT_ROOT, config);

@@ -22,6 +22,40 @@ import type { WomboConfig } from "../config.js";
 export const AGENT_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", "wave-worker.md");
 
 // ---------------------------------------------------------------------------
+// Template Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Default runtime description used when no project-specific value is available.
+ */
+const DEFAULT_RUNTIME = "Bun (not Node). TypeScript, strict mode, ESM only.";
+
+/**
+ * Render the agent template by replacing {{placeholders}} with config values.
+ *
+ * Supported placeholders:
+ *   - {{featuresFile}}  — path to the features YAML file (e.g. ".features.yml")
+ *   - {{branchPrefix}}  — git branch prefix (e.g. "feature/")
+ *   - {{buildCommand}}  — build command (e.g. "bun run build")
+ *   - {{runtime}}       — project runtime description
+ *   - {{project}}       — project directory name
+ */
+export function renderAgentTemplate(
+  config: WomboConfig,
+  projectRoot: string
+): string {
+  const raw = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
+  const projectName = projectRoot.split("/").pop() ?? "project";
+
+  return raw
+    .replace(/\{\{featuresFile\}\}/g, config.featuresFile)
+    .replace(/\{\{branchPrefix\}\}/g, config.git.branchPrefix)
+    .replace(/\{\{buildCommand\}\}/g, config.build.command)
+    .replace(/\{\{runtime\}\}/g, DEFAULT_RUNTIME)
+    .replace(/\{\{project\}\}/g, projectName);
+}
+
+// ---------------------------------------------------------------------------
 // Agent Definition Guard
 // ---------------------------------------------------------------------------
 
@@ -53,8 +87,8 @@ export function ensureAgentDefinition(
 
   try {
     mkdirSync(agentDir, { recursive: true });
-    const template = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
-    writeFileSync(agentDefPath, template, "utf-8");
+    const content = renderAgentTemplate(config, projectRoot);
+    writeFileSync(agentDefPath, content, "utf-8");
     console.warn(`  Restored agent/${config.agent.name}.md\n`);
     return true;
   } catch (err: any) {

@@ -225,6 +225,24 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: true,
   },
 
+  // --- abort --------------------------------------------------------------
+  {
+    name: "abort",
+    summary: "Kill a single running agent without affecting the rest of the wave",
+    description:
+      "Kills the tmux session and agent process for a specific feature, then " +
+      "marks the agent as failed. Use --requeue to return the feature to the " +
+      "queue instead of marking it failed.",
+    positionals: [
+      { name: "feature-id", description: "Feature ID of the agent to abort", required: true },
+    ],
+    flags: [
+      { name: "--requeue", description: "Return the feature to queued instead of marking it failed", type: "boolean", default: false },
+    ],
+    mutating: true,
+    supportsDryRun: false,
+  },
+
   // --- upgrade ------------------------------------------------------------
   {
     name: "upgrade",
