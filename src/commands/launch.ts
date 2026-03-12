@@ -883,6 +883,17 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   ensureAgentDefinition(projectRoot, config);
 
   // -------------------------------------------------------------------------
+  // Validate that the configured baseBranch exists as a local branch
+  // -------------------------------------------------------------------------
+  if (!branchExists(projectRoot, opts.baseBranch)) {
+    const fmt = opts.outputFmt ?? "text";
+    const msg = `Base branch "${opts.baseBranch}" does not exist as a local branch. ` +
+      `Create it first (e.g. "git checkout -b ${opts.baseBranch}") or specify ` +
+      `a different branch with --base-branch.`;
+    outputError(fmt, msg);
+  }
+
+  // -------------------------------------------------------------------------
   // Check for existing wave state — don't overwrite work in progress
   // -------------------------------------------------------------------------
   const existingState = loadState(projectRoot);
