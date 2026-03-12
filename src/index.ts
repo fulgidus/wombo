@@ -23,6 +23,8 @@
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
  *   wombo features set-status <feature-id> <status>
+ *   wombo features set-priority <feature-id> <priority>
+ *   wombo features set-difficulty <feature-id> <difficulty>
  *   wombo features check
  *   wombo features archive [feature-id] [--dry-run]
  *   wombo features show <feature-id>
@@ -87,6 +89,8 @@ import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
+import { cmdFeaturesSetPriority } from "./commands/features/set-priority.js";
+import { cmdFeaturesSetDifficulty } from "./commands/features/set-difficulty.js";
 import { cmdFeaturesCheck } from "./commands/features/check.js";
 import { cmdFeaturesArchive } from "./commands/features/archive.js";
 import { cmdFeaturesShow } from "./commands/features/show.js";
@@ -337,7 +341,11 @@ Features Subcommands:
   features add <id> <title> [options]
                            Add a new feature (--desc, --priority, --difficulty, --effort, --depends-on)
   features set-status <id> <status>
-                           Change a feature's status
+                            Change a feature's status
+  features set-priority <id> <priority>
+                            Change a feature's priority (critical/high/medium/low/wishlist)
+  features set-difficulty <id> <difficulty>
+                            Change a feature's difficulty (trivial/easy/medium/hard/very_hard)
   features check           Validate .features.yml (schema, deps, duplicates, cycles)
   features archive [id]    Move done/cancelled to archive (--dry-run)
   features show <id>       Show feature details
@@ -708,6 +716,68 @@ async function handleFeaturesSubcommand(
           config,
           featureId: args.featureId,
           newStatus: args.title, // second positional = new status
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-priority": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the priority value)
+        // If not provided via positional, check --priority flag
+        const newPriority = args.title || (args.priority as string | undefined);
+        if (!args.featureId || !newPriority) {
+          console.error("Usage: wombo features set-priority <feature-id> <priority>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority: args.title, // second positional = new priority
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-difficulty": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the difficulty value)
+        // If not provided via positional, check --difficulty flag
+        const newDifficulty = args.title || (args.difficulty as string | undefined);
+        if (!args.featureId || !newDifficulty) {
+          console.error("Usage: wombo features set-difficulty <feature-id> <difficulty>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty: args.title, // second positional = new difficulty
           outputFmt: args.outputFmt,
           dryRun: args.dryRun,
         });
