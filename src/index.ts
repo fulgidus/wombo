@@ -24,6 +24,7 @@
  *   wombo features check
  *   wombo features archive [feature-id] [--dry-run]
  *   wombo features show <feature-id>
+ *   wombo features graph [--ascii] [--mermaid] [--subtasks] [--status <s>]
  *   wombo help
  *   wombo --version
  */
@@ -85,6 +86,7 @@ import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
 import { cmdFeaturesCheck } from "./commands/features/check.js";
 import { cmdFeaturesArchive } from "./commands/features/archive.js";
 import { cmdFeaturesShow } from "./commands/features/show.js";
+import { cmdFeaturesGraph } from "./commands/features/graph.js";
 
 import { ensureFeaturesFile } from "./lib/features.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/features.js";
@@ -133,6 +135,10 @@ interface CLIArgs {
   dependsOn?: string[];
   // Compact output
   fields?: string[];
+  // Graph options
+  ascii?: boolean;
+  mermaidRaw?: boolean;
+  graphSubtasks?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +257,17 @@ function parseArgs(argv: string[]): CLIArgs {
         result.fields = args[++i].split(",").map((s) => s.trim());
         break;
 
+      // --- Graph options ---
+      case "--ascii":
+        result.ascii = true;
+        break;
+      case "--mermaid":
+        result.mermaidRaw = true;
+        break;
+      case "--subtasks":
+        result.graphSubtasks = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -300,6 +317,7 @@ Features Subcommands:
   features check           Validate .features.yml (schema, deps, duplicates, cycles)
   features archive [id]    Move done/cancelled to archive (--dry-run)
   features show <id>       Show feature details
+  features graph           Visualize dependency graph (--ascii, --mermaid, --subtasks)
 
 Selection Options (for launch):
   --top-priority N         Select top N features by priority
@@ -658,6 +676,18 @@ async function handleFeaturesSubcommand(
       });
       break;
     }
+
+    case "graph":
+      await cmdFeaturesGraph({
+        projectRoot,
+        config,
+        status: args.status as FeatureStatus | undefined,
+        ascii: args.ascii,
+        mermaid: args.mermaidRaw,
+        subtasks: args.graphSubtasks,
+        outputFmt: args.outputFmt,
+      });
+      break;
 
     case "help":
     case "--help":

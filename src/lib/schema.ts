@@ -326,6 +326,23 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         mutating: false,
         supportsDryRun: false,
       },
+      {
+        name: "features graph",
+        summary: "Visualize the feature dependency graph as a terminal diagram",
+        description:
+          "Builds a Mermaid flowchart from the features dependency graph and renders " +
+          "it as a Unicode box diagram. Shows dependency edges, status badges, orphan " +
+          "detection, dangling dependency warnings, and cycle detection.",
+        positionals: [],
+        flags: [
+          { name: "--status", description: "Filter graph to features with this status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
+          { name: "--ascii", description: "Use ASCII-only rendering (no Unicode box chars)", type: "boolean", default: false },
+          { name: "--mermaid", description: "Emit raw Mermaid source instead of rendered graph", type: "boolean", default: false },
+          { name: "--subtasks", description: "Include subtask-level nodes in the graph", type: "boolean", default: false },
+        ],
+        mutating: false,
+        supportsDryRun: false,
+      },
     ],
   },
 
