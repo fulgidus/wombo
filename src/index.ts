@@ -427,10 +427,10 @@ async function main(): Promise<void> {
   // Commands that don't need config loading
   if (args.command === "--version" || args.command === "-V") {
     const pkgPath = resolve(import.meta.dir, "..", "package.json");
+    const pkgFile = Bun.file(pkgPath);
     try {
-      const raw = readFileSync(pkgPath, "utf-8");
-      const pkg = JSON.parse(raw);
-      console.log(`wombo ${pkg.version}`);
+      const pkg = await pkgFile.json();
+      console.log(`wombo ${pkg.version ?? "(unknown version)"}`);
     } catch {
       console.log("wombo (unknown version)");
     }
