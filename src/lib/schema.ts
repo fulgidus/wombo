@@ -313,6 +313,32 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
+        name: "features set-priority",
+        summary: "Change a feature's priority",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "priority", description: "New priority value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "features set-difficulty",
+        summary: "Change a feature's difficulty",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "difficulty", description: "New difficulty value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
         name: "features check",
         summary: "Validate .features.yml (schema, deps, duplicates, cycles)",
         positionals: [],
