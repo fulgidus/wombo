@@ -1,7 +1,7 @@
 version: "1.0"
 meta:
   created_at: 2026-03-11T11:00:00+01:00
-  updated_at: 2026-03-12T21:23:39.423Z
+  updated_at: 2026-03-12T21:57:35.225Z
   project: wombo
   generator: wombo
   maintainer: fulgidus
@@ -192,8 +192,8 @@ features:
           checking branchHasChanges. Unlike the monitor in launch.ts which distinguishes between agents that made
           commits and those that crashed, status unconditionally marks dead=completed. This leads to empty merges of
           agents that crashed without writing code.
-        status: backlog
-        completion: 0
+        status: done
+        completion: 100
         difficulty: easy
         priority: high
         depends_on: []
@@ -331,14 +331,14 @@ features:
   - id: cli-ux-polish
     title: "UX polish: --version flag, better error messages"
     description: Add missing standard CLI conventions (--version/-V) and improve misleading error messages found during testing.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: medium
     depends_on: []
     effort: PT2H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:44:54.154Z
     constraints: []
     forbidden: []
     references: []
@@ -386,14 +386,14 @@ features:
     description: Wombo should ship a wave-worker agent template in src/templates/, install it into the project agent/
       directory during 'wombo init', and verify it exists on 'wombo launch' (reinstalling if absent). This prevents the
       failure mode where agents launch without their agent definition.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: medium
     priority: critical
     depends_on: []
     effort: PT4H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:42:42.840Z
     constraints: []
     forbidden: []
     references: []
@@ -485,14 +485,14 @@ features:
       parsing, state management, worktree filtering (the basename bug that rm -rf'd the project), duration parsing,
       dependency resolution, and YAML schema validation. This is critical — we shipped a bug that destroyed the project
       root.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: medium
     priority: critical
     depends_on: []
     effort: P1D
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:46:14.574Z
     constraints:
       - Use Bun's built-in test runner (`bun test`), no external test frameworks
       - Must cover worktree filtering edge cases (basename vs full-path matching)
@@ -583,14 +583,14 @@ features:
       Add a `wombo logs <feature-id>` command that pretty-prints agent logs from .wombo-logs/<feature-id>.log with
       activity annotations, timestamps, and optional filtering. Currently debugging failed waves requires manually
       reading log files.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: medium
     depends_on: []
     effort: PT2H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:45:25.134Z
     constraints:
       - Must support --output json for agent consumption
       - Must support --tail N to show last N lines
@@ -607,14 +607,14 @@ features:
       Add a `wombo abort <feature-id>` command that kills a single running agent without nuking the entire wave. Should
       kill the tmux session, mark the agent as failed (or optionally return it to queued for retry), and update wave
       state. Currently the only options are `cleanup` (kills everything) or manual `kill` of the PID.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: high
     depends_on: []
     effort: PT2H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:41:10.293Z
     constraints:
       - Must kill the tmux session cleanly
       - Must update wave state to reflect the abort
@@ -653,14 +653,14 @@ features:
       Add `wombo features set-priority <id> <priority>` and `wombo features set-difficulty <id> <difficulty>` commands.
       Currently changing priority or difficulty requires manually editing the YAML file. We have set-status but no way
       to reprioritize programmatically.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: medium
     depends_on: []
     effort: PT2H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:45:28.451Z
     constraints:
       - Must validate enum values (same enums as features add)
       - Must support --output json and --dry-run
@@ -676,14 +676,14 @@ features:
       Before every saveFeatures() call, create a backup copy of the current .features.yml as .features.yml.bak (or
       timestamped .features.yml.YYYY-MM-DDTHH-MM-SS.bak). A single YAML serialization bug could destroy the entire
       feature backlog. Also make saveFeatures atomic (write-to-tmp-then-rename) like saveState already does.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: easy
     priority: high
     depends_on: []
     effort: PT1H30M
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:40:35.412Z
     constraints:
       - Keep only the last N backups (configurable, default 5) to avoid disk bloat
       - Backups should be gitignored
@@ -700,14 +700,14 @@ features:
       with: which features succeeded/failed, how long each took, retry counts, merge conflicts encountered, and
       resolution details. Currently wave state is lost after cleanup. This enables retrospective analysis and
       improvement planning.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: medium
     priority: medium
     depends_on: []
     effort: PT4H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:50:07.039Z
     constraints:
       - Must auto-export on wave completion (not just manual)
       - Must survive cleanup (stored separately from .wombo-state.json)
@@ -724,14 +724,14 @@ features:
       At the start of `wombo launch`, verify that the configured baseBranch exists as a local branch before creating
       wave state and worktrees. Currently if baseBranch doesn't exist, `git branch "feature/xxx" "nonexistent-branch"`
       fails only after the wave state is already created, leaving a broken state file.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: trivial
     priority: high
     depends_on: []
     effort: PT30M
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:41:01.440Z
     constraints:
       - Must check before any state file is created
       - Must emit a clear error message with the missing branch name
@@ -750,14 +750,14 @@ features:
       Cross-wave and cross-stream dependencies (where a feature must wait for 2+ features from different waves/streams
       to complete) must also be supported. All dependency resolution happens programmatically with no LLM intermediary —
       LLM decisions happen in the planning phase that produces the .features.yml, not during execution.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: hard
     priority: critical
     depends_on: []
     effort: P2D
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:52:21.214Z
     constraints:
       - Dependency resolution must be fully programmatic, no LLM calls during execution
       - Must handle diamond dependencies (feature C depends on both A and B)
@@ -919,14 +919,14 @@ features:
       When agents start localhost servers for testing, they must always use "portless" to avoid localhost:PORT
       collisions between concurrent agents in different worktrees. Integrate portless as a required tool for any
       build/test step that starts a server, and configure it automatically in agent worktrees.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: medium
     priority: high
     depends_on: []
     effort: PT4H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:46:35.486Z
     constraints:
       - Must prevent port collisions between concurrent agents
       - Must be transparent to agents (they don't need to know about portless)
@@ -945,14 +945,14 @@ features:
       drop-in replacement in the launcher module, with all tmux-specific commands translated to their dmux equivalents.
       Must maintain backward compatibility for systems that only have tmux installed (detect and use whichever is
       available, preferring dmux).
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: medium
     priority: medium
     depends_on: []
     effort: PT6H
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:57:35.225Z
     constraints:
       - Must detect available multiplexer (dmux preferred, tmux fallback)
       - Must maintain all existing session management functionality
@@ -970,14 +970,14 @@ features:
       involves UI/frontend work, the agent should be able to interact with a real browser instance for verification,
       visual regression testing, and end-to-end testing. This goes beyond headless testing — agents should have actual
       browser behavior available.
-    status: backlog
-    completion: 0
+    status: done
+    completion: 100
     difficulty: hard
     priority: medium
     depends_on: []
     effort: P2D
     started_at: null
-    ended_at: null
+    ended_at: 2026-03-12T21:56:16.398Z
     constraints:
       - Must support browser-based verification as part of the build/verify pipeline
       - Must isolate browser instances per agent (no shared state between concurrent agents)
@@ -1161,6 +1161,33 @@ features:
         references: []
         notes: []
         subtasks: []
+  - id: features-graph-command
+    title: features graph — dependency graph visualization
+    description: >
+      Add `wombo features graph` command that builds a Mermaid flowchart from the features dependency graph and renders
+      it as a Unicode/ASCII box diagram in the terminal using mermaidtui. Shows dependency edges, status badges, orphan
+      detection, dangling dependency warnings, and cycle detection. Supports --ascii, --mermaid (raw source), --subtasks
+      (include subtask nodes), --status (filter), and --output json.
+    status: in_progress
+    completion: 70
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT3H
+    started_at: 2026-03-12T21:36:00Z
+    ended_at: null
+    constraints:
+      - Uses mermaidtui (TypeScript library, no external binary)
+      - Must support --output json for agent consumption
+      - Must include diagnostics (dangling deps, cycles, blocked-but-deps-done)
+      - Default view must show only the dependency tree (connected nodes), not orphans as full boxes
+    forbidden: []
+    references:
+      - https://github.com/tariqshams/mermaidtui
+    notes:
+      - "2026-03-12: Implemented basic version. Needs fix: buildMermaidSource renders ALL features as boxes including
+        orphans. Should filter to show only dependency-connected nodes, with orphans listed as a compact summary."
+    subtasks: []
 archive:
   - id: release-workflow
     title: GitHub Actions release workflow
@@ -1570,29 +1597,3 @@ archive:
         references: []
         notes: []
         subtasks: []
-  - id: features-graph-command
-    title: features graph — dependency graph visualization
-    description: >
-      Add `wombo features graph` command that builds a Mermaid flowchart from the features dependency graph and renders
-      it as a Unicode/ASCII box diagram in the terminal using mermaidtui. Shows dependency edges, status badges, orphan
-      detection, dangling dependency warnings, and cycle detection. Supports --ascii, --mermaid (raw source), --subtasks
-      (include subtask nodes), --status (filter), and --output json.
-    status: done
-    completion: 100
-    difficulty: medium
-    priority: high
-    depends_on: []
-    effort: PT3H
-    started_at: 2026-03-12T21:36:00Z
-    ended_at: 2026-03-12T22:00:00Z
-    constraints:
-      - Uses mermaidtui (TypeScript library, no external binary)
-      - Must support --output json for agent consumption
-      - Must include diagnostics (dangling deps, cycles, blocked-but-deps-done)
-    forbidden: []
-    references:
-      - https://github.com/tariqshams/mermaidtui
-    notes:
-      - "2026-03-12: Implemented. Uses mermaidtui for terminal rendering. classDef not supported by mermaidtui so status
-        is shown via badge prefixes (BL, DN, IP, etc)."
-    subtasks: []
