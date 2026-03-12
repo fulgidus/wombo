@@ -632,6 +632,8 @@ export function launchNextQueued(
  * Launch ALL ready agents up to capacity.
  * After a dependency completes, multiple downstream agents may become unblocked.
  * This launches as many as capacity allows, not just one.
+ *
+ * Also logs merge gate events when diamond-dependency features become unblocked.
  */
 export function launchAllReady(
   projectRoot: string,
@@ -650,9 +652,22 @@ export function launchAllReady(
   const toLaunch = ready.slice(0, available);
   for (const next of toLaunch) {
     const feature = featureMap.get(next.feature_id);
-    if (feature) {
-      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
+    if (!feature) continue;
+
+    // Log merge gate opening for diamond dependencies
+    if (next.depends_on.length > 1 && state.schedule_plan) {
+      const isMergeGate = state.schedule_plan.merge_gates.some(
+        (g) => g.feature_id === next.feature_id
+      );
+      if (isMergeGate) {
+        wtLog(
+          next.feature_id,
+          `merge gate opened — all ${next.depends_on.length} dependencies satisfied`
+        );
+      }
     }
+
+    launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
   }
 }
 
