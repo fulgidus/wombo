@@ -5,7 +5,7 @@
  *
  * This is the primary entry point for starting a new wave. It selects features
  * from the features file, creates a wave state, sets up worktrees, and launches
- * agent processes (either headless or interactive via tmux).
+ * agent processes (either headless or interactive via dmux/tmux).
  *
  * IMPORTANT: This file also exports shared helper functions that are reused
  * by resume.ts and other commands:
@@ -50,6 +50,7 @@ import {
   retryInteractive,
   launchConflictResolver,
   isProcessRunning,
+  getMultiplexerName,
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { runBuild } from "../lib/verifier.js";
@@ -62,6 +63,11 @@ import {
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
 import { outputError, type OutputFormat } from "../lib/output.js";
+import {
+  detectMultiplexer,
+  muxAttachCommand,
+  muxListCommand,
+} from "../lib/multiplexer.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -801,7 +807,7 @@ async function launchWaveInteractive(
   // Show dashboard immediately
   printDashboard(state);
 
-  // Launch initial batch in tmux — parallelize setup
+  // Launch initial batch — parallelize setup
   const tolaunch = queuedAgents(state).slice(0, opts.maxConcurrent);
   console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
 
@@ -829,7 +835,7 @@ async function launchWaveInteractive(
           config
         );
 
-        wtLog(agent.feature_id, "launching tmux session...");
+        wtLog(agent.feature_id, "launching interactive session...");
         const result = launchInteractive({
           worktreePath: agent.worktree,
           featureId: agent.feature_id,
@@ -839,13 +845,14 @@ async function launchWaveInteractive(
           config,
         });
 
+        const muxName = getMultiplexerName(config);
         updateAgent(state, agent.feature_id, {
           status: "running",
           pid: result.pid,
-          activity: "tmux session active",
+          activity: `${muxName} session active`,
         });
         saveState(projectRoot, state);
-        wtLog(agent.feature_id, `tmux session: ${config.agent.tmuxPrefix}-${agent.feature_id}`);
+        wtLog(agent.feature_id, `${muxName} session: ${config.agent.tmuxPrefix}-${agent.feature_id}`);
       } catch (err: any) {
         updateAgent(state, agent.feature_id, {
           status: "failed",
@@ -859,9 +866,11 @@ async function launchWaveInteractive(
     })
   );
 
+  const mux = detectMultiplexer(config.agent.multiplexer);
+  const muxName = getMultiplexerName(config);
   console.log("\nInteractive sessions launched. Use these commands:");
-  console.log(`  tmux attach -t ${config.agent.tmuxPrefix}-<feature-id>   # attach to a session`);
-  console.log("  tmux ls                                                  # list sessions");
+  console.log(`  ${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<feature-id>`)}   # attach to a session`);
+  console.log(`  ${muxListCommand(mux)}${" ".repeat(Math.max(1, 54 - muxListCommand(mux).length))}# list sessions`);
   console.log("  wombo status                                             # check status");
   console.log("  wombo verify                                             # verify builds");
   console.log("  wombo merge                                              # merge verified");
