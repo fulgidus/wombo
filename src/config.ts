@@ -67,6 +67,29 @@ export interface WomboConfig {
     /** Max retries per agent */
     maxRetries: number;
   };
+  /** Browser testing configuration */
+  browser: BrowserConfig;
+}
+
+/** Configuration for browser-based verification and testing */
+export interface BrowserConfig {
+  /** Enable browser testing in the verify pipeline */
+  enabled: boolean;
+  /** Path to browser binary (null = auto-detect) */
+  bin: string | null;
+  /** Run browser in headless mode (required for CI) */
+  headless: boolean;
+  /** Custom test command to run browser tests (overrides script discovery) */
+  testCommand: string | null;
+  /** Timeout for launching a browser instance (ms) */
+  launchTimeout: number;
+  /** Timeout for each browser test script (ms) */
+  testTimeout: number;
+  /** Default viewport size */
+  defaultViewport: {
+    width: number;
+    height: number;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +126,18 @@ export const DEFAULT_CONFIG: WomboConfig = {
   defaults: {
     maxConcurrent: 6,
     maxRetries: 2,
+  },
+  browser: {
+    enabled: false,
+    bin: null,
+    headless: true,
+    testCommand: null,
+    launchTimeout: 30_000,
+    testTimeout: 60_000,
+    defaultViewport: {
+      width: 1280,
+      height: 720,
+    },
   },
 };
 
