@@ -9,6 +9,7 @@
 import type { WomboConfig } from "../config.js";
 import { loadState, saveState, updateAgent } from "../lib/state.js";
 import { isProcessRunning } from "../lib/launcher.js";
+import { branchHasChanges } from "../lib/worktree.js";
 import { printDashboard } from "../lib/ui.js";
 
 export interface StatusOptions {
@@ -27,10 +28,20 @@ export async function cmdStatus(opts: StatusOptions): Promise<void> {
   for (const agent of state.agents) {
     if (agent.status === "running" && agent.pid) {
       if (!isProcessRunning(agent.pid)) {
-        updateAgent(state, agent.feature_id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        });
+        // Process is dead — check if the agent actually made commits
+        if (branchHasChanges(opts.projectRoot, agent.branch, state.base_branch)) {
+          updateAgent(state, agent.feature_id, {
+            status: "completed",
+            completed_at: new Date().toISOString(),
+          });
+        } else {
+          // Agent died without producing any code — mark as failed
+          updateAgent(state, agent.feature_id, {
+            status: "failed",
+            error: "Agent process exited without making any commits",
+            completed_at: new Date().toISOString(),
+          });
+        }
       }
     }
   }
