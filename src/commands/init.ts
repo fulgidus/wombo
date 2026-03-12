@@ -146,7 +146,17 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       "Config files to copy (comma-sep)",
       cfg.agent.configFiles
     );
-    cfg.agent.tmuxPrefix = await p.string("tmux session prefix", cfg.agent.tmuxPrefix);
+    cfg.agent.tmuxPrefix = await p.string("Multiplexer session prefix", cfg.agent.tmuxPrefix);
+    const muxPref = await p.string(
+      "Multiplexer preference (auto/dmux/tmux)",
+      cfg.agent.multiplexer
+    );
+    if (muxPref === "auto" || muxPref === "dmux" || muxPref === "tmux") {
+      cfg.agent.multiplexer = muxPref;
+    } else {
+      console.log(`  Invalid multiplexer "${muxPref}", using "auto".`);
+      cfg.agent.multiplexer = "auto";
+    }
 
     // -- Portless ---------------------------------------------------------
     section("Portless (localhost server testing)");

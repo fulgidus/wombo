@@ -15,7 +15,7 @@
  *
  * Keybinds:
  *   Up/Down   — navigate agent list
- *   Enter     — tmux attach to selected agent (interactive mode)
+ *   Enter     — attach to selected agent's multiplexer session (interactive mode)
  *   b         — show build log for selected agent
  *   p         — toggle auto-scroll (pause/resume)
  *   q / C-c   — quit
@@ -30,6 +30,12 @@ import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
+import {
+  detectMultiplexer,
+  muxHasSession,
+  muxAttach,
+  muxDisplayName,
+} from "./multiplexer.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -39,11 +45,11 @@ export interface TUIOptions {
   state: WaveState;
   monitor: ProcessMonitor;
   onQuit: () => void;
-  /** Whether the wave is running in interactive (tmux) mode. */
+  /** Whether the wave is running in interactive (multiplexer) mode. */
   interactive?: boolean;
   /** Project root path (for locating log files). */
   projectRoot: string;
-  /** Config (for tmux session prefix, log dir, etc.) */
+  /** Config (for multiplexer session prefix, log dir, etc.) */
   config: WomboConfig;
 }
 
@@ -295,9 +301,9 @@ export class WomboTUI {
       this.refreshPreview();
     });
 
-    // Enter — tmux attach
+    // Enter — multiplexer attach
     this.screen.key(["enter"], () => {
-      this.tmuxAttach();
+      this.muxAttach();
     });
 
     // b — toggle build log
@@ -584,7 +590,7 @@ export class WomboTUI {
       : "";
 
     const enterHint = this.interactive
-      ? "{gray-fg}Enter{/gray-fg} tmux attach"
+      ? "{gray-fg}Enter{/gray-fg} attach session"
       : "{gray-fg}Enter{/gray-fg} view log";
 
     const line1 = ` {bold}Keys:{/bold} {gray-fg}↑↓{/gray-fg} navigate  ${enterHint}  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {gray-fg}q{/gray-fg} quit`;
@@ -597,7 +603,7 @@ export class WomboTUI {
   // Actions
   // -------------------------------------------------------------------------
 
-  private tmuxAttach(): void {
+  private muxAttach(): void {
     const agent = this.state.agents[this.selectedIndex];
     if (!agent) return;
 
@@ -607,36 +613,31 @@ export class WomboTUI {
       return;
     }
 
+    const mux = detectMultiplexer(this.config.agent.multiplexer);
     const sessionName = `${this.config.agent.tmuxPrefix}-${agent.feature_id}`;
 
-    // Check if tmux session exists
-    try {
-      execSync(`tmux has-session -t "${sessionName}" 2>/dev/null`, {
-        stdio: "pipe",
-      });
-    } catch {
+    // Check if multiplexer session exists
+    if (!muxHasSession(mux, sessionName)) {
       // No session — show message in preview
       this.monitor.activityLogs.get(agent.feature_id)?.push({
         timestamp: new Date().toISOString().slice(11, 19),
-        text: `!! No tmux session '${sessionName}' found`,
+        text: `!! No ${muxDisplayName(mux)} session '${sessionName}' found`,
       });
       this.refreshPreview();
       this.screen.render();
       return;
     }
 
-    // Detach from blessed, attach to tmux
+    // Detach from blessed, attach to multiplexer session
     this.restoreConsole();
     this.screen.destroy();
     try {
-      execSync(`tmux attach -t "${sessionName}"`, {
-        stdio: "inherit",
-      });
+      muxAttach(mux, sessionName);
     } catch {
-      // User detached from tmux — resume TUI
+      // User detached from session — resume TUI
     }
 
-    // Re-create screen after returning from tmux
+    // Re-create screen after returning from multiplexer
     this.recreateScreen();
   }
 
@@ -744,7 +745,7 @@ export class WomboTUI {
   }
 
   /**
-   * Re-create the screen after returning from tmux attach.
+   * Re-create the screen after returning from multiplexer attach.
    * Blessed can't resume after destroy, so we rebuild everything.
    */
   private recreateScreen(): void {

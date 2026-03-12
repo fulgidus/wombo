@@ -1,17 +1,33 @@
 /**
- * launcher.ts — Process spawning and tmux session management.
+ * launcher.ts — Process spawning and terminal multiplexer session management.
  *
  * Responsibilities:
  *   - Launch agent in headless mode (agent run --format json)
- *   - Launch agent in interactive mode (tmux session with TUI)
+ *   - Launch agent in interactive mode (dmux/tmux session with TUI)
  *   - Resume sessions for auto-retry
- *   - Manage tmux sessions (create, list, kill)
+ *   - Manage multiplexer sessions (create, list, kill)
+ *
+ * Supports both dmux (preferred) and tmux (fallback) via the multiplexer
+ * abstraction layer. The active backend is determined by config.agent.multiplexer.
  */
 
 import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
 import { resolveAgentBin } from "../config.js";
+import {
+  detectMultiplexer,
+  muxNewSession,
+  muxHasSession,
+  muxKillSession,
+  muxListSessions,
+  muxGetPanePid,
+  muxLoadBuffer,
+  muxPasteBuffer,
+  muxSendKeys,
+  muxDisplayName,
+  type MultiplexerInfo,
+} from "./multiplexer.js";
 import { portlessEnv } from "./portless.js";
 
 // ---------------------------------------------------------------------------
@@ -47,8 +63,16 @@ export interface RetryOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function tmuxSessionName(featureId: string, config: WomboConfig): string {
+function muxSessionName(featureId: string, config: WomboConfig): string {
   return `${config.agent.tmuxPrefix}-${featureId}`;
+}
+
+/**
+ * Get the multiplexer info for this config.
+ * Caches detection per-process.
+ */
+function getMux(config: WomboConfig): MultiplexerInfo {
+  return detectMultiplexer(config.agent.multiplexer);
 }
 
 function runSilent(cmd: string): string {
@@ -202,21 +226,22 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
 }
 
 // ---------------------------------------------------------------------------
-// Interactive (tmux) Launch
+// Interactive (multiplexer) Launch
 // ---------------------------------------------------------------------------
 
 /**
- * Launch agent in a tmux session for interactive use.
+ * Launch agent in a terminal multiplexer session (dmux or tmux) for interactive use.
  */
 export function launchInteractive(opts: LaunchOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
-  const sessionName = tmuxSessionName(opts.featureId, opts.config);
+  const mux = getMux(opts.config);
+  const sessionName = muxSessionName(opts.featureId, opts.config);
 
   // Kill existing session if any
-  killTmuxSession(opts.featureId, opts.config);
+  killMuxSession(opts.featureId, opts.config);
 
-  // Build the agent command to run inside tmux
-  // Include portless env vars so any server started in the tmux session
+  // Build the agent command to run inside the multiplexer
+  // Include portless env vars so any server started in the session
   // is routed through the portless proxy
   const pEnv = portlessEnv(opts.featureId, opts.config);
   const envPrefix = Object.entries(pEnv)
@@ -232,36 +257,31 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
     ocArgs.push("--model", JSON.stringify(opts.model));
   }
 
-  const tmuxCmd = envPrefix ? `${envPrefix} ${ocArgs.join(" ")}` : ocArgs.join(" ");
+  const muxCmd = envPrefix ? `${envPrefix} ${ocArgs.join(" ")}` : ocArgs.join(" ");
 
-  // Create a detached tmux session running the agent
-  execSync(
-    `tmux new-session -d -s "${sessionName}" -c "${opts.worktreePath}" "${tmuxCmd}"`,
-    { stdio: "pipe" }
-  );
+  // Create a detached session running the agent
+  muxNewSession(mux, sessionName, opts.worktreePath, muxCmd);
 
   // Send the prompt as initial message after a brief delay
   setTimeout(() => {
     try {
       const tmpFile = `/tmp/wombo-prompt-${opts.featureId}.txt`;
       writeFileSync(tmpFile, opts.prompt);
-      execSync(`tmux load-buffer "${tmpFile}"`, { stdio: "pipe" });
-      execSync(`tmux paste-buffer -t "${sessionName}"`, { stdio: "pipe" });
-      execSync(`tmux send-keys -t "${sessionName}" Enter`, { stdio: "pipe" });
+      muxLoadBuffer(mux, tmpFile);
+      muxPasteBuffer(mux, sessionName);
+      muxSendKeys(mux, sessionName, "Enter");
       try { unlinkSync(tmpFile); } catch {}
     } catch {
       // If prompt sending fails, user can type manually
     }
   }, 3000);
 
-  // Get the PID of the tmux server pane process
-  const panePid = runSilent(
-    `tmux list-panes -t "${sessionName}" -F "#{pane_pid}"`
-  );
+  // Get the PID of the pane process
+  const panePid = muxGetPanePid(mux, sessionName);
 
   return {
-    pid: parseInt(panePid) || 0,
-    process: null as any, // No direct process handle in tmux mode
+    pid: panePid,
+    process: null as any, // No direct process handle in multiplexer mode
   };
 }
 
@@ -269,25 +289,24 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
  * Resume an interactive session with retry message.
  */
 export function retryInteractive(opts: RetryOptions): LaunchResult {
-  const sessionName = tmuxSessionName(opts.featureId, opts.config);
+  const mux = getMux(opts.config);
+  const sessionName = muxSessionName(opts.featureId, opts.config);
 
-  const exists = tmuxSessionExists(opts.featureId, opts.config);
+  const exists = muxSessionExists(opts.featureId, opts.config);
 
   if (exists) {
     const retryMsg = `The build failed. Fix these errors:\n${opts.buildErrors}`;
     const tmpFile = `/tmp/wombo-retry-${opts.featureId}.txt`;
     writeFileSync(tmpFile, retryMsg);
-    execSync(`tmux load-buffer "${tmpFile}"`, { stdio: "pipe" });
-    execSync(`tmux paste-buffer -t "${sessionName}"`, { stdio: "pipe" });
-    execSync(`tmux send-keys -t "${sessionName}" Enter`, { stdio: "pipe" });
+    muxLoadBuffer(mux, tmpFile);
+    muxPasteBuffer(mux, sessionName);
+    muxSendKeys(mux, sessionName, "Enter");
     try { unlinkSync(tmpFile); } catch {}
 
-    const panePid = runSilent(
-      `tmux list-panes -t "${sessionName}" -F "#{pane_pid}"`
-    );
+    const panePid = muxGetPanePid(mux, sessionName);
 
     return {
-      pid: parseInt(panePid) || 0,
+      pid: panePid,
       process: null as any,
     };
   }
@@ -304,54 +323,78 @@ export function retryInteractive(opts: RetryOptions): LaunchResult {
 }
 
 // ---------------------------------------------------------------------------
-// tmux Session Management
+// Multiplexer Session Management
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a tmux session exists for a feature.
+ * Check if a multiplexer session exists for a feature.
  */
-export function tmuxSessionExists(
+export function muxSessionExists(
   featureId: string,
   config: WomboConfig
 ): boolean {
-  const sessionName = tmuxSessionName(featureId, config);
-  return runSilent(`tmux has-session -t "${sessionName}" 2>/dev/null && echo yes`) === "yes";
+  const mux = getMux(config);
+  const sessionName = muxSessionName(featureId, config);
+  return muxHasSession(mux, sessionName);
 }
 
 /**
- * Kill a tmux session for a feature.
+ * Kill a multiplexer session for a feature.
  */
-export function killTmuxSession(
+export function killMuxSession(
   featureId: string,
   config: WomboConfig
 ): void {
-  const sessionName = tmuxSessionName(featureId, config);
-  runSilent(`tmux kill-session -t "${sessionName}" 2>/dev/null`);
+  const mux = getMux(config);
+  const sessionName = muxSessionName(featureId, config);
+  muxKillSession(mux, sessionName);
 }
 
 /**
- * List all wombo-related tmux sessions.
+ * List all wombo-related multiplexer sessions.
  */
-export function listTmuxSessions(config: WomboConfig): string[] {
-  const output = runSilent(
-    `tmux list-sessions -F "#{session_name}" 2>/dev/null`
-  );
-  if (!output) return [];
-  return output
-    .split("\n")
-    .filter((s) => s.startsWith(config.agent.tmuxPrefix + "-"));
+export function listMuxSessions(config: WomboConfig): string[] {
+  const mux = getMux(config);
+  const sessions = muxListSessions(mux);
+  return sessions.filter((s) => s.startsWith(config.agent.tmuxPrefix + "-"));
 }
 
 /**
- * Kill all wombo-related tmux sessions.
+ * Kill all wombo-related multiplexer sessions.
  */
-export function killAllTmuxSessions(config: WomboConfig): number {
-  const sessions = listTmuxSessions(config);
+export function killAllMuxSessions(config: WomboConfig): number {
+  const mux = getMux(config);
+  const sessions = listMuxSessions(config);
   for (const s of sessions) {
-    runSilent(`tmux kill-session -t "${s}" 2>/dev/null`);
+    muxKillSession(mux, s);
   }
   return sessions.length;
 }
+
+/**
+ * Get the display name of the active multiplexer backend.
+ */
+export function getMultiplexerName(config: WomboConfig): string {
+  try {
+    const mux = getMux(config);
+    return muxDisplayName(mux);
+  } catch {
+    return "tmux/dmux";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Backward Compatibility Aliases
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use muxSessionExists instead */
+export const tmuxSessionExists = muxSessionExists;
+/** @deprecated Use killMuxSession instead */
+export const killTmuxSession = killMuxSession;
+/** @deprecated Use listMuxSessions instead */
+export const listTmuxSessions = listMuxSessions;
+/** @deprecated Use killAllMuxSessions instead */
+export const killAllTmuxSessions = killAllMuxSessions;
 
 /**
  * Check if a process is still running by PID.

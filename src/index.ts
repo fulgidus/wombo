@@ -339,7 +339,7 @@ Commands:
   retry          Retry a failed agent
   abort          Kill a single running agent (--requeue to return to queue)
   logs           Pretty-print agent logs for a feature
-  cleanup        Remove all wave worktrees and tmux sessions
+  cleanup        Remove all wave worktrees and multiplexer sessions
   history        List/view past wave results (stored in .wombo-history/)
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
@@ -372,7 +372,7 @@ Selection Options (for launch):
 Launch Options:
   --max-concurrent N       Max agents running in parallel (default: from config)
   --model <model>          Model to use (e.g., "anthropic/claude-sonnet-4-20250514")
-  --interactive            Use tmux TUI mode instead of headless
+  --interactive            Use multiplexer (dmux/tmux) TUI mode instead of headless
   --no-tui                 Headless mode without neo-blessed TUI (periodic console dashboard)
   --auto-push              Push base branch to remote after all merges complete
   --dry-run                Show what would be launched without launching

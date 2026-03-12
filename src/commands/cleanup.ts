@@ -3,7 +3,7 @@
  *
  * Usage: wombo cleanup
  *
- * Kills tmux sessions, removes worktrees, removes state and log files.
+ * Kills multiplexer sessions (dmux/tmux), removes worktrees, removes state and log files.
  *
  * NOTE: .wombo-history/ is intentionally NOT removed by cleanup.
  * Wave history records are meant to survive cleanup for retrospective
@@ -14,8 +14,12 @@ import { existsSync, unlinkSync, rmSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
-import { killAllTmuxSessions } from "../lib/launcher.js";
+import { killAllMuxSessions, getMultiplexerName } from "../lib/launcher.js";
 import { cleanupAllWorktrees } from "../lib/worktree.js";
+import {
+  detectMultiplexer,
+  muxListSessions,
+} from "../lib/multiplexer.js";
 
 export interface CleanupOptions {
   projectRoot: string;
@@ -30,21 +34,19 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   if (opts.dryRun) {
     console.log("\n[dry-run] Would perform the following cleanup:\n");
 
-    // List tmux sessions that would be killed
+    // List multiplexer sessions that would be killed
+    const muxName = getMultiplexerName(config);
     try {
-      const sessions = execSync("tmux list-sessions -F '#{session_name}'", {
-        encoding: "utf-8",
-      }).trim();
+      const mux = detectMultiplexer(config.agent.multiplexer);
+      const sessions = muxListSessions(mux);
       const prefix = config.agent.tmuxPrefix;
-      const matching = sessions
-        .split("\n")
-        .filter((s) => s.startsWith(prefix));
-      console.log(`  tmux sessions to kill: ${matching.length}`);
+      const matching = sessions.filter((s) => s.startsWith(prefix));
+      console.log(`  ${muxName} sessions to kill: ${matching.length}`);
       for (const s of matching) {
         console.log(`    ${s}`);
       }
     } catch {
-      console.log("  tmux sessions to kill: 0 (no tmux server running)");
+      console.log(`  ${muxName} sessions to kill: 0 (no ${muxName} server running)`);
     }
 
     // List worktrees that would be removed
@@ -76,9 +78,10 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
 
   console.log("\n--- Wombo: Cleanup ---\n");
 
-  // Kill tmux sessions
-  const killed = killAllTmuxSessions(config);
-  console.log(`Killed ${killed} tmux session(s)`);
+  // Kill multiplexer sessions
+  const muxName = getMultiplexerName(config);
+  const killed = killAllMuxSessions(config);
+  console.log(`Killed ${killed} ${muxName} session(s)`);
 
   // Remove worktrees
   const removed = cleanupAllWorktrees(projectRoot, config);
