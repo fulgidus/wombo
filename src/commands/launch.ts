@@ -38,6 +38,7 @@ import {
   worktreePath,
   worktreeReady,
   branchHasChanges,
+  branchExists,
   removeWorktree,
   log as wtLog,
 } from "../lib/worktree.js";
@@ -60,6 +61,7 @@ import {
 } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
+import { outputError, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +86,8 @@ export interface LaunchCommandOptions {
   maxRetries: number;
   noTui: boolean;
   autoPush: boolean;
+  // Output
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
