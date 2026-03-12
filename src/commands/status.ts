@@ -9,6 +9,7 @@
 import type { WomboConfig } from "../config.js";
 import { loadState, saveState, updateAgent } from "../lib/state.js";
 import { isProcessRunning } from "../lib/launcher.js";
+import { branchHasChanges } from "../lib/worktree.js";
 import { printDashboard } from "../lib/ui.js";
 
 export interface StatusOptions {
@@ -27,9 +28,33 @@ export async function cmdStatus(opts: StatusOptions): Promise<void> {
   for (const agent of state.agents) {
     if (agent.status === "running" && agent.pid) {
       if (!isProcessRunning(agent.pid)) {
+        // Check if the agent actually made any commits before marking completed
+        if (branchHasChanges(opts.projectRoot, agent.branch, state.base_branch)) {
+          updateAgent(state, agent.feature_id, {
+            status: "completed",
+            completed_at: new Date().toISOString(),
+          });
+        } else {
+          // Agent died without producing any code — mark as failed, not completed
+          updateAgent(state, agent.feature_id, {
+            status: "failed",
+            error: "Agent process exited without making any commits",
+            completed_at: new Date().toISOString(),
+          });
+        }
+      }
+    }
+  }
+
+  // Repair pass: re-check agents marked "completed" but never verified.
+  // Catches agents falsely promoted to completed by older versions of status.ts
+  // that didn't check branchHasChanges.
+  for (const agent of state.agents) {
+    if (agent.status === "completed" && agent.build_passed === null) {
+      if (!branchHasChanges(opts.projectRoot, agent.branch, state.base_branch)) {
         updateAgent(state, agent.feature_id, {
-          status: "completed",
-          completed_at: new Date().toISOString(),
+          status: "failed",
+          error: "Agent process exited without making any commits",
         });
       }
     }
