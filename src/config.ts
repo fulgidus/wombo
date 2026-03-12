@@ -140,7 +140,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
   },
   agent: {
     bin: null,
-    name: "wave-worker",
+    name: "generalist-agent",
     configFiles: [".opencode/", "opencode.json", "AGENTS.md", "agent/"],
     tmuxPrefix: "wombo",
     multiplexer: "auto",
