@@ -168,8 +168,32 @@ export async function launchSingleHeadless(
   saveState(projectRoot, state);
 
   try {
-    // Skip worktree setup if already ready (resume case)
-    if (worktreeReady(agent.worktree)) {
+    // Check if this agent is reusing a chain predecessor's worktree
+    const isChainReuse = agent.depends_on.some((depId) => {
+      const depAgent = state.agents.find((a) => a.feature_id === depId);
+      return depAgent && depAgent.worktree === agent.worktree;
+    });
+
+    if (isChainReuse && worktreeReady(agent.worktree)) {
+      // Chain worktree reuse: the worktree already exists from a predecessor.
+      // Create a new branch for this feature and switch the worktree to it.
+      wtLog(agent.feature_id, "reusing chain worktree — switching branch...");
+      updateAgent(state, agent.feature_id, { activity: "switching branch (chain reuse)..." });
+
+      try {
+        // Create the new feature branch from base (in the worktree)
+        execSync(`git checkout -B "${agent.branch}" "${state.base_branch}"`, {
+          cwd: agent.worktree,
+          stdio: "pipe",
+        });
+        wtLog(agent.feature_id, `switched to branch ${agent.branch}`);
+      } catch (branchErr: any) {
+        wtLog(agent.feature_id, `branch switch failed: ${branchErr.message}`);
+        // Fall through to normal worktree creation
+        await createWorktree(projectRoot, feature.id, state.base_branch, config);
+      }
+    } else if (worktreeReady(agent.worktree)) {
+      // Skip worktree setup if already ready (resume case)
       wtLog(agent.feature_id, "worktree already exists, skipping setup");
     } else {
       // Create worktree (async — doesn't block other agents)
@@ -342,12 +366,22 @@ export async function attemptMerge(
       // Mark feature as done in .features.yml so it won't be re-selected
       markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
 
-      // Clean up worktree after successful merge
-      try {
-        removeWorktree(projectRoot, agent.worktree, true);
-        printAgentUpdate(agent, "worktree and branch removed");
-      } catch {
-        // Not critical — worktree cleanup is best-effort
+      // Clean up worktree after successful merge — but preserve it if
+      // downstream agents in the same chain share this worktree.
+      const hasChainSuccessor = agent.depended_on_by.some((depId) => {
+        const depAgent = state.agents.find((a) => a.feature_id === depId);
+        return depAgent && depAgent.worktree === agent.worktree;
+      });
+
+      if (hasChainSuccessor) {
+        printAgentUpdate(agent, "worktree preserved for chain successor");
+      } else {
+        try {
+          removeWorktree(projectRoot, agent.worktree, true);
+          printAgentUpdate(agent, "worktree and branch removed");
+        } catch {
+          // Not critical — worktree cleanup is best-effort
+        }
       }
     } else {
       // Merge failed — attempt automatic conflict resolution
@@ -379,9 +413,16 @@ export async function attemptMerge(
             saveState(projectRoot, state);
             printAgentUpdate(agent, `MERGED after rebase (${retryMerge.commitHash?.slice(0, 7)})`);
             markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
-            try {
-              removeWorktree(projectRoot, agent.worktree, true);
-            } catch {}
+            // Preserve worktree for chain successors
+            const hasChainSuccessorRebase = agent.depended_on_by.some((depId) => {
+              const depAgent = state.agents.find((a) => a.feature_id === depId);
+              return depAgent && depAgent.worktree === agent.worktree;
+            });
+            if (!hasChainSuccessorRebase) {
+              try {
+                removeWorktree(projectRoot, agent.worktree, true);
+              } catch {}
+            }
             return;
           }
 
@@ -511,9 +552,16 @@ async function launchResolverAndRetryMerge(
     saveState(projectRoot, state);
     printAgentUpdate(agent, `MERGED after conflict resolution (${retryMerge.commitHash?.slice(0, 7)})`);
     markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
-    try {
-      removeWorktree(projectRoot, agent.worktree, true);
-    } catch {}
+    // Preserve worktree for chain successors
+    const hasChainSuccessorConflict = agent.depended_on_by.some((depId) => {
+      const depAgent = state.agents.find((a) => a.feature_id === depId);
+      return depAgent && depAgent.worktree === agent.worktree;
+    });
+    if (!hasChainSuccessorConflict) {
+      try {
+        removeWorktree(projectRoot, agent.worktree, true);
+      } catch {}
+    }
   } else {
     printAgentUpdate(agent, `POST-CONFLICT MERGE FAILED: ${retryMerge.error}`);
     updateAgent(state, agent.feature_id, {
@@ -1093,9 +1141,25 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   // Create agent entries for all selected features
   const selectedIds = new Set(selected.map((f) => f.id));
 
+  // Build a map from feature ID → shared worktree path for chain reuse.
+  // All features in the same chain share the worktree of the chain's first feature.
+  const chainWorktreeMap = new Map<string, string>();
+  if (schedulePlan) {
+    for (const stream of schedulePlan.streams) {
+      if (stream.featureIds.length > 1) {
+        // All features in this chain share the first feature's worktree
+        const sharedWtPath = worktreePath(projectRoot, stream.featureIds[0], config);
+        for (const featureId of stream.featureIds) {
+          chainWorktreeMap.set(featureId, sharedWtPath);
+        }
+      }
+    }
+  }
+
   for (const feature of selected) {
     const branch = featureBranchName(feature.id, config);
-    const wtPath = worktreePath(projectRoot, feature.id, config);
+    // Use shared worktree path for chain members, or individual path otherwise
+    const wtPath = chainWorktreeMap.get(feature.id) ?? worktreePath(projectRoot, feature.id, config);
     const agent = createAgentState(feature.id, branch, wtPath, opts.maxRetries);
 
     // Set effort estimate from feature spec
