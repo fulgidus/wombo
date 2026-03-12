@@ -17,6 +17,8 @@ import {
   saveState,
   updateAgent,
   queuedAgents,
+  readyToLaunchAgents,
+  cancelDownstream,
   isWaveComplete,
   type WaveState,
   type AgentState,
@@ -45,6 +47,7 @@ import {
   handleBuildVerification,
   handleRetry,
   launchNextQueued,
+  launchAllReady,
   markFeatureDone,
   attemptMerge,
 } from "./launch.js";
@@ -390,10 +393,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         const agent = state.agents.find((a) => a.feature_id === featureId)!;
         const feature = featureMap.get(featureId)!;
         handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor)
-          .then(() => launchNextQueued(projectRoot, state, featureMap, monitor, config, model))
+          .then(() => launchAllReady(projectRoot, state, featureMap, monitor, config, model))
           .catch((err) => {
             wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-            launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+            launchAllReady(projectRoot, state, featureMap, monitor, config, model);
           });
       },
       onError: (featureId, error) => {
@@ -415,8 +418,15 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             completed_at: new Date().toISOString(),
           });
           saveState(projectRoot, state);
+
+          // Cascade failure to downstream agents
+          const cancelled = cancelDownstream(state, featureId);
+          if (cancelled.length > 0) {
+            wtLog(featureId, `downstream cancelled: ${cancelled.join(", ")}`);
+            saveState(projectRoot, state);
+          }
         }
-        launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+        launchAllReady(projectRoot, state, featureMap, monitor, config, model);
       },
       onActivity: (featureId, activity) => {
         updateAgent(state, featureId, {
@@ -500,7 +510,15 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             });
             saveState(projectRoot, state);
             wtLog(agent.feature_id, "conflict resolver died — marked failed");
-            launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+
+            // Cascade failure to downstream agents
+            const cancelled = cancelDownstream(state, agent.feature_id);
+            if (cancelled.length > 0) {
+              wtLog(agent.feature_id, `downstream cancelled: ${cancelled.join(", ")}`);
+              saveState(projectRoot, state);
+            }
+
+            launchAllReady(projectRoot, state, featureMap, monitor, config, model);
             continue;
           }
           // Check if the agent actually made any commits
@@ -514,6 +532,13 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             });
             saveState(projectRoot, state);
             wtLog(agent.feature_id, "process died with no code changes — marked failed");
+
+            // Cascade failure to downstream agents
+            const cancelled = cancelDownstream(state, agent.feature_id);
+            if (cancelled.length > 0) {
+              wtLog(agent.feature_id, `downstream cancelled: ${cancelled.join(", ")}`);
+              saveState(projectRoot, state);
+            }
           } else {
             updateAgent(state, agent.feature_id, {
               status: "completed",
@@ -528,7 +553,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
               wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
             }
           }
-          launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model);
         }
       }
 

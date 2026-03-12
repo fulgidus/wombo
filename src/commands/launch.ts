@@ -27,9 +27,13 @@ import {
   updateAgent,
   activeAgents,
   queuedAgents,
+  readyToLaunchAgents,
+  areAgentDepsReady,
+  cancelDownstream,
   isWaveComplete,
   type WaveState,
   type AgentState,
+  type SerializedSchedulePlan,
 } from "../lib/state.js";
 import {
   createWorktree,
@@ -60,6 +64,15 @@ import {
 } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
+import {
+  buildDepGraph,
+  validateDepGraph,
+  buildSchedulePlan,
+  formatSchedulePlan,
+  getStreamForFeature,
+  type DepGraph,
+  type SchedulePlan,
+} from "../lib/dependency-graph.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -278,6 +291,13 @@ export async function handleBuildVerification(
         });
         saveState(projectRoot, state);
         printAgentUpdate(agent, "BUILD FAILED — max retries reached");
+
+        // Cascade failure to downstream agents
+        const cancelled = cancelDownstream(state, agent.feature_id);
+        if (cancelled.length > 0) {
+          printAgentUpdate(agent, `downstream cancelled: ${cancelled.join(", ")}`);
+          saveState(projectRoot, state);
+        }
       }
     }
   } catch (err: any) {
@@ -538,6 +558,7 @@ export function handleRetry(
 
 /**
  * Launch the next queued agent if capacity allows.
+ * Dependency-aware: only launches agents whose dependencies are satisfied.
  */
 export function launchNextQueued(
   projectRoot: string,
@@ -548,10 +569,38 @@ export function launchNextQueued(
   model?: string
 ): void {
   const active = activeAgents(state);
-  const queued = queuedAgents(state);
+  const ready = readyToLaunchAgents(state);
 
-  if (active.length < state.max_concurrent && queued.length > 0) {
-    const next = queued[0];
+  if (active.length < state.max_concurrent && ready.length > 0) {
+    const next = ready[0];
+    const feature = featureMap.get(next.feature_id);
+    if (feature) {
+      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
+    }
+  }
+}
+
+/**
+ * Launch ALL ready agents up to capacity.
+ * After a dependency completes, multiple downstream agents may become unblocked.
+ * This launches as many as capacity allows, not just one.
+ */
+export function launchAllReady(
+  projectRoot: string,
+  state: WaveState,
+  featureMap: Map<string, Feature>,
+  monitor: ProcessMonitor,
+  config: WomboConfig,
+  model?: string
+): void {
+  const active = activeAgents(state);
+  const ready = readyToLaunchAgents(state);
+  const available = state.max_concurrent - active.length;
+
+  if (available <= 0 || ready.length === 0) return;
+
+  const toLaunch = ready.slice(0, available);
+  for (const next of toLaunch) {
     const feature = featureMap.get(next.feature_id);
     if (feature) {
       launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
@@ -587,10 +636,14 @@ async function launchWaveHeadless(
       // Run build verification — fire-and-forget
       const agent = state.agents.find((a) => a.feature_id === featureId)!;
       handleBuildVerification(projectRoot, state, agent, featureMap.get(featureId)!, config, model, monitor)
-        .then(() => launchNextQueued(projectRoot, state, featureMap, monitor, config, model))
+        .then(() => {
+          // After verification/merge, try to launch dependency-ready agents
+          // Multiple queued agents may now be unblocked
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model);
+        })
         .catch((err) => {
           wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-          launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model);
         });
     },
     onError: (featureId, error) => {
@@ -612,10 +665,17 @@ async function launchWaveHeadless(
           completed_at: new Date().toISOString(),
         });
         saveState(projectRoot, state);
+
+        // Cascade failure to downstream agents
+        const cancelled = cancelDownstream(state, featureId);
+        if (cancelled.length > 0) {
+          wtLog(featureId, `downstream cancelled: ${cancelled.join(", ")}`);
+          saveState(projectRoot, state);
+        }
       }
 
-      // Try to launch next queued agent
-      launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+      // Try to launch dependency-ready agents
+      launchAllReady(projectRoot, state, featureMap, monitor, config, model);
     },
     onOutput: (_featureId, _data) => {
       // Raw output — logged to file by ProcessMonitor
@@ -668,8 +728,9 @@ async function launchWaveHeadless(
     process.exit(0);
   });
 
-  // Launch initial batch — set up worktrees in parallel
-  const tolaunch = queuedAgents(state).slice(0, opts.maxConcurrent);
+  // Launch initial batch — only agents whose dependencies are already satisfied
+  const ready = readyToLaunchAgents(state);
+  const tolaunch = ready.slice(0, opts.maxConcurrent);
   console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
 
   await Promise.all(
@@ -728,6 +789,13 @@ async function launchWaveHeadless(
           });
           saveState(projectRoot, state);
           wtLog(agent.feature_id, "process died with no code changes — marked failed");
+
+          // Cascade failure to downstream agents
+          const cancelled = cancelDownstream(state, agent.feature_id);
+          if (cancelled.length > 0) {
+            wtLog(agent.feature_id, `downstream cancelled: ${cancelled.join(", ")}`);
+            saveState(projectRoot, state);
+          }
         } else {
           updateAgent(state, agent.feature_id, {
             status: "completed",
@@ -741,7 +809,7 @@ async function launchWaveHeadless(
             wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
           }
         }
-        launchNextQueued(projectRoot, state, featureMap, monitor, config, model);
+        launchAllReady(projectRoot, state, featureMap, monitor, config, model);
       }
     }
 
@@ -971,6 +1039,32 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     }))
   );
 
+  // ---------------------------------------------------------------------------
+  // Dependency graph analysis
+  // ---------------------------------------------------------------------------
+  const depGraph = buildDepGraph(selected, data.features);
+  let schedulePlan: SchedulePlan | null = null;
+
+  // Check if any features actually have dependencies within the selected set
+  const hasDeps = selected.some(
+    (f) => f.depends_on.some((d) => selected.find((s) => s.id === d))
+  );
+
+  if (hasDeps) {
+    // Validate graph — throws on cycles or dangling deps
+    try {
+      validateDepGraph(depGraph);
+    } catch (err: any) {
+      console.error(`\n${err.message}`);
+      console.error("\nFix dependency issues before launching.");
+      process.exit(1);
+    }
+
+    // Build scheduling plan
+    schedulePlan = buildSchedulePlan(depGraph);
+    console.log(`\n${formatSchedulePlan(schedulePlan)}\n`);
+  }
+
   if (opts.dryRun) {
     console.log("Dry run — not launching agents.");
     return;
@@ -984,14 +1078,43 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     interactive: opts.interactive,
   });
 
+  // Store serialized schedule plan in wave state
+  if (schedulePlan) {
+    state.schedule_plan = {
+      streams: schedulePlan.streams.map((s) => s.featureIds),
+      merge_gates: schedulePlan.mergeGates.map((g) => ({
+        feature_id: g.featureId,
+        wait_for: g.waitFor,
+      })),
+      topological_order: schedulePlan.topologicalOrder,
+    };
+  }
+
   // Create agent entries for all selected features
+  const selectedIds = new Set(selected.map((f) => f.id));
+
   for (const feature of selected) {
     const branch = featureBranchName(feature.id, config);
     const wtPath = worktreePath(projectRoot, feature.id, config);
     const agent = createAgentState(feature.id, branch, wtPath, opts.maxRetries);
+
     // Set effort estimate from feature spec
     const effortMinutes = parseDurationMinutes(feature.effort);
     agent.effort_estimate_ms = effortMinutes === Infinity ? null : effortMinutes * 60 * 1000;
+
+    // Populate dependency fields from the graph
+    const graphNode = depGraph.nodes.get(feature.id);
+    if (graphNode) {
+      // Only track internal deps (within the selected set)
+      agent.depends_on = graphNode.dependsOn.filter((d) => selectedIds.has(d));
+      agent.depended_on_by = graphNode.dependedOnBy.filter((d) => selectedIds.has(d));
+    }
+
+    // Set stream index
+    if (schedulePlan) {
+      agent.stream_index = getStreamForFeature(schedulePlan, feature.id);
+    }
+
     state.agents.push(agent);
   }
 
