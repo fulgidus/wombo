@@ -10,8 +10,8 @@
  *   - Write-back capability for feature management commands
  */
 
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, unlinkSync, renameSync } from "node:fs";
+import { resolve, dirname, join, basename } from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createInterface } from "node:readline";
 import type { WomboConfig } from "../config.js";
@@ -230,6 +230,10 @@ export function loadFeatures(
 
 /**
  * Save the features file back to disk (for management commands).
+ * Before writing:
+ *   1. Creates a timestamped backup of the existing file
+ *   2. Rotates old backups to keep only the last N (config.backup.maxBackups)
+ *   3. Writes atomically via tmp file + rename (like saveState)
  */
 export function saveFeatures(
   projectRoot: string,
@@ -237,13 +241,80 @@ export function saveFeatures(
   data: FeaturesFile
 ): void {
   const filePath = resolve(projectRoot, config.featuresFile);
+
+  // --- Backup existing file before overwriting ---
+  if (existsSync(filePath)) {
+    createTimestampedBackup(filePath, config.backup.maxBackups);
+  }
+
+  // --- Atomic write: serialize → tmp file → rename ---
   data.meta.updated_at = new Date().toISOString();
   const yaml = stringifyYaml(data, {
     lineWidth: 120,
     defaultKeyType: "PLAIN",
     defaultStringType: "PLAIN",
   });
-  writeFileSync(filePath, yaml, "utf-8");
+  const tmp = filePath + ".tmp";
+  writeFileSync(tmp, yaml, "utf-8");
+  renameSync(tmp, filePath);
+}
+
+/**
+ * Create a timestamped backup of the features file and rotate old backups.
+ * Backup filename format: .features.yml.YYYY-MM-DDTHH-MM-SS.bak
+ */
+function createTimestampedBackup(filePath: string, maxBackups: number): void {
+  const dir = dirname(filePath);
+  const base = basename(filePath);
+  const timestamp = new Date()
+    .toISOString()
+    .replace(/:/g, "-")
+    .replace(/\.\d{3}Z$/, "");
+  const backupName = `${base}.${timestamp}.bak`;
+  const backupPath = join(dir, backupName);
+
+  // Copy current file to timestamped backup
+  copyFileSync(filePath, backupPath);
+
+  // Rotate: keep only the last N backups
+  rotateBackups(dir, base, maxBackups);
+}
+
+/**
+ * Remove old backup files, keeping only the most recent `maxBackups`.
+ * Backups are sorted lexicographically by filename (timestamps sort naturally).
+ */
+function rotateBackups(dir: string, baseName: string, maxBackups: number): void {
+  if (maxBackups <= 0) {
+    // maxBackups === 0 means keep none — delete all backups
+    const pattern = new RegExp(
+      `^${escapeRegExp(baseName)}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.bak$`
+    );
+    const entries = readdirSync(dir).filter((f) => pattern.test(f));
+    for (const entry of entries) {
+      unlinkSync(join(dir, entry));
+    }
+    return;
+  }
+
+  const pattern = new RegExp(
+    `^${escapeRegExp(baseName)}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.bak$`
+  );
+  const backups = readdirSync(dir)
+    .filter((f) => pattern.test(f))
+    .sort(); // lexicographic sort works because ISO timestamps sort naturally
+
+  while (backups.length > maxBackups) {
+    const oldest = backups.shift()!;
+    unlinkSync(join(dir, oldest));
+  }
+}
+
+/**
+ * Escape a string for use in a RegExp.
+ */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function normalizeFeature(f: Feature | Subtask): void {
