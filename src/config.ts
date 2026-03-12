@@ -58,6 +58,17 @@ export interface WomboConfig {
     /** Terminal multiplexer preference: "auto" (prefer dmux), "dmux", or "tmux" */
     multiplexer: MultiplexerPreference;
   };
+  /** Portless integration for localhost server testing */
+  portless: {
+    /** Whether portless is enabled for agent worktrees */
+    enabled: boolean;
+    /** Path to portless binary (null = auto-detect via PATH) */
+    bin: string | null;
+    /** Proxy port (portless default is 1355) */
+    proxyPort: number;
+    /** Whether to use HTTPS mode */
+    https: boolean;
+  };
   /** Backup configuration for features file */
   backup: {
     /** Maximum number of timestamped backups to keep */
@@ -100,6 +111,12 @@ export const DEFAULT_CONFIG: WomboConfig = {
     configFiles: [".opencode/", "opencode.json", "AGENTS.md", "agent/"],
     tmuxPrefix: "wombo",
     multiplexer: "auto",
+  },
+  portless: {
+    enabled: true,
+    bin: null,
+    proxyPort: 1355,
+    https: false,
   },
   backup: {
     maxBackups: 5,

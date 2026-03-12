@@ -4,6 +4,10 @@
  * Usage: wombo cleanup
  *
  * Kills multiplexer sessions (dmux/tmux), removes worktrees, removes state and log files.
+ *
+ * NOTE: .wombo-history/ is intentionally NOT removed by cleanup.
+ * Wave history records are meant to survive cleanup for retrospective
+ * analysis. See src/lib/history.ts.
  */
 
 import { existsSync, unlinkSync, rmSync } from "node:fs";
@@ -111,4 +115,10 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   }
 
   console.log("\nCleanup complete.");
+
+  // Inform the user that history is preserved
+  const historyDir = resolve(projectRoot, ".wombo-history");
+  if (existsSync(historyDir)) {
+    console.log("Note: .wombo-history/ is preserved. Use 'wombo history' to view past waves.");
+  }
 }

@@ -225,6 +225,22 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: true,
   },
 
+  // --- history ------------------------------------------------------------
+  {
+    name: "history",
+    summary: "List/view past wave results from .wombo-history/",
+    description:
+      "Wave history is auto-exported when a wave completes. Records are stored " +
+      "separately from .wombo-state.json and survive cleanup. Use without arguments " +
+      "to list all waves, or pass a wave ID to see detailed results.",
+    positionals: [
+      { name: "wave-id", description: "Specific wave ID to show details for (optional)", required: false },
+    ],
+    flags: [],
+    mutating: false,
+    supportsDryRun: false,
+  },
+
   // --- abort --------------------------------------------------------------
   {
     name: "abort",
@@ -323,6 +339,32 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         positionals: [
           { name: "feature-id", description: "Feature ID to update", required: true },
           { name: "status", description: "New status value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "features set-priority",
+        summary: "Change a feature's priority",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "priority", description: "New priority value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "features set-difficulty",
+        summary: "Change a feature's difficulty",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "difficulty", description: "New difficulty value", required: true },
         ],
         flags: [
           { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },

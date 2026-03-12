@@ -20,9 +20,12 @@
  *   wombo abort <feature-id> [--requeue] [--output json]
  *   wombo logs <feature-id> [--tail N] [--follow] [--output json]
  *   wombo cleanup
+ *   wombo history [wave-id] [--output json]
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
  *   wombo features set-status <feature-id> <status>
+ *   wombo features set-priority <feature-id> <priority>
+ *   wombo features set-difficulty <feature-id> <difficulty>
  *   wombo features check
  *   wombo features archive [feature-id] [--dry-run]
  *   wombo features show <feature-id>
@@ -84,9 +87,12 @@ import { cmdCleanup } from "./commands/cleanup.js";
 import { cmdAbort } from "./commands/abort.js";
 import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
+import { cmdHistory } from "./commands/history.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
+import { cmdFeaturesSetPriority } from "./commands/features/set-priority.js";
+import { cmdFeaturesSetDifficulty } from "./commands/features/set-difficulty.js";
 import { cmdFeaturesCheck } from "./commands/features/check.js";
 import { cmdFeaturesArchive } from "./commands/features/archive.js";
 import { cmdFeaturesShow } from "./commands/features/show.js";
@@ -102,7 +108,7 @@ import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema
 // Types
 // ---------------------------------------------------------------------------
 
-interface CLIArgs {
+export interface CLIArgs {
   command: string;
   subcommand?: string;
   // Selection options (launch)
@@ -154,7 +160,7 @@ interface CLIArgs {
 // Arg Parsing
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): CLIArgs {
+export function parseArgs(argv: string[]): CLIArgs {
   const args = argv.slice(2); // skip 'bun' and script path
   const result: CLIArgs = {
     command: args[0] || "help",
@@ -327,6 +333,7 @@ Commands:
   abort          Kill a single running agent (--requeue to return to queue)
   logs           Pretty-print agent logs for a feature
   cleanup        Remove all wave worktrees and multiplexer sessions
+  history        List/view past wave results (stored in .wombo-history/)
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
@@ -337,7 +344,11 @@ Features Subcommands:
   features add <id> <title> [options]
                            Add a new feature (--desc, --priority, --difficulty, --effort, --depends-on)
   features set-status <id> <status>
-                           Change a feature's status
+                            Change a feature's status
+  features set-priority <id> <priority>
+                            Change a feature's priority (critical/high/medium/low/wishlist)
+  features set-difficulty <id> <difficulty>
+                            Change a feature's difficulty (trivial/easy/medium/hard/very_hard)
   features check           Validate .features.yml (schema, deps, duplicates, cycles)
   features archive [id]    Move done/cancelled to archive (--dry-run)
   features show <id>       Show feature details
@@ -402,6 +413,9 @@ Examples:
   wombo features check
   wombo features archive --dry-run
   wombo features show my-feature
+  wombo history
+  wombo history wave-2026-03-12-420
+  wombo history --output json
   wombo describe                           # list all commands as JSON
   wombo describe launch                    # describe a specific command
   wombo describe features add              # describe a subcommand
@@ -609,6 +623,15 @@ async function main(): Promise<void> {
       await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
       break;
 
+    case "history":
+      await cmdHistory({
+        projectRoot: PROJECT_ROOT,
+        config,
+        waveId: args.featureId,
+        outputFmt: args.outputFmt,
+      });
+      break;
+
     case "abort": {
       if (!args.featureId) {
         console.error("Usage: wombo abort <feature-id> [--requeue] [--output json]");
@@ -708,6 +731,68 @@ async function handleFeaturesSubcommand(
           config,
           featureId: args.featureId,
           newStatus: args.title, // second positional = new status
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-priority": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the priority value)
+        // If not provided via positional, check --priority flag
+        const newPriority = args.title || (args.priority as string | undefined);
+        if (!args.featureId || !newPriority) {
+          console.error("Usage: wombo features set-priority <feature-id> <priority>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority: args.title, // second positional = new priority
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-difficulty": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the difficulty value)
+        // If not provided via positional, check --difficulty flag
+        const newDifficulty = args.title || (args.difficulty as string | undefined);
+        if (!args.featureId || !newDifficulty) {
+          console.error("Usage: wombo features set-difficulty <feature-id> <difficulty>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty: args.title, // second positional = new difficulty
           outputFmt: args.outputFmt,
           dryRun: args.dryRun,
         });
