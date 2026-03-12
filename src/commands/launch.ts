@@ -965,11 +965,14 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   if (selected.length === 0) {
     if (opts.allReady) {
       console.error(
-        "No launchable features found. All features may be done, cancelled, or have unmet dependencies."
+        "No launchable features found (all features are done, cancelled, or have unmet dependencies).\n" +
+        "Run 'wombo features list' to review feature statuses."
       );
     } else {
       console.error(
-        "No features matched the selection criteria. Use --all-ready to see all available."
+        "No features matched the selection criteria.\n" +
+        "Use --all-ready to select all features whose dependencies are met,\n" +
+        "or run 'wombo features list --ready' to see available features."
       );
     }
     process.exit(1);
