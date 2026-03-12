@@ -61,6 +61,7 @@ import {
 } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
+import { ensureProxyRunning, isPortlessAvailable, portlessUrl } from "../lib/portless.js";
 import { outputError, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
@@ -881,6 +882,25 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
   // Ensure agent definition exists — reinstall from template if missing
   ensureAgentDefinition(projectRoot, config);
+
+  // Ensure portless proxy is running (if enabled) to prevent port collisions
+  if (config.portless.enabled) {
+    if (isPortlessAvailable(config)) {
+      const proxyOk = ensureProxyRunning(config);
+      if (!proxyOk) {
+        console.warn(
+          "\x1b[33m[portless]\x1b[0m proxy could not be started — agents may encounter port collisions"
+        );
+      }
+    } else {
+      console.warn(
+        "\x1b[33m[portless]\x1b[0m enabled but not installed. Install with: npm install -g portless"
+      );
+      console.warn(
+        "  Agents will run without portless — concurrent dev servers may have port collisions.\n"
+      );
+    }
+  }
 
   // -------------------------------------------------------------------------
   // Validate that the configured baseBranch exists as a local branch
