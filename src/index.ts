@@ -18,6 +18,7 @@
  *   wombo merge [feature-id]
  *   wombo retry <feature-id>
  *   wombo abort <feature-id> [--requeue] [--output json]
+ *   wombo logs <feature-id> [--tail N] [--follow] [--output json]
  *   wombo cleanup
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
@@ -81,6 +82,7 @@ import { cmdMerge } from "./commands/merge.js";
 import { cmdRetry } from "./commands/retry.js";
 import { cmdCleanup } from "./commands/cleanup.js";
 import { cmdAbort } from "./commands/abort.js";
+import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
@@ -137,6 +139,9 @@ interface CLIArgs {
   description?: string;
   effort?: string;
   dependsOn?: string[];
+  // Logs options
+  tail?: number;
+  follow?: boolean;
   // Compact output
   fields?: string[];
   // Graph options
@@ -276,6 +281,15 @@ function parseArgs(argv: string[]): CLIArgs {
         result.graphSubtasks = true;
         break;
 
+      // --- Logs options ---
+      case "--tail":
+        result.tail = parseInt(args[++i], 10);
+        break;
+      case "--follow":
+      case "-f":
+        result.follow = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -311,6 +325,7 @@ Commands:
   merge          Merge verified branches into the base branch
   retry          Retry a failed agent
   abort          Kill a single running agent (--requeue to return to queue)
+  logs           Pretty-print agent logs for a feature
   cleanup        Remove all wave worktrees and tmux sessions
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
@@ -358,6 +373,10 @@ Upgrade Options:
   --check                  Only check for updates, don't install
   --version <tag>          Install a specific version (e.g., v0.1.0)
 
+Logs Options:
+  --tail N                 Show only the last N lines
+  --follow, -f             Stream new output as it arrives (like tail -f)
+
 Examples:
   wombo init
   wombo launch --quickest-wins 3
@@ -371,6 +390,10 @@ Examples:
   wombo abort auth-flow
   wombo abort auth-flow --requeue
   wombo abort auth-flow --output json
+  wombo logs auth-flow
+  wombo logs auth-flow --tail 50
+  wombo logs auth-flow --follow
+  wombo logs auth-flow --output json
   wombo cleanup
   wombo features list --status ready --priority high
   wombo features list --fields id,status,priority --output json
@@ -474,6 +497,22 @@ async function main(): Promise<void> {
       force: args.force,
       version: args.version,
       checkOnly: args.checkOnly,
+    });
+    return;
+  }
+
+  if (args.command === "logs") {
+    if (!args.featureId) {
+      console.error("Usage: wombo logs <feature-id> [--tail N] [--follow] [--output json]");
+      process.exit(1);
+      return;
+    }
+    await cmdLogs({
+      projectRoot: PROJECT_ROOT,
+      featureId: args.featureId,
+      tail: args.tail,
+      follow: args.follow,
+      outputFmt: args.outputFmt,
     });
     return;
   }

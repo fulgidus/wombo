@@ -257,6 +257,24 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: false,
   },
 
+  // --- logs ---------------------------------------------------------------
+  {
+    name: "logs",
+    summary: "Pretty-print agent logs from .wombo-logs/<feature-id>.log",
+    description:
+      "Reads log files written by agents during headless runs and displays " +
+      "them with colorized output. Supports tailing and following.",
+    positionals: [
+      { name: "feature-id", description: "Feature ID whose logs to display", required: true },
+    ],
+    flags: [
+      { name: "--tail", description: "Show only the last N lines", type: "number" },
+      { name: "--follow", alias: "-f", description: "Stream new output as it arrives (like tail -f)", type: "boolean", default: false },
+    ],
+    mutating: false,
+    supportsDryRun: false,
+  },
+
   // --- features (parent with subcommands) ---------------------------------
   {
     name: "features",
