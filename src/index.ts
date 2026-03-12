@@ -31,7 +31,8 @@
  *   wombo features show <feature-id>
  *   wombo features graph [--ascii] [--mermaid] [--subtasks] [--status <s>]
  *   wombo help
- *   wombo --version
+ *   wombo version
+ *   wombo -v
  */
 
 import { resolve } from "node:path";
@@ -57,7 +58,7 @@ function checkDevModeGuard(): void {
   } catch {
     return;
   }
-  if (pkgName !== "wombo") return;
+  if (pkgName !== "wombo-combo") return;
 
   // We're in the wombo repo. Is the source being run from a different location?
   // import.meta.dir = directory of THIS file (index.ts). If it's under cwd,
@@ -136,7 +137,7 @@ export interface CLIArgs {
   outputFmt: OutputFormat;
   // Upgrade options
   checkOnly: boolean;
-  version?: string;
+  tag?: string;
   // Features subcommand extras
   status?: string;
   ready?: boolean;
@@ -185,22 +186,32 @@ export function parseArgs(argv: string[]): CLIArgs {
 
   for (let i = startIdx; i < args.length; i++) {
     const arg = args[i];
+
+    // Helper: consume the next argument, or exit with a clear error
+    function requireValue(flag: string): string {
+      if (i + 1 >= args.length) {
+        console.error(`Flag ${flag} requires a value.`);
+        process.exit(1);
+      }
+      return args[++i];
+    }
+
     switch (arg) {
       // --- Selection options ---
       case "--top-priority":
-        result.topPriority = parseInt(args[++i], 10);
+        result.topPriority = parseInt(requireValue(arg), 10);
         break;
       case "--quickest-wins":
-        result.quickestWins = parseInt(args[++i], 10);
+        result.quickestWins = parseInt(requireValue(arg), 10);
         break;
       case "--priority":
-        result.priority = args[++i] as Priority;
+        result.priority = requireValue(arg) as Priority;
         break;
       case "--difficulty":
-        result.difficulty = args[++i] as Difficulty;
+        result.difficulty = requireValue(arg) as Difficulty;
         break;
       case "--features":
-        result.features = args[++i].split(",").map((s) => s.trim());
+        result.features = requireValue(arg).split(",").map((s) => s.trim());
         break;
       case "--all-ready":
         result.allReady = true;
@@ -208,11 +219,11 @@ export function parseArgs(argv: string[]): CLIArgs {
 
       // --- Launch / runtime options ---
       case "--max-concurrent":
-        result.maxConcurrent = parseInt(args[++i], 10);
+        result.maxConcurrent = parseInt(requireValue(arg), 10);
         break;
       case "--model":
       case "-m":
-        result.model = args[++i];
+        result.model = requireValue(arg);
         break;
       case "--interactive":
         result.interactive = true;
@@ -230,10 +241,10 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.requeue = true;
         break;
       case "--base-branch":
-        result.baseBranch = args[++i];
+        result.baseBranch = requireValue(arg);
         break;
       case "--max-retries":
-        result.maxRetries = parseInt(args[++i], 10);
+        result.maxRetries = parseInt(requireValue(arg), 10);
         break;
 
       // --- General flags ---
@@ -243,17 +254,18 @@ export function parseArgs(argv: string[]): CLIArgs {
       case "--check":
         result.checkOnly = true;
         break;
-      case "--version":
-        result.version = args[++i];
+      case "--tag":
+      case "--release":
+        result.tag = requireValue(arg);
         break;
       case "--output":
       case "-o":
-        result.outputFmt = resolveOutputFormat(args[++i]);
+        result.outputFmt = resolveOutputFormat(requireValue(arg));
         break;
 
       // --- Features subcommand options ---
       case "--status":
-        result.status = args[++i];
+        result.status = requireValue(arg);
         break;
       case "--ready":
         result.ready = true;
@@ -262,20 +274,20 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.includeArchive = true;
         break;
       case "--title":
-        result.title = args[++i];
+        result.title = requireValue(arg);
         break;
       case "--description":
       case "--desc":
-        result.description = args[++i];
+        result.description = requireValue(arg);
         break;
       case "--effort":
-        result.effort = args[++i];
+        result.effort = requireValue(arg);
         break;
       case "--depends-on":
-        result.dependsOn = args[++i].split(",").map((s) => s.trim());
+        result.dependsOn = requireValue(arg).split(",").map((s) => s.trim());
         break;
       case "--fields":
-        result.fields = args[++i].split(",").map((s) => s.trim());
+        result.fields = requireValue(arg).split(",").map((s) => s.trim());
         break;
 
       // --- Graph options ---
@@ -344,6 +356,7 @@ Commands:
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
+  version        Print version and exit
   help           Show this help
 
 Features Subcommands:
@@ -381,7 +394,6 @@ Launch Options:
   --browser                Enable browser-based verification (run after build passes)
 
 General:
-  --version, -V            Print version and exit
   --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
   --output <fmt>           Output format: text (default on TTY) or json (default when piped)
   -o <fmt>                 Alias for --output
@@ -390,7 +402,7 @@ General:
 
 Upgrade Options:
   --check                  Only check for updates, don't install
-  --version <tag>          Install a specific version (e.g., v0.1.0)
+  --tag <tag>              Install a specific version (e.g., v0.1.0)
 
 Logs Options:
   --tail N                 Show only the last N lines
@@ -470,7 +482,7 @@ async function main(): Promise<void> {
   }
 
   // Commands that don't need config loading
-  if (args.command === "--version" || args.command === "-V") {
+  if (args.command === "version" || args.command === "-v" || args.command === "-V") {
     const pkgPath = resolve(import.meta.dir, "..", "package.json");
     const pkgFile = Bun.file(pkgPath);
     try {
@@ -517,7 +529,7 @@ async function main(): Promise<void> {
   if (args.command === "upgrade") {
     await cmdUpgrade({
       force: args.force,
-      version: args.version,
+      tag: args.tag,
       checkOnly: args.checkOnly,
     });
     return;
@@ -824,6 +836,7 @@ async function handleFeaturesSubcommand(
         config,
         featureId: args.featureId,
         dryRun: args.dryRun,
+        outputFmt: args.outputFmt,
       });
       break;
 
