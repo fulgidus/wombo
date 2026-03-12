@@ -127,7 +127,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       { name: "--all-ready", description: "Select all features whose dependencies are met", type: "boolean", default: false },
       { name: "--max-concurrent", description: "Max agents running in parallel", type: "number" },
       { name: "--model", alias: "-m", description: "Model to use (e.g., anthropic/claude-sonnet-4-20250514)", type: "string" },
-      { name: "--interactive", description: "Use tmux TUI mode instead of headless", type: "boolean", default: false },
+      { name: "--interactive", description: "Use multiplexer (dmux/tmux) TUI mode instead of headless", type: "boolean", default: false },
       { name: "--no-tui", description: "Headless mode without neo-blessed TUI", type: "boolean", default: false },
       { name: "--auto-push", description: "Push base branch to remote after all merges", type: "boolean", default: false },
       { name: "--dry-run", description: "Show what would be launched without launching", type: "boolean", default: false },
@@ -146,7 +146,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     flags: [
       { name: "--max-concurrent", description: "Max agents running in parallel", type: "number" },
       { name: "--model", alias: "-m", description: "Model to use", type: "string" },
-      { name: "--interactive", description: "Use tmux TUI mode", type: "boolean", default: false },
+      { name: "--interactive", description: "Use multiplexer (dmux/tmux) TUI mode", type: "boolean", default: false },
       { name: "--no-tui", description: "Headless mode without neo-blessed TUI", type: "boolean", default: false },
       { name: "--auto-push", description: "Push base branch to remote after merges", type: "boolean", default: false },
       { name: "--base-branch", description: "Base branch override", type: "string" },
@@ -205,7 +205,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     ],
     flags: [
       { name: "--model", alias: "-m", description: "Model to use", type: "string" },
-      { name: "--interactive", description: "Use tmux TUI mode", type: "boolean", default: false },
+      { name: "--interactive", description: "Use multiplexer (dmux/tmux) TUI mode", type: "boolean", default: false },
       { name: "--dry-run", description: "Show what would be retried without retrying", type: "boolean", default: false },
     ],
     mutating: true,
@@ -215,8 +215,8 @@ export const COMMAND_REGISTRY: CommandDef[] = [
   // --- cleanup ------------------------------------------------------------
   {
     name: "cleanup",
-    summary: "Remove all wave worktrees and tmux sessions",
-    description: "Kills tmux sessions, removes worktrees, removes state and log files.",
+    summary: "Remove all wave worktrees and multiplexer sessions",
+    description: "Kills multiplexer sessions, removes worktrees, removes state and log files.",
     positionals: [],
     flags: [
       { name: "--dry-run", description: "Show what would be cleaned up without removing", type: "boolean", default: false },
@@ -230,7 +230,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     name: "abort",
     summary: "Kill a single running agent without affecting the rest of the wave",
     description:
-      "Kills the tmux session and agent process for a specific feature, then " +
+      "Kills the multiplexer session and agent process for a specific feature, then " +
       "marks the agent as failed. Use --requeue to return the feature to the " +
       "queue instead of marking it failed.",
     positionals: [
