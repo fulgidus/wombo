@@ -12,6 +12,7 @@ import { spawn, execSync, type ChildProcess } from "node:child_process";
 import { writeFileSync, unlinkSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
 import { resolveAgentBin } from "../config.js";
+import { portlessEnv } from "./portless.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +59,22 @@ function runSilent(cmd: string): string {
   }
 }
 
+/**
+ * Build the environment for an agent process.
+ * Merges process.env with OPENCODE_DIR and portless env vars.
+ */
+function agentEnv(
+  worktreePath: string,
+  featureId: string,
+  config: WomboConfig
+): Record<string, string | undefined> {
+  return {
+    ...process.env,
+    OPENCODE_DIR: worktreePath,
+    ...portlessEnv(featureId, config),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Headless Launch
 // ---------------------------------------------------------------------------
@@ -85,10 +102,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-    env: {
-      ...process.env,
-      OPENCODE_DIR: opts.worktreePath,
-    },
+    env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
   });
 
   // Close stdin so agent starts processing immediately
@@ -125,10 +139,7 @@ export function retryHeadless(opts: RetryOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-    env: {
-      ...process.env,
-      OPENCODE_DIR: opts.worktreePath,
-    },
+    env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
   });
 
   child.stdin?.end();
@@ -179,10 +190,7 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-    env: {
-      ...process.env,
-      OPENCODE_DIR: opts.worktreePath,
-    },
+    env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
   });
 
   child.stdin?.end();
@@ -208,6 +216,13 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
   killTmuxSession(opts.featureId, opts.config);
 
   // Build the agent command to run inside tmux
+  // Include portless env vars so any server started in the tmux session
+  // is routed through the portless proxy
+  const pEnv = portlessEnv(opts.featureId, opts.config);
+  const envPrefix = Object.entries(pEnv)
+    .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
+    .join(" ");
+
   const ocArgs = [
     agentBin,
     "--dir", JSON.stringify(opts.worktreePath),
@@ -217,7 +232,7 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
     ocArgs.push("--model", JSON.stringify(opts.model));
   }
 
-  const tmuxCmd = ocArgs.join(" ");
+  const tmuxCmd = envPrefix ? `${envPrefix} ${ocArgs.join(" ")}` : ocArgs.join(" ");
 
   // Create a detached tmux session running the agent
   execSync(

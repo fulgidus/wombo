@@ -38,6 +38,7 @@ import {
   worktreePath,
   worktreeReady,
   branchHasChanges,
+  branchExists,
   removeWorktree,
   log as wtLog,
 } from "../lib/worktree.js";
@@ -60,6 +61,8 @@ import {
 } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
+import { ensureProxyRunning, isPortlessAvailable, portlessUrl } from "../lib/portless.js";
+import { outputError, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +87,8 @@ export interface LaunchCommandOptions {
   maxRetries: number;
   noTui: boolean;
   autoPush: boolean;
+  // Output
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -878,6 +883,36 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   // Ensure agent definition exists — reinstall from template if missing
   ensureAgentDefinition(projectRoot, config);
 
+  // Ensure portless proxy is running (if enabled) to prevent port collisions
+  if (config.portless.enabled) {
+    if (isPortlessAvailable(config)) {
+      const proxyOk = ensureProxyRunning(config);
+      if (!proxyOk) {
+        console.warn(
+          "\x1b[33m[portless]\x1b[0m proxy could not be started — agents may encounter port collisions"
+        );
+      }
+    } else {
+      console.warn(
+        "\x1b[33m[portless]\x1b[0m enabled but not installed. Install with: npm install -g portless"
+      );
+      console.warn(
+        "  Agents will run without portless — concurrent dev servers may have port collisions.\n"
+      );
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Validate that the configured baseBranch exists as a local branch
+  // -------------------------------------------------------------------------
+  if (!branchExists(projectRoot, opts.baseBranch)) {
+    const fmt = opts.outputFmt ?? "text";
+    const msg = `Base branch "${opts.baseBranch}" does not exist as a local branch. ` +
+      `Create it first (e.g. "git checkout -b ${opts.baseBranch}") or specify ` +
+      `a different branch with --base-branch.`;
+    outputError(fmt, msg);
+  }
+
   // -------------------------------------------------------------------------
   // Check for existing wave state — don't overwrite work in progress
   // -------------------------------------------------------------------------
@@ -950,11 +985,14 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   if (selected.length === 0) {
     if (opts.allReady) {
       console.error(
-        "No launchable features found. All features may be done, cancelled, or have unmet dependencies."
+        "No launchable features found (all features are done, cancelled, or have unmet dependencies).\n" +
+        "Run 'wombo features list' to review feature statuses."
       );
     } else {
       console.error(
-        "No features matched the selection criteria. Use --all-ready to see all available."
+        "No features matched the selection criteria.\n" +
+        "Use --all-ready to select all features whose dependencies are met,\n" +
+        "or run 'wombo features list --ready' to see available features."
       );
     }
     process.exit(1);
