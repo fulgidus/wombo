@@ -13,10 +13,13 @@ import {
   saveFeatures,
   createBlankFeature,
   allFeatureIds,
+  PRIORITY_ORDER,
+  DIFFICULTY_ORDER,
   type Priority,
   type Difficulty,
 } from "../../lib/features.js";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
+import { validateEnum } from "../../lib/validate.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,6 +55,26 @@ export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
   if (!opts.title) {
     outputError(fmt, "--title is required when adding a feature.");
     return;
+  }
+
+  // Validate priority and difficulty enums
+  const VALID_PRIORITIES = Object.keys(PRIORITY_ORDER) as Priority[];
+  const VALID_DIFFICULTIES = Object.keys(DIFFICULTY_ORDER) as Difficulty[];
+
+  if (opts.priority) {
+    const pResult = validateEnum(opts.priority, VALID_PRIORITIES, "--priority");
+    if (!pResult.valid) {
+      outputError(fmt, pResult.error!);
+      return;
+    }
+  }
+
+  if (opts.difficulty) {
+    const dResult = validateEnum(opts.difficulty, VALID_DIFFICULTIES, "--difficulty");
+    if (!dResult.valid) {
+      outputError(fmt, dResult.error!);
+      return;
+    }
   }
 
   const data = loadFeatures(projectRoot, config);

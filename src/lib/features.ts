@@ -114,19 +114,24 @@ const DIFFICULTY_ORDER: Record<Difficulty, number> = {
 
 /**
  * Parse an ISO 8601 duration string into total minutes.
- * Supports: P[nD][T[nH][nM][nS]]
+ * Supports: P[nY][nM][nD][T[nH][nM][nS]]
  * Examples: PT1H -> 60, PT30M -> 30, P1D -> 1440, P2DT4H -> 3360, PT1H30M -> 90
+ *           P1Y -> 525600, P2M -> 86400
+ * Year/month approximations: 1Y = 365D, 1M = 30D
  */
 export function parseDurationMinutes(iso: string): number {
   const match = iso.match(
-    /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
+    /^P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/
   );
   if (!match) return Infinity; // unparseable -> sort to end
-  const days = parseInt(match[1] || "0", 10);
-  const hours = parseInt(match[2] || "0", 10);
-  const minutes = parseInt(match[3] || "0", 10);
-  const seconds = parseInt(match[4] || "0", 10);
-  return days * 24 * 60 + hours * 60 + minutes + Math.ceil(seconds / 60);
+  const years = parseInt(match[1] || "0", 10);
+  const months = parseInt(match[2] || "0", 10);
+  const days = parseInt(match[3] || "0", 10);
+  const hours = parseInt(match[4] || "0", 10);
+  const minutes = parseInt(match[5] || "0", 10);
+  const seconds = parseInt(match[6] || "0", 10);
+  const totalDays = years * 365 + months * 30 + days;
+  return totalDays * 24 * 60 + hours * 60 + minutes + Math.ceil(seconds / 60);
 }
 
 /**
@@ -214,7 +219,46 @@ export function loadFeatures(
 ): FeaturesFile {
   const filePath = resolve(projectRoot, config.featuresFile);
   const raw = readFileSync(filePath, "utf-8");
-  const parsed = parseYaml(raw) as FeaturesFile;
+
+  let parsed: FeaturesFile;
+  try {
+    parsed = parseYaml(raw) as FeaturesFile;
+  } catch (err: any) {
+    const reason = err?.message ?? String(err);
+    throw new Error(
+      `Failed to parse ${config.featuresFile}: ${reason}`
+    );
+  }
+
+  // Validate basic schema: parsed must be an object with features as array (or null)
+  if (parsed === null || parsed === undefined || typeof parsed !== "object") {
+    throw new Error(
+      `Invalid ${config.featuresFile}: file must contain a YAML mapping with a "features" key, ` +
+      `but got ${parsed === null ? "null" : typeof parsed}.`
+    );
+  }
+
+  if (
+    parsed.features !== null &&
+    parsed.features !== undefined &&
+    !Array.isArray(parsed.features)
+  ) {
+    throw new Error(
+      `Invalid ${config.featuresFile}: "features" must be a list (array), ` +
+      `but got ${typeof parsed.features}. Check the file structure.`
+    );
+  }
+
+  if (
+    parsed.archive !== null &&
+    parsed.archive !== undefined &&
+    !Array.isArray(parsed.archive)
+  ) {
+    throw new Error(
+      `Invalid ${config.featuresFile}: "archive" must be a list (array), ` +
+      `but got ${typeof parsed.archive}. Check the file structure.`
+    );
+  }
 
   // Normalize: ensure top-level arrays are never null/undefined (YAML parses
   // empty keys as null).

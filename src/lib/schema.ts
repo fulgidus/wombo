@@ -11,6 +11,23 @@
  * features check` should eventually catch it.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Dynamic version reader
+// ---------------------------------------------------------------------------
+
+function getVersion(): string {
+  try {
+    const pkgPath = resolve(import.meta.dir, "../../package.json");
+    const raw = readFileSync(pkgPath, "utf-8");
+    return JSON.parse(raw).version as string;
+  } catch {
+    return "unknown";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -268,7 +285,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     positionals: [],
     flags: [
       { name: "--check", description: "Only check for updates, don't install", type: "boolean", default: false },
-      { name: "--version", description: "Install a specific version (e.g., v0.1.0)", type: "string" },
+      { name: "--tag", alias: "--release", description: "Install a specific version (e.g., v0.1.0)", type: "string" },
       { name: "--force", description: "Force reinstall even if up to date", type: "boolean", default: false },
     ],
     mutating: true,
@@ -436,6 +453,16 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: false,
   },
 
+  // --- version -----------------------------------------------------------
+  {
+    name: "version",
+    summary: "Print version and exit (also: -v, -V)",
+    positionals: [],
+    flags: [],
+    mutating: false,
+    supportsDryRun: false,
+  },
+
   // --- describe -----------------------------------------------------------
   {
     name: "describe",
@@ -546,7 +573,7 @@ export function allCommandSchemas(): Record<string, unknown> {
 
   return {
     tool: "wombo",
-    version: "0.0.2",
+    version: getVersion(),
     global_flags: GLOBAL_FLAGS.map((f) => ({
       name: f.name,
       alias: f.alias,

@@ -4,7 +4,7 @@
  * Usage:
  *   wombo upgrade              # Check for updates and prompt to install
  *   wombo upgrade --force      # Skip confirmation prompt
- *   wombo upgrade --version v0.1.0  # Install a specific version
+ *   wombo upgrade --tag v0.1.0 # Install a specific version
  *   wombo upgrade --check      # Only check, don't install
  */
 
@@ -18,7 +18,7 @@ import { createInterface } from "node:readline";
 
 export interface UpgradeOptions {
   force: boolean;
-  version?: string;
+  tag?: string;
   checkOnly: boolean;
 }
 
@@ -119,8 +119,8 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
   console.log(`Current version: v${localVersion}`);
 
   // If a specific version is requested, skip the check
-  if (opts.version) {
-    const targetTag = opts.version.startsWith("v") ? opts.version : `v${opts.version}`;
+  if (opts.tag) {
+    const targetTag = opts.tag.startsWith("v") ? opts.tag : `v${opts.tag}`;
     console.log(`Requested version: ${targetTag}`);
 
     if (compareSemver(localVersion, targetTag) === 0) {
