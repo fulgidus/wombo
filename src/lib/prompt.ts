@@ -11,6 +11,7 @@
 import type { Feature, Subtask } from "./features.js";
 import { formatDuration, parseDurationMinutes } from "./features.js";
 import type { WomboConfig } from "../config.js";
+import { isPortlessAvailable, portlessUrl } from "./portless.js";
 
 // ---------------------------------------------------------------------------
 // Prompt Generation
@@ -130,6 +131,35 @@ export function generatePrompt(
     sections.push(
       "\nBrowser tests are optional — if no tests are found, browser verification is skipped."
     );
+  }
+
+  // Portless server testing instructions
+  if (config.portless.enabled && isPortlessAvailable(config)) {
+    sections.push(`\n## Server Testing (portless)\n`);
+    sections.push(
+      "This worktree is configured with **portless** to prevent port collisions " +
+      "between concurrent agents. When starting any localhost server for testing:\n"
+    );
+    sections.push("```bash");
+    sections.push("# Instead of running a server directly:");
+    sections.push("#   npm run dev");
+    sections.push("#   bun run dev");
+    sections.push("#   node server.js");
+    sections.push("");
+    sections.push("# Wrap it with portless:");
+    sections.push(`portless run npm run dev`);
+    sections.push(`portless run bun run dev`);
+    sections.push(`portless run node server.js`);
+    sections.push("```\n");
+    sections.push(
+      `Your dev server will be available at: \`${portlessUrl(feature.id, config)}\``
+    );
+    sections.push("");
+    sections.push("**Rules:**");
+    sections.push("- ALWAYS use `portless run <command>` when starting any server that listens on a port");
+    sections.push("- Do NOT hardcode port numbers — portless assigns ports automatically via the `PORT` env var");
+    sections.push("- The `PORT` and `PORTLESS_URL` environment variables are set automatically");
+    sections.push("- If you need to reference the server URL in tests or config, use the `PORTLESS_URL` env var");
   }
 
   // Commit guidelines

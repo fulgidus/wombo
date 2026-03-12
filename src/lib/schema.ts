@@ -227,6 +227,22 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: true,
   },
 
+  // --- history ------------------------------------------------------------
+  {
+    name: "history",
+    summary: "List/view past wave results from .wombo-history/",
+    description:
+      "Wave history is auto-exported when a wave completes. Records are stored " +
+      "separately from .wombo-state.json and survive cleanup. Use without arguments " +
+      "to list all waves, or pass a wave ID to see detailed results.",
+    positionals: [
+      { name: "wave-id", description: "Specific wave ID to show details for (optional)", required: false },
+    ],
+    flags: [],
+    mutating: false,
+    supportsDryRun: false,
+  },
+
   // --- abort --------------------------------------------------------------
   {
     name: "abort",
