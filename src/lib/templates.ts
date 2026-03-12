@@ -1,28 +1,73 @@
 /**
- * templates.ts — Resolve paths to bundled template files and install helpers.
+ * templates.ts — Resolve paths to bundled template files, render agent
+ * definitions, and compose patched agent definitions from imported agents.
  *
- * All template paths are resolved relative to the source file location
- * using import.meta.dir (Bun-specific). This ensures templates are found
- * whether running from source (bun dev) or from an installed package.
+ * Template architecture:
+ *
+ *   generalist-agent.md          — standalone agent definition (no imported base)
+ *   wc-patch.description.end.md  — appended to imported agent's frontmatter description
+ *   wc-patch.body.start.md       — prepended to imported agent's body
+ *   wc-patch.body.end.md         — appended to imported agent's body
+ *
+ * Conditional blocks (portless, browser testing) are injected programmatically
+ * by the render/patch functions based on config — never left as "if enabled"
+ * prose for the LLM to interpret.
  */
 
 import { join, dirname, resolve } from "node:path";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import YAML from "yaml";
 import type { WomboConfig } from "../config.js";
+import { isPortlessAvailable } from "./portless.js";
 
 // ---------------------------------------------------------------------------
-// Template Paths
+// Template Directory & Paths
+// ---------------------------------------------------------------------------
+
+const TEMPLATES_DIR = join(dirname(import.meta.dir), "templates");
+
+/** Standalone generalist agent template (replaces wave-worker.md). */
+export const GENERALIST_TEMPLATE_PATH = join(TEMPLATES_DIR, "generalist-agent.md");
+
+/** Patch: text appended to an imported agent's frontmatter `description` field. */
+export const PATCH_DESCRIPTION_END_PATH = join(TEMPLATES_DIR, "wc-patch.description.end.md");
+
+/** Patch: markdown prepended to an imported agent's body. */
+export const PATCH_BODY_START_PATH = join(TEMPLATES_DIR, "wc-patch.body.start.md");
+
+/** Patch: markdown appended to an imported agent's body. */
+export const PATCH_BODY_END_PATH = join(TEMPLATES_DIR, "wc-patch.body.end.md");
+
+/**
+ * Backward-compatible alias. Code that referenced `AGENT_TEMPLATE_PATH`
+ * continues to work — it now points to the generalist template.
+ */
+export const AGENT_TEMPLATE_PATH = GENERALIST_TEMPLATE_PATH;
+
+// ---------------------------------------------------------------------------
+// Deterministic Conditional Blocks
 // ---------------------------------------------------------------------------
 
 /**
- * Absolute path to the bundled wave-worker agent definition template.
- * Used by `wombo init` to install the agent definition into the project,
- * and by `wombo launch` to reinstall it if missing.
+ * Portless server-testing block. Injected by render/patch functions ONLY when
+ * `config.portless.enabled` is true. The agent never sees "if portless is
+ * enabled" — it either gets these instructions or it doesn't.
  */
-export const AGENT_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", "wave-worker.md");
+const PORTLESS_BLOCK = `
+## Server Testing (portless)
+
+Your environment is preconfigured with **portless** for collision-free localhost servers:
+
+- **\`PORTLESS_ENABLED=1\`** is set in your environment.
+- **Do NOT hardcode port numbers.** Use \`process.env.PORT\` or let your framework pick a port automatically.
+- **Use \`portless run <cmd>\`** to start dev servers (e.g., \`portless run bun start\`). This auto-assigns a port and gives you a stable \`.localhost\` URL via \`PORTLESS_URL\`.
+- **Check \`PORTLESS_URL\`** in your environment for the stable URL assigned to your worktree's server.
+- Multiple agents can run dev servers simultaneously without port conflicts — portless handles routing through its proxy.
+- **Never hardcode port numbers.** Always use the portless-assigned port.
+`;
 
 // ---------------------------------------------------------------------------
-// Template Rendering
+// Placeholder Substitution
 // ---------------------------------------------------------------------------
 
 /**
@@ -31,23 +76,22 @@ export const AGENT_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", "
 const DEFAULT_RUNTIME = "Bun (not Node). TypeScript, strict mode, ESM only.";
 
 /**
- * Render the agent template by replacing {{placeholders}} with config values.
+ * Replace {{placeholders}} in template content with config-derived values.
  *
  * Supported placeholders:
- *   - {{tasksFile}}  — path to the tasks YAML file (e.g. ".wombo-combo/tasks.yml")
- *   - {{branchPrefix}}  — git branch prefix (e.g. "feature/")
- *   - {{buildCommand}}  — build command (e.g. "bun run build")
- *   - {{runtime}}       — project runtime description
- *   - {{project}}       — project directory name
+ *   - {{tasksFile}}      — tasks YAML filename (e.g. "tasks.yml")
+ *   - {{branchPrefix}}   — git branch prefix (e.g. "feature/")
+ *   - {{buildCommand}}   — build command (e.g. "bun run build")
+ *   - {{runtime}}        — project runtime description
+ *   - {{project}}        — project directory name
  */
-export function renderAgentTemplate(
+function applyPlaceholders(
+  content: string,
   config: WomboConfig,
   projectRoot: string
 ): string {
-  const raw = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
   const projectName = projectRoot.split("/").pop() ?? "project";
-
-  return raw
+  return content
     .replace(/\{\{tasksFile\}\}/g, config.tasksFile)
     .replace(/\{\{branchPrefix\}\}/g, config.git.branchPrefix)
     .replace(/\{\{buildCommand\}\}/g, config.build.command)
@@ -56,12 +100,169 @@ export function renderAgentTemplate(
 }
 
 // ---------------------------------------------------------------------------
+// Frontmatter Parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Split a markdown file with YAML frontmatter into its two parts.
+ * Returns the raw YAML string (without delimiters) and the body.
+ */
+function splitFrontmatter(md: string): { yaml: string; body: string } {
+  const match = md.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!match) {
+    return { yaml: "", body: md };
+  }
+  return { yaml: match[1], body: match[2] };
+}
+
+/**
+ * Reassemble frontmatter YAML and body into a markdown string.
+ */
+function joinFrontmatter(yaml: string, body: string): string {
+  if (!yaml.trim()) return body;
+  return `---\n${yaml.trimEnd()}\n---\n${body}`;
+}
+
+// ---------------------------------------------------------------------------
+// Generalist Agent Rendering
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the standalone generalist agent template.
+ *
+ * This is the default agent definition for projects that don't import a
+ * specialized agent from an external registry. Portless instructions are
+ * injected deterministically based on config.
+ */
+export function renderGeneralistAgent(
+  config: WomboConfig,
+  projectRoot: string
+): string {
+  let raw = readFileSync(GENERALIST_TEMPLATE_PATH, "utf-8");
+
+  // Deterministic portless injection
+  if (config.portless.enabled && isPortlessAvailable(config)) {
+    // Insert portless block before "## What You Must Never Do" (or at end)
+    const neverDoMarker = "## What You Must Never Do";
+    const idx = raw.indexOf(neverDoMarker);
+    if (idx !== -1) {
+      raw = raw.slice(0, idx) + PORTLESS_BLOCK + "\n" + raw.slice(idx);
+    } else {
+      raw += "\n" + PORTLESS_BLOCK;
+    }
+  }
+
+  return applyPlaceholders(raw, config, projectRoot);
+}
+
+// ---------------------------------------------------------------------------
+// Imported Agent Patching
+// ---------------------------------------------------------------------------
+
+/**
+ * Patch an imported agent definition (e.g. from agency-agents) with
+ * wombo-combo operational context.
+ *
+ * Composition order:
+ *   1. Parse the imported agent's frontmatter and body
+ *   2. Append wc-patch.description.end to the `description` frontmatter field
+ *   3. Prepend wc-patch.body.start to the body
+ *   4. Append wc-patch.body.end to the body
+ *   5. Conditionally inject portless block (deterministic, based on config)
+ *   6. Apply {{placeholder}} substitution to the entire result
+ *
+ * @param rawAgentMd  — raw markdown content of the imported agent file
+ * @param config      — wombo-combo project config
+ * @param projectRoot — absolute path to the project root
+ */
+export function patchImportedAgent(
+  rawAgentMd: string,
+  config: WomboConfig,
+  projectRoot: string
+): string {
+  const { yaml: rawYaml, body: rawBody } = splitFrontmatter(rawAgentMd);
+
+  // --- Patch frontmatter description ---
+  let patchedYaml = rawYaml;
+  if (rawYaml) {
+    try {
+      const descPatchRaw = readFileSync(PATCH_DESCRIPTION_END_PATH, "utf-8").trim();
+      if (descPatchRaw) {
+        const doc = YAML.parseDocument(rawYaml);
+        const currentDesc = doc.get("description");
+        if (typeof currentDesc === "string") {
+          doc.set("description", currentDesc.trimEnd() + "\n\n" + descPatchRaw);
+        } else {
+          // No description field — add one
+          doc.set("description", descPatchRaw);
+        }
+        // Ensure mode is set for wombo-combo compatibility
+        if (!doc.has("mode")) {
+          doc.set("mode", "primary");
+        }
+        patchedYaml = YAML.stringify(doc, { lineWidth: 0 }).trimEnd();
+      }
+    } catch {
+      // Patch file missing or YAML parse error — proceed without patching
+    }
+  }
+
+  // --- Patch body ---
+  let patchedBody = rawBody;
+
+  // Prepend body.start
+  try {
+    const bodyStart = readFileSync(PATCH_BODY_START_PATH, "utf-8");
+    if (bodyStart.trim()) {
+      patchedBody = bodyStart + patchedBody;
+    }
+  } catch {
+    // Patch file missing — skip
+  }
+
+  // Append body.end
+  try {
+    const bodyEnd = readFileSync(PATCH_BODY_END_PATH, "utf-8");
+    if (bodyEnd.trim()) {
+      patchedBody = patchedBody.trimEnd() + "\n" + bodyEnd;
+    }
+  } catch {
+    // Patch file missing — skip
+  }
+
+  // Deterministic portless injection (appended after body.end)
+  if (config.portless.enabled && isPortlessAvailable(config)) {
+    patchedBody = patchedBody.trimEnd() + "\n" + PORTLESS_BLOCK;
+  }
+
+  // --- Reassemble & substitute placeholders ---
+  const composed = joinFrontmatter(patchedYaml, patchedBody);
+  return applyPlaceholders(composed, config, projectRoot);
+}
+
+// ---------------------------------------------------------------------------
+// Backward Compatibility
+// ---------------------------------------------------------------------------
+
+/**
+ * Render the agent template. Backward-compatible wrapper around
+ * `renderGeneralistAgent` — existing code that calls this function
+ * continues to work unchanged.
+ */
+export function renderAgentTemplate(
+  config: WomboConfig,
+  projectRoot: string
+): string {
+  return renderGeneralistAgent(config, projectRoot);
+}
+
+// ---------------------------------------------------------------------------
 // Agent Definition Guard
 // ---------------------------------------------------------------------------
 
 /**
  * Ensure the agent definition file exists at the expected path.
- * If missing, reinstall from the bundled template and warn the user.
+ * If missing, reinstall from the bundled generalist template and warn.
  *
  * Called at the start of `wombo launch` to prevent the failure mode where
  * agents spawn without their agent definition file.
@@ -83,11 +284,11 @@ export function ensureAgentDefinition(
   console.warn(
     `\x1b[33m[WARNING]\x1b[0m Agent definition not found: agent/${config.agent.name}.md`
   );
-  console.warn(`  Reinstalling from bundled template...`);
+  console.warn(`  Reinstalling from bundled generalist template...`);
 
   try {
     mkdirSync(agentDir, { recursive: true });
-    const content = renderAgentTemplate(config, projectRoot);
+    const content = renderGeneralistAgent(config, projectRoot);
     writeFileSync(agentDefPath, content, "utf-8");
     console.warn(`  Restored agent/${config.agent.name}.md\n`);
     return true;
