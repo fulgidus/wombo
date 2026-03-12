@@ -56,7 +56,7 @@ import {
   isProcessRunning,
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
-import { runBuild } from "../lib/verifier.js";
+import { runBuild, runFullVerification } from "../lib/verifier.js";
 import { mergeBranch, mergeBaseIntoFeature, pushBaseBranch } from "../lib/merger.js";
 import {
   printDashboard,
@@ -262,9 +262,22 @@ export async function handleBuildVerification(
   try {
     printAgentUpdate(agent, "verifying build...");
 
-    const buildResult = await runBuild(agent.worktree, config);
+    // Use full verification pipeline (build + optional browser tests)
+    const fullResult = await runFullVerification(agent.worktree, agent.feature_id, config);
+    const buildResult = fullResult.build;
 
-    if (buildResult.passed) {
+    // Report browser test status if they ran
+    if (fullResult.browser.ran && fullResult.browser.browserResult) {
+      const br = fullResult.browser.browserResult;
+      printAgentUpdate(
+        agent,
+        `BROWSER: ${br.summary} (${Math.round(br.totalDurationMs / 1000)}s)`
+      );
+    } else if (fullResult.browser.skipReason && config.browser.enabled) {
+      printAgentUpdate(agent, `BROWSER: skipped — ${fullResult.browser.skipReason}`);
+    }
+
+    if (fullResult.overallPassed) {
       updateAgent(state, agent.feature_id, {
         status: "verified",
         build_passed: true,
@@ -276,26 +289,28 @@ export async function handleBuildVerification(
       // Auto-merge: attempt merge + conflict resolution
       await attemptMerge(projectRoot, state, agent, feature, config, model);
     } else {
+      const errorSummary = fullResult.combinedErrorSummary;
+
       if (agent.retries < agent.max_retries) {
         updateAgent(state, agent.feature_id, {
           status: "retry",
           retries: agent.retries + 1,
           build_passed: false,
-          build_output: buildResult.errorSummary,
+          build_output: errorSummary,
         });
         saveState(projectRoot, state);
         printAgentUpdate(
           agent,
-          `BUILD FAILED — retrying (${agent.retries}/${agent.max_retries})`
+          `VERIFICATION FAILED — retrying (${agent.retries}/${agent.max_retries})`
         );
 
-        // Retry with build errors
+        // Retry with error details
         if (agent.session_id) {
           const retryResult = retryHeadless({
             worktreePath: agent.worktree,
             featureId: agent.feature_id,
             sessionId: agent.session_id,
-            buildErrors: buildResult.errorSummary,
+            buildErrors: errorSummary,
             model,
             config,
           });
@@ -315,12 +330,12 @@ export async function handleBuildVerification(
         updateAgent(state, agent.feature_id, {
           status: "failed",
           build_passed: false,
-          build_output: buildResult.errorSummary,
-          error: `Build failed after ${agent.max_retries} retries`,
+          build_output: errorSummary,
+          error: `Verification failed after ${agent.max_retries} retries`,
           completed_at: new Date().toISOString(),
         });
         saveState(projectRoot, state);
-        printAgentUpdate(agent, "BUILD FAILED — max retries reached");
+        printAgentUpdate(agent, "VERIFICATION FAILED — max retries reached");
 
         // Cascade failure to downstream agents
         const cancelled = cancelDownstream(state, agent.feature_id);

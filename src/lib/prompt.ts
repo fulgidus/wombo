@@ -107,6 +107,32 @@ export function generatePrompt(
     "If the build fails, fix the errors before considering the task complete."
   );
 
+  // Browser testing — inform agents about browser verification capabilities
+  if (config.browser.enabled) {
+    sections.push(`\n## Browser Testing\n`);
+    sections.push(
+      "This project has browser-based verification enabled. After the build passes, " +
+      "browser tests will run automatically as part of the verification pipeline.\n"
+    );
+    sections.push("To add browser tests for this feature:\n");
+    sections.push("1. Create the directory `.wombo-browser/tests/` in the worktree root");
+    sections.push("2. Add test scripts (`.sh`, `.ts`, or `.js` files) that will be executed in order");
+    sections.push("3. Each test script receives these environment variables:");
+    sections.push("   - `BROWSER_DEBUG_PORT` — Chrome DevTools Protocol port");
+    sections.push("   - `BROWSER_WS_ENDPOINT` — WebSocket endpoint for the browser");
+    sections.push("   - `BROWSER_HEADLESS` — whether the browser is running headless");
+    sections.push("   - `BROWSER_SCREENSHOT_PATH` — path to save a screenshot for this test");
+    sections.push("4. A test passes if it exits with code 0, fails otherwise\n");
+    if (config.browser.testCommand) {
+      sections.push(
+        `Alternatively, the project uses a custom browser test command: \`${config.browser.testCommand}\``
+      );
+    }
+    sections.push(
+      "\nBrowser tests are optional — if no tests are found, browser verification is skipped."
+    );
+  }
+
   // Portless server testing instructions
   if (config.portless.enabled && isPortlessAvailable(config)) {
     sections.push(`\n## Server Testing (portless)\n`);

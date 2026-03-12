@@ -154,6 +154,8 @@ export interface CLIArgs {
   ascii?: boolean;
   mermaidRaw?: boolean;
   graphSubtasks?: boolean;
+  // Browser verification
+  browser?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -296,6 +298,11 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.follow = true;
         break;
 
+      // --- Browser verification ---
+      case "--browser":
+        result.browser = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -371,6 +378,7 @@ Launch Options:
   --dry-run                Show what would be launched without launching
   --base-branch <branch>   Base branch (default: from config)
   --max-retries N          Max retries per agent (default: from config)
+  --browser                Enable browser-based verification (run after build passes)
 
 General:
   --version, -V            Print version and exit
@@ -543,6 +551,10 @@ async function main(): Promise<void> {
 
   switch (args.command) {
     case "launch":
+      // Apply browser verification override if --browser flag was passed
+      if (args.browser !== undefined) {
+        config.browser.enabled = args.browser;
+      }
       await cmdLaunch({
         projectRoot: PROJECT_ROOT,
         config,
@@ -589,6 +601,7 @@ async function main(): Promise<void> {
         featureId: args.featureId,
         model: args.model,
         maxRetries: args.maxRetries,
+        browserVerify: args.browser,
       });
       break;
 

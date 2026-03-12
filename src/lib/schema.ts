@@ -133,6 +133,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       { name: "--dry-run", description: "Show what would be launched without launching", type: "boolean", default: false },
       { name: "--base-branch", description: "Base branch (default: from config)", type: "string" },
       { name: "--max-retries", description: "Max retries per agent", type: "number" },
+      { name: "--browser", description: "Enable browser-based verification after build passes", type: "boolean", default: false },
     ],
     mutating: true,
     supportsDryRun: true,
@@ -176,6 +177,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     flags: [
       { name: "--model", alias: "-m", description: "Model to use for verification", type: "string" },
       { name: "--max-retries", description: "Max retries", type: "number" },
+      { name: "--browser", description: "Enable browser-based verification after build passes", type: "boolean", default: false },
     ],
     mutating: true,
     supportsDryRun: false,

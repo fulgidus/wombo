@@ -1,11 +1,14 @@
 /**
  * verify.ts — Run build verification on completed agents.
  *
- * Usage: wombo verify [feature-id]
+ * Usage: wombo verify [feature-id] [--browser]
  *
  * Runs the build command in each completed agent's worktree. If a specific
  * feature-id is given, verifies only that agent. Otherwise verifies all
  * agents with status "completed".
+ *
+ * When --browser is passed (or browser.enabled is true in config), also
+ * runs browser-based verification after the build passes.
  */
 
 import type { WomboConfig } from "../config.js";
@@ -24,6 +27,8 @@ export interface VerifyCommandOptions {
   featureId?: string;
   model?: string;
   maxRetries?: number;
+  /** Enable browser verification (overrides config.browser.enabled) */
+  browserVerify?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +37,11 @@ export interface VerifyCommandOptions {
 
 export async function cmdVerify(opts: VerifyCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
+
+  // Apply browser verification override if --browser flag was passed
+  if (opts.browserVerify !== undefined) {
+    config.browser.enabled = opts.browserVerify;
+  }
 
   const state = loadState(projectRoot);
   if (!state) {
