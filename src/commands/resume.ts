@@ -51,6 +51,7 @@ import {
   markFeatureDone,
   attemptMerge,
 } from "./launch.js";
+import { exportWaveHistory } from "../lib/history.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -570,6 +571,14 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
     if (tuiRef.current) tuiRef.current.stop();
     printDashboard(state);
+
+    // Auto-export wave history
+    try {
+      const historyPath = exportWaveHistory(projectRoot, state);
+      console.log(`Wave history exported to ${historyPath}`);
+    } catch (err: any) {
+      console.error(`Warning: failed to export wave history: ${err.message}`);
+    }
 
     // Auto-push base branch if requested
     if (opts.autoPush) {

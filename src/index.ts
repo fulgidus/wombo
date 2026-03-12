@@ -17,10 +17,15 @@
  *   wombo verify [feature-id]
  *   wombo merge [feature-id]
  *   wombo retry <feature-id>
+ *   wombo abort <feature-id> [--requeue] [--output json]
+ *   wombo logs <feature-id> [--tail N] [--follow] [--output json]
  *   wombo cleanup
+ *   wombo history [wave-id] [--output json]
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
  *   wombo features set-status <feature-id> <status>
+ *   wombo features set-priority <feature-id> <priority>
+ *   wombo features set-difficulty <feature-id> <difficulty>
  *   wombo features check
  *   wombo features archive [feature-id] [--dry-run]
  *   wombo features show <feature-id>
@@ -79,10 +84,15 @@ import { cmdVerify } from "./commands/verify.js";
 import { cmdMerge } from "./commands/merge.js";
 import { cmdRetry } from "./commands/retry.js";
 import { cmdCleanup } from "./commands/cleanup.js";
+import { cmdAbort } from "./commands/abort.js";
+import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
+import { cmdHistory } from "./commands/history.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
+import { cmdFeaturesSetPriority } from "./commands/features/set-priority.js";
+import { cmdFeaturesSetDifficulty } from "./commands/features/set-difficulty.js";
 import { cmdFeaturesCheck } from "./commands/features/check.js";
 import { cmdFeaturesArchive } from "./commands/features/archive.js";
 import { cmdFeaturesShow } from "./commands/features/show.js";
@@ -98,7 +108,7 @@ import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema
 // Types
 // ---------------------------------------------------------------------------
 
-interface CLIArgs {
+export interface CLIArgs {
   command: string;
   subcommand?: string;
   // Selection options (launch)
@@ -117,6 +127,8 @@ interface CLIArgs {
   maxRetries?: number;
   noTui: boolean;
   autoPush: boolean;
+  // Abort options
+  requeue: boolean;
   // General
   featureId?: string;
   force: boolean;
@@ -133,6 +145,9 @@ interface CLIArgs {
   description?: string;
   effort?: string;
   dependsOn?: string[];
+  // Logs options
+  tail?: number;
+  follow?: boolean;
   // Compact output
   fields?: string[];
   // Graph options
@@ -145,7 +160,7 @@ interface CLIArgs {
 // Arg Parsing
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): CLIArgs {
+export function parseArgs(argv: string[]): CLIArgs {
   const args = argv.slice(2); // skip 'bun' and script path
   const result: CLIArgs = {
     command: args[0] || "help",
@@ -153,6 +168,7 @@ function parseArgs(argv: string[]): CLIArgs {
     dryRun: false,
     noTui: false,
     autoPush: false,
+    requeue: false,
     force: false,
     checkOnly: false,
     outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
@@ -207,6 +223,9 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       case "--auto-push":
         result.autoPush = true;
+        break;
+      case "--requeue":
+        result.requeue = true;
         break;
       case "--base-branch":
         result.baseBranch = args[++i];
@@ -268,6 +287,15 @@ function parseArgs(argv: string[]): CLIArgs {
         result.graphSubtasks = true;
         break;
 
+      // --- Logs options ---
+      case "--tail":
+        result.tail = parseInt(args[++i], 10);
+        break;
+      case "--follow":
+      case "-f":
+        result.follow = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -302,7 +330,10 @@ Commands:
   verify         Run build verification on completed agents
   merge          Merge verified branches into the base branch
   retry          Retry a failed agent
+  abort          Kill a single running agent (--requeue to return to queue)
+  logs           Pretty-print agent logs for a feature
   cleanup        Remove all wave worktrees and tmux sessions
+  history        List/view past wave results (stored in .wombo-history/)
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
@@ -313,7 +344,11 @@ Features Subcommands:
   features add <id> <title> [options]
                            Add a new feature (--desc, --priority, --difficulty, --effort, --depends-on)
   features set-status <id> <status>
-                           Change a feature's status
+                            Change a feature's status
+  features set-priority <id> <priority>
+                            Change a feature's priority (critical/high/medium/low/wishlist)
+  features set-difficulty <id> <difficulty>
+                            Change a feature's difficulty (trivial/easy/medium/hard/very_hard)
   features check           Validate .features.yml (schema, deps, duplicates, cycles)
   features archive [id]    Move done/cancelled to archive (--dry-run)
   features show <id>       Show feature details
@@ -349,6 +384,10 @@ Upgrade Options:
   --check                  Only check for updates, don't install
   --version <tag>          Install a specific version (e.g., v0.1.0)
 
+Logs Options:
+  --tail N                 Show only the last N lines
+  --follow, -f             Stream new output as it arrives (like tail -f)
+
 Examples:
   wombo init
   wombo launch --quickest-wins 3
@@ -359,6 +398,13 @@ Examples:
   wombo verify
   wombo merge
   wombo retry auth-flow
+  wombo abort auth-flow
+  wombo abort auth-flow --requeue
+  wombo abort auth-flow --output json
+  wombo logs auth-flow
+  wombo logs auth-flow --tail 50
+  wombo logs auth-flow --follow
+  wombo logs auth-flow --output json
   wombo cleanup
   wombo features list --status ready --priority high
   wombo features list --fields id,status,priority --output json
@@ -367,6 +413,9 @@ Examples:
   wombo features check
   wombo features archive --dry-run
   wombo features show my-feature
+  wombo history
+  wombo history wave-2026-03-12-420
+  wombo history --output json
   wombo describe                           # list all commands as JSON
   wombo describe launch                    # describe a specific command
   wombo describe features add              # describe a subcommand
@@ -415,10 +464,10 @@ async function main(): Promise<void> {
   // Commands that don't need config loading
   if (args.command === "--version" || args.command === "-V") {
     const pkgPath = resolve(import.meta.dir, "..", "package.json");
+    const pkgFile = Bun.file(pkgPath);
     try {
-      const raw = readFileSync(pkgPath, "utf-8");
-      const pkg = JSON.parse(raw);
-      console.log(`wombo ${pkg.version}`);
+      const pkg = await pkgFile.json();
+      console.log(`wombo ${pkg.version ?? "(unknown version)"}`);
     } catch {
       console.log("wombo (unknown version)");
     }
@@ -466,6 +515,22 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (args.command === "logs") {
+    if (!args.featureId) {
+      console.error("Usage: wombo logs <feature-id> [--tail N] [--follow] [--output json]");
+      process.exit(1);
+      return;
+    }
+    await cmdLogs({
+      projectRoot: PROJECT_ROOT,
+      featureId: args.featureId,
+      tail: args.tail,
+      follow: args.follow,
+      outputFmt: args.outputFmt,
+    });
+    return;
+  }
+
   // Everything else requires config
   const config = loadConfig(PROJECT_ROOT);
   validateConfig(config);
@@ -495,6 +560,7 @@ async function main(): Promise<void> {
         maxRetries: args.maxRetries ?? config.defaults.maxRetries,
         noTui: args.noTui,
         autoPush: args.autoPush,
+        outputFmt: args.outputFmt,
       });
       break;
 
@@ -556,6 +622,31 @@ async function main(): Promise<void> {
     case "cleanup":
       await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
       break;
+
+    case "history":
+      await cmdHistory({
+        projectRoot: PROJECT_ROOT,
+        config,
+        waveId: args.featureId,
+        outputFmt: args.outputFmt,
+      });
+      break;
+
+    case "abort": {
+      if (!args.featureId) {
+        console.error("Usage: wombo abort <feature-id> [--requeue] [--output json]");
+        process.exit(1);
+        return;
+      }
+      await cmdAbort({
+        projectRoot: PROJECT_ROOT,
+        config,
+        featureId: args.featureId,
+        requeue: args.requeue,
+        outputFmt: args.outputFmt,
+      });
+      break;
+    }
 
     case "features":
       await handleFeaturesSubcommand(args, PROJECT_ROOT, config);
@@ -640,6 +731,68 @@ async function handleFeaturesSubcommand(
           config,
           featureId: args.featureId,
           newStatus: args.title, // second positional = new status
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-priority": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the priority value)
+        // If not provided via positional, check --priority flag
+        const newPriority = args.title || (args.priority as string | undefined);
+        if (!args.featureId || !newPriority) {
+          console.error("Usage: wombo features set-priority <feature-id> <priority>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetPriority({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newPriority: args.title, // second positional = new priority
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      }
+      break;
+    }
+
+    case "set-difficulty": {
+      if (!args.featureId || !args.title) {
+        // title holds the second positional arg (the difficulty value)
+        // If not provided via positional, check --difficulty flag
+        const newDifficulty = args.title || (args.difficulty as string | undefined);
+        if (!args.featureId || !newDifficulty) {
+          console.error("Usage: wombo features set-difficulty <feature-id> <difficulty>");
+          process.exit(1);
+          return;
+        }
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty,
+          outputFmt: args.outputFmt,
+          dryRun: args.dryRun,
+        });
+      } else {
+        await cmdFeaturesSetDifficulty({
+          projectRoot,
+          config,
+          featureId: args.featureId,
+          newDifficulty: args.title, // second positional = new difficulty
           outputFmt: args.outputFmt,
           dryRun: args.dryRun,
         });
