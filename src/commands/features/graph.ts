@@ -107,11 +107,14 @@ function collectSubtaskIds(subtasks: Subtask[], ids: Set<string>): void {
 
 /**
  * Build the Mermaid flowchart source from the features file.
+ * Only includes nodes that participate in at least one dependency edge.
+ * Orphan nodes (no deps and nothing depends on them) are excluded from
+ * the visual graph and returned separately for a compact summary.
  */
 function buildMermaidSource(
   data: FeaturesFile,
   opts: { status?: FeatureStatus; subtasks?: boolean }
-): { source: string; nodeCount: number; edgeCount: number; orphanCount: number } {
+): { source: string; nodeCount: number; edgeCount: number; orphanCount: number; orphans: { id: string; title: string; status: FeatureStatus }[] } {
   let features = [...data.features];
 
   // Filter by status if requested
@@ -120,92 +123,135 @@ function buildMermaidSource(
   }
 
   if (features.length === 0) {
-    return { source: "", nodeCount: 0, edgeCount: 0, orphanCount: 0 };
+    return { source: "", nodeCount: 0, edgeCount: 0, orphanCount: 0, orphans: [] };
   }
 
   const allIds = collectAllIds(features, !!opts.subtasks);
-  const lines: string[] = ["flowchart LR"];
-  let nodeCount = 0;
-  let edgeCount = 0;
-  let orphanCount = 0;
 
-  // Process each feature
+  // --- First pass: collect all edges to determine connected nodes ---
+  const connectedIds = new Set<string>();
+  const edges: { from: string; to: string }[] = [];
+
   for (const f of features) {
-    const nid = nodeId(f.id);
-    const badge = STATUS_BADGE[f.status];
-    const label = `${badge} ${sanitizeLabel(f.title)}`;
-    lines.push(`    ${nid}[${label}]`);
-    nodeCount++;
-
-    let hasDeps = false;
-
-    // Add dependency edges
+    // Feature-level dependency edges
     for (const dep of f.depends_on) {
       if (allIds.has(dep)) {
-        lines.push(`    ${nodeId(dep)} --> ${nid}`);
-        edgeCount++;
-        hasDeps = true;
+        edges.push({ from: dep, to: f.id });
+        connectedIds.add(dep);
+        connectedIds.add(f.id);
       }
     }
 
-    // Process subtasks if requested
+    // Subtask edges (parent->child + subtask depends_on)
     if (opts.subtasks && f.subtasks.length > 0) {
-      const result = processSubtasks(f.subtasks, nid, allIds, lines);
-      nodeCount += result.nodeCount;
-      edgeCount += result.edgeCount;
-      if (result.nodeCount > 0) hasDeps = true;
+      collectSubtaskEdges(f.subtasks, f.id, allIds, edges, connectedIds);
+    }
+  }
+
+  // If there are no edges at all, every feature is an orphan
+  if (edges.length === 0) {
+    const orphans = features.map((f) => ({ id: f.id, title: f.title, status: f.status }));
+    return { source: "", nodeCount: 0, edgeCount: 0, orphanCount: orphans.length, orphans };
+  }
+
+  // --- Second pass: emit only connected nodes and edges ---
+  const lines: string[] = ["flowchart LR"];
+  let nodeCount = 0;
+  const emittedNodes = new Set<string>();
+  const orphans: { id: string; title: string; status: FeatureStatus }[] = [];
+
+  // Helper to emit a node if it's connected and not yet emitted
+  const emitNode = (id: string, label: string) => {
+    if (!emittedNodes.has(id)) {
+      lines.push(`    ${nodeId(id)}[${label}]`);
+      emittedNodes.add(id);
+      nodeCount++;
+    }
+  };
+
+  for (const f of features) {
+    if (connectedIds.has(f.id)) {
+      const badge = STATUS_BADGE[f.status];
+      emitNode(f.id, `${badge} ${sanitizeLabel(f.title)}`);
+    } else if (!opts.subtasks || f.subtasks.length === 0) {
+      // Feature has no deps and nothing depends on it — it's an orphan
+      orphans.push({ id: f.id, title: f.title, status: f.status });
     }
 
-    if (!hasDeps && f.depends_on.length === 0 && (!opts.subtasks || f.subtasks.length === 0)) {
-      orphanCount++;
+    // Emit connected subtask nodes
+    if (opts.subtasks && f.subtasks.length > 0) {
+      emitConnectedSubtasks(f.subtasks, connectedIds, emittedNodes, emitNode, orphans);
     }
+  }
+
+  // Emit all edges
+  for (const edge of edges) {
+    lines.push(`    ${nodeId(edge.from)} --> ${nodeId(edge.to)}`);
   }
 
   return {
     source: lines.join("\n"),
     nodeCount,
-    edgeCount,
-    orphanCount,
+    edgeCount: edges.length,
+    orphanCount: orphans.length,
+    orphans,
   };
 }
 
-function processSubtasks(
+/**
+ * Recursively collect edges from subtasks (parent->child links + depends_on edges).
+ */
+function collectSubtaskEdges(
   subtasks: Subtask[],
-  parentNodeId: string,
+  parentId: string,
   allIds: Set<string>,
-  lines: string[]
-): { nodeCount: number; edgeCount: number } {
-  let nodeCount = 0;
-  let edgeCount = 0;
-
+  edges: { from: string; to: string }[],
+  connectedIds: Set<string>
+): void {
   for (const st of subtasks) {
-    const nid = nodeId(st.id);
-    const badge = STATUS_BADGE[st.status];
-    const label = `${badge} ${sanitizeLabel(st.title)}`;
-    lines.push(`    ${nid}[${label}]`);
-    nodeCount++;
-
-    // Link parent to subtask
-    lines.push(`    ${parentNodeId} --> ${nid}`);
-    edgeCount++;
+    // Parent -> subtask link always creates an edge
+    edges.push({ from: parentId, to: st.id });
+    connectedIds.add(parentId);
+    connectedIds.add(st.id);
 
     // Subtask's own dependencies
     for (const dep of st.depends_on) {
       if (allIds.has(dep)) {
-        lines.push(`    ${nodeId(dep)} --> ${nid}`);
-        edgeCount++;
+        edges.push({ from: dep, to: st.id });
+        connectedIds.add(dep);
+        connectedIds.add(st.id);
       }
     }
 
     // Recurse into nested subtasks
     if (st.subtasks.length > 0) {
-      const result = processSubtasks(st.subtasks, nid, allIds, lines);
-      nodeCount += result.nodeCount;
-      edgeCount += result.edgeCount;
+      collectSubtaskEdges(st.subtasks, st.id, allIds, edges, connectedIds);
     }
   }
+}
 
-  return { nodeCount, edgeCount };
+/**
+ * Emit subtask nodes that are connected, collect orphans.
+ */
+function emitConnectedSubtasks(
+  subtasks: Subtask[],
+  connectedIds: Set<string>,
+  emittedNodes: Set<string>,
+  emitNode: (id: string, label: string) => void,
+  orphans: { id: string; title: string; status: FeatureStatus }[]
+): void {
+  for (const st of subtasks) {
+    if (connectedIds.has(st.id)) {
+      const badge = STATUS_BADGE[st.status];
+      emitNode(st.id, `${badge} ${sanitizeLabel(st.title)}`);
+    } else {
+      orphans.push({ id: st.id, title: st.title, status: st.status });
+    }
+
+    if (st.subtasks.length > 0) {
+      emitConnectedSubtasks(st.subtasks, connectedIds, emittedNodes, emitNode, orphans);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -383,12 +429,12 @@ export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void
   const data = loadFeatures(projectRoot, config);
   const fmt = opts.outputFmt ?? "text";
 
-  const { source, nodeCount, edgeCount, orphanCount } = buildMermaidSource(data, {
+  const { source, nodeCount, edgeCount, orphanCount, orphans } = buildMermaidSource(data, {
     status: opts.status,
     subtasks: opts.subtasks,
   });
 
-  if (nodeCount === 0) {
+  if (nodeCount === 0 && orphanCount === 0) {
     output(fmt, { graph: null, nodes: 0, edges: 0, message: "No features to graph" }, () => {
       console.log("No features to graph.");
     });
@@ -397,33 +443,55 @@ export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void
 
   // --mermaid: emit raw mermaid source
   if (opts.mermaid) {
-    output(fmt, { mermaid: source, nodes: nodeCount, edges: edgeCount }, () => {
-      console.log(source);
+    output(fmt, { mermaid: source || null, nodes: nodeCount, edges: edgeCount, orphans }, () => {
+      if (source) {
+        console.log(source);
+      }
+      if (orphans.length > 0) {
+        console.log(`\n# ${orphans.length} orphan(s) with no dependency relationships:`);
+        for (const o of orphans) {
+          console.log(`# ${STATUS_BADGE[o.status]} ${o.id}: ${o.title}`);
+        }
+      }
     });
     return;
   }
 
   // --output json: emit structured data
   if (fmt === "json") {
-    const rendered = renderMermaidToTui(source, { ascii: true }) as string;
+    const rendered = source ? renderMermaidToTui(source, { ascii: true }) as string : null;
     console.log(
       JSON.stringify({
-        mermaid: source,
+        mermaid: source || null,
         rendered,
         nodes: nodeCount,
         edges: edgeCount,
-        orphans: orphanCount,
+        orphan_count: orphanCount,
+        orphans,
       })
     );
     return;
   }
 
   // Default: render the graph in the terminal
-  const rendered = renderMermaidToTui(source, { ascii: !!opts.ascii }) as string;
-
   console.log(`\n${BOLD}Feature Dependency Graph${RESET}`);
-  console.log(`${DIM}${nodeCount} nodes, ${edgeCount} edges, ${orphanCount} orphans (no deps/dependents)${RESET}\n`);
-  console.log(rendered);
+
+  if (nodeCount > 0 && source) {
+    const rendered = renderMermaidToTui(source, { ascii: !!opts.ascii }) as string;
+    console.log(`${DIM}${nodeCount} nodes, ${edgeCount} edges${RESET}\n`);
+    console.log(rendered);
+  } else {
+    console.log(`${DIM}No dependency relationships found.${RESET}`);
+  }
+
+  // Print orphan summary
+  if (orphans.length > 0) {
+    console.log(`\n${BOLD}Standalone features${RESET} ${DIM}(${orphans.length} with no dependencies):${RESET}`);
+    for (const o of orphans) {
+      const badge = STATUS_BADGE[o.status];
+      console.log(`  ${DIM}${badge}${RESET} ${o.id} ${DIM}— ${o.title}${RESET}`);
+    }
+  }
 
   // Print legend and diagnostics
   printLegend(data.features);

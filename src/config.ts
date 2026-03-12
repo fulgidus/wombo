@@ -7,6 +7,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import type { MultiplexerPreference } from "./lib/multiplexer.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -52,8 +53,10 @@ export interface WomboConfig {
     name: string;
     /** Config files/dirs to copy into worktrees */
     configFiles: string[];
-    /** tmux session name prefix */
+    /** Session name prefix for terminal multiplexer */
     tmuxPrefix: string;
+    /** Terminal multiplexer preference: "auto" (prefer dmux), "dmux", or "tmux" */
+    multiplexer: MultiplexerPreference;
   };
   /** Portless integration for localhost server testing */
   portless: {
@@ -77,6 +80,29 @@ export interface WomboConfig {
     maxConcurrent: number;
     /** Max retries per agent */
     maxRetries: number;
+  };
+  /** Browser testing configuration */
+  browser: BrowserConfig;
+}
+
+/** Configuration for browser-based verification and testing */
+export interface BrowserConfig {
+  /** Enable browser testing in the verify pipeline */
+  enabled: boolean;
+  /** Path to browser binary (null = auto-detect) */
+  bin: string | null;
+  /** Run browser in headless mode (required for CI) */
+  headless: boolean;
+  /** Custom test command to run browser tests (overrides script discovery) */
+  testCommand: string | null;
+  /** Timeout for launching a browser instance (ms) */
+  launchTimeout: number;
+  /** Timeout for each browser test script (ms) */
+  testTimeout: number;
+  /** Default viewport size */
+  defaultViewport: {
+    width: number;
+    height: number;
   };
 }
 
@@ -107,6 +133,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
     name: "wave-worker",
     configFiles: [".opencode/", "opencode.json", "AGENTS.md", "agent/"],
     tmuxPrefix: "wombo",
+    multiplexer: "auto",
   },
   portless: {
     enabled: true,
@@ -120,6 +147,18 @@ export const DEFAULT_CONFIG: WomboConfig = {
   defaults: {
     maxConcurrent: 6,
     maxRetries: 2,
+  },
+  browser: {
+    enabled: false,
+    bin: null,
+    headless: true,
+    testCommand: null,
+    launchTimeout: 30_000,
+    testTimeout: 60_000,
+    defaultViewport: {
+      width: 1280,
+      height: 720,
+    },
   },
 };
 

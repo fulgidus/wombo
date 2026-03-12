@@ -2,6 +2,7 @@ node_modules/
 dist/
 .wombo-state.json
 .wombo-logs/
+.wombo-history/
 *.tmp
 *.log
 # Features file backups

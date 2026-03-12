@@ -3,7 +3,7 @@
  *
  * Usage: wombo abort <feature-id> [--requeue] [--output json]
  *
- * Kills the tmux session (if any) and the agent process, then updates
+ * Kills the multiplexer session (if any) and the agent process, then updates
  * wave state to mark the agent as "failed" (default) or "queued"
  * (if --requeue is passed, returning it to the queue for retry).
  */
@@ -16,7 +16,8 @@ import {
   type AgentState,
 } from "../lib/state.js";
 import {
-  killTmuxSession,
+  killMuxSession,
+  getMultiplexerName,
   isProcessRunning,
 } from "../lib/launcher.js";
 import { output, outputError, type OutputFormat } from "../lib/output.js";
@@ -66,11 +67,11 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
     );
   }
 
-  // 1. Kill the tmux session (if any)
-  let tmuxKilled = false;
+  // 1. Kill the multiplexer session (if any)
+  let muxKilled = false;
   try {
-    killTmuxSession(featureId, config);
-    tmuxKilled = true;
+    killMuxSession(featureId, config);
+    muxKilled = true;
   } catch {
     // Session may not exist — that's fine
   }
@@ -109,11 +110,12 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
   saveState(projectRoot, state);
 
   // 4. Output result
+  const muxName = getMultiplexerName(config);
   const result = {
     feature_id: featureId,
     previous_status: agent.status,
     new_status: newStatus,
-    tmux_killed: tmuxKilled,
+    mux_killed: muxKilled,
     process_killed: processKilled,
     requeued: !!opts.requeue,
   };
@@ -122,7 +124,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
     console.log(`\nAborted agent: ${featureId}`);
     console.log(`  Previous status: ${agent.status}`);
     console.log(`  New status: ${newStatus}`);
-    if (tmuxKilled) console.log(`  Killed tmux session: ${config.agent.tmuxPrefix}-${featureId}`);
+    if (muxKilled) console.log(`  Killed ${muxName} session: ${config.agent.tmuxPrefix}-${featureId}`);
     if (processKilled) console.log(`  Killed process: PID ${agent.pid}`);
     if (opts.requeue) {
       console.log(`  Feature returned to queue for retry.`);
