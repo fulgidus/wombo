@@ -12,7 +12,7 @@ import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { CONFIG_FILE, DEFAULT_CONFIG, type WomboConfig } from "../config.js";
 import { FEATURES_TEMPLATE_PATH } from "../lib/features.js";
-import { AGENT_TEMPLATE_PATH } from "../lib/templates.js";
+import { renderAgentTemplate } from "../lib/templates.js";
 
 export interface InitOptions {
   projectRoot: string;
@@ -148,6 +148,16 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     );
     cfg.agent.tmuxPrefix = await p.string("tmux session prefix", cfg.agent.tmuxPrefix);
 
+    // -- Portless ---------------------------------------------------------
+    section("Portless (localhost server testing)");
+    console.log("  Portless prevents port collisions when multiple agents run dev servers.\n");
+    cfg.portless.enabled = await p.yesNo("Enable portless integration", cfg.portless.enabled);
+    if (cfg.portless.enabled) {
+      cfg.portless.bin = await p.stringOrNull("Portless binary path (or 'auto')", cfg.portless.bin);
+      cfg.portless.proxyPort = await p.number("Proxy port", cfg.portless.proxyPort);
+      cfg.portless.https = await p.yesNo("Enable HTTPS/HTTP2", cfg.portless.https);
+    }
+
     // -- Defaults ---------------------------------------------------------
     section("Runtime Defaults");
     cfg.defaults.maxConcurrent = await p.number("Max concurrent agents", cfg.defaults.maxConcurrent);
@@ -187,7 +197,7 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
 
     if (installAgent) {
       mkdirSync(agentDir, { recursive: true });
-      const agentTemplate = readFileSync(AGENT_TEMPLATE_PATH, "utf-8");
+      const agentTemplate = renderAgentTemplate(cfg, opts.projectRoot);
       writeFileSync(agentDefPath, agentTemplate, "utf-8");
       console.log(`Created agent/${cfg.agent.name}.md from template.`);
     } else {

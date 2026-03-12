@@ -242,6 +242,24 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: true,
   },
 
+  // --- abort --------------------------------------------------------------
+  {
+    name: "abort",
+    summary: "Kill a single running agent without affecting the rest of the wave",
+    description:
+      "Kills the tmux session and agent process for a specific feature, then " +
+      "marks the agent as failed. Use --requeue to return the feature to the " +
+      "queue instead of marking it failed.",
+    positionals: [
+      { name: "feature-id", description: "Feature ID of the agent to abort", required: true },
+    ],
+    flags: [
+      { name: "--requeue", description: "Return the feature to queued instead of marking it failed", type: "boolean", default: false },
+    ],
+    mutating: true,
+    supportsDryRun: false,
+  },
+
   // --- upgrade ------------------------------------------------------------
   {
     name: "upgrade",
@@ -253,6 +271,24 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       { name: "--force", description: "Force reinstall even if up to date", type: "boolean", default: false },
     ],
     mutating: true,
+    supportsDryRun: false,
+  },
+
+  // --- logs ---------------------------------------------------------------
+  {
+    name: "logs",
+    summary: "Pretty-print agent logs from .wombo-logs/<feature-id>.log",
+    description:
+      "Reads log files written by agents during headless runs and displays " +
+      "them with colorized output. Supports tailing and following.",
+    positionals: [
+      { name: "feature-id", description: "Feature ID whose logs to display", required: true },
+    ],
+    flags: [
+      { name: "--tail", description: "Show only the last N lines", type: "number" },
+      { name: "--follow", alias: "-f", description: "Stream new output as it arrives (like tail -f)", type: "boolean", default: false },
+    ],
+    mutating: false,
     supportsDryRun: false,
   },
 
@@ -304,6 +340,32 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         positionals: [
           { name: "feature-id", description: "Feature ID to update", required: true },
           { name: "status", description: "New status value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "features set-priority",
+        summary: "Change a feature's priority",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "priority", description: "New priority value", required: true },
+        ],
+        flags: [
+          { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "features set-difficulty",
+        summary: "Change a feature's difficulty",
+        positionals: [
+          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "difficulty", description: "New difficulty value", required: true },
         ],
         flags: [
           { name: "--dry-run", description: "Show what would change without writing", type: "boolean", default: false },

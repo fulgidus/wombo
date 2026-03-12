@@ -316,6 +316,22 @@ export function worktreeExists(wtPath: string): boolean {
   return existsSync(wtPath) && existsSync(resolve(wtPath, ".git"));
 }
 
+/**
+ * Check if a local branch exists in the repository.
+ * Uses `git rev-parse --verify` which is the canonical way to check branch existence.
+ */
+export function branchExists(projectRoot: string, branchName: string): boolean {
+  try {
+    runSync(`git rev-parse --verify "refs/heads/${branchName}"`, {
+      cwd: projectRoot,
+      silent: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Worktree Listing / Cleanup (sync)
 // ---------------------------------------------------------------------------
