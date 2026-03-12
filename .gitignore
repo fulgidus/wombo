@@ -4,3 +4,6 @@ dist/
 .wombo-logs/
 *.tmp
 *.log
+# Features file backups
+.features.yml.bak
+.features.yml.*.bak
