@@ -106,7 +106,7 @@ import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema
 // Types
 // ---------------------------------------------------------------------------
 
-interface CLIArgs {
+export interface CLIArgs {
   command: string;
   subcommand?: string;
   // Selection options (launch)
@@ -158,7 +158,7 @@ interface CLIArgs {
 // Arg Parsing
 // ---------------------------------------------------------------------------
 
-function parseArgs(argv: string[]): CLIArgs {
+export function parseArgs(argv: string[]): CLIArgs {
   const args = argv.slice(2); // skip 'bun' and script path
   const result: CLIArgs = {
     command: args[0] || "help",
