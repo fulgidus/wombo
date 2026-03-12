@@ -168,22 +168,32 @@ function parseArgs(argv: string[]): CLIArgs {
 
   for (let i = startIdx; i < args.length; i++) {
     const arg = args[i];
+
+    // Helper: consume the next argument, or exit with a clear error
+    function requireValue(flag: string): string {
+      if (i + 1 >= args.length) {
+        console.error(`Flag ${flag} requires a value.`);
+        process.exit(1);
+      }
+      return args[++i];
+    }
+
     switch (arg) {
       // --- Selection options ---
       case "--top-priority":
-        result.topPriority = parseInt(args[++i], 10);
+        result.topPriority = parseInt(requireValue(arg), 10);
         break;
       case "--quickest-wins":
-        result.quickestWins = parseInt(args[++i], 10);
+        result.quickestWins = parseInt(requireValue(arg), 10);
         break;
       case "--priority":
-        result.priority = args[++i] as Priority;
+        result.priority = requireValue(arg) as Priority;
         break;
       case "--difficulty":
-        result.difficulty = args[++i] as Difficulty;
+        result.difficulty = requireValue(arg) as Difficulty;
         break;
       case "--features":
-        result.features = args[++i].split(",").map((s) => s.trim());
+        result.features = requireValue(arg).split(",").map((s) => s.trim());
         break;
       case "--all-ready":
         result.allReady = true;
@@ -191,11 +201,11 @@ function parseArgs(argv: string[]): CLIArgs {
 
       // --- Launch / runtime options ---
       case "--max-concurrent":
-        result.maxConcurrent = parseInt(args[++i], 10);
+        result.maxConcurrent = parseInt(requireValue(arg), 10);
         break;
       case "--model":
       case "-m":
-        result.model = args[++i];
+        result.model = requireValue(arg);
         break;
       case "--interactive":
         result.interactive = true;
@@ -210,10 +220,10 @@ function parseArgs(argv: string[]): CLIArgs {
         result.autoPush = true;
         break;
       case "--base-branch":
-        result.baseBranch = args[++i];
+        result.baseBranch = requireValue(arg);
         break;
       case "--max-retries":
-        result.maxRetries = parseInt(args[++i], 10);
+        result.maxRetries = parseInt(requireValue(arg), 10);
         break;
 
       // --- General flags ---
@@ -225,16 +235,16 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       case "--tag":
       case "--release":
-        result.tag = args[++i];
+        result.tag = requireValue(arg);
         break;
       case "--output":
       case "-o":
-        result.outputFmt = resolveOutputFormat(args[++i]);
+        result.outputFmt = resolveOutputFormat(requireValue(arg));
         break;
 
       // --- Features subcommand options ---
       case "--status":
-        result.status = args[++i];
+        result.status = requireValue(arg);
         break;
       case "--ready":
         result.ready = true;
@@ -243,20 +253,20 @@ function parseArgs(argv: string[]): CLIArgs {
         result.includeArchive = true;
         break;
       case "--title":
-        result.title = args[++i];
+        result.title = requireValue(arg);
         break;
       case "--description":
       case "--desc":
-        result.description = args[++i];
+        result.description = requireValue(arg);
         break;
       case "--effort":
-        result.effort = args[++i];
+        result.effort = requireValue(arg);
         break;
       case "--depends-on":
-        result.dependsOn = args[++i].split(",").map((s) => s.trim());
+        result.dependsOn = requireValue(arg).split(",").map((s) => s.trim());
         break;
       case "--fields":
-        result.fields = args[++i].split(",").map((s) => s.trim());
+        result.fields = requireValue(arg).split(",").map((s) => s.trim());
         break;
 
       // --- Graph options ---
