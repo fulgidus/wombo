@@ -11,6 +11,23 @@
  * features check` should eventually catch it.
  */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Dynamic version reader
+// ---------------------------------------------------------------------------
+
+function getVersion(): string {
+  try {
+    const pkgPath = resolve(import.meta.dir, "../../package.json");
+    const raw = readFileSync(pkgPath, "utf-8");
+    return JSON.parse(raw).version as string;
+  } catch {
+    return "unknown";
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -466,7 +483,7 @@ export function allCommandSchemas(): Record<string, unknown> {
 
   return {
     tool: "wombo",
-    version: "0.0.2",
+    version: getVersion(),
     global_flags: GLOBAL_FLAGS.map((f) => ({
       name: f.name,
       alias: f.alias,
