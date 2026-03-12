@@ -52,7 +52,7 @@ function checkDevModeGuard(): void {
   } catch {
     return;
   }
-  if (pkgName !== "wombo") return;
+  if (pkgName !== "wombo-combo") return;
 
   // We're in the wombo repo. Is the source being run from a different location?
   // import.meta.dir = directory of THIS file (index.ts). If it's under cwd,
