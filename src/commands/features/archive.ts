@@ -14,6 +14,7 @@ import {
   findFeatureById,
   type Feature,
 } from "../../lib/features.js";
+import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,6 +25,7 @@ export interface FeaturesArchiveOptions {
   config: WomboConfig;
   featureId?: string;
   dryRun?: boolean;
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +34,7 @@ export interface FeaturesArchiveOptions {
 
 export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   const data = loadFeatures(projectRoot, config);
 
@@ -48,11 +51,13 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
     if (idx === -1) {
       // Check if already in archive
       if (data.archive.find((f) => f.id === opts.featureId)) {
-        console.log(`Feature "${opts.featureId}" is already in the archive.`);
+        outputMessage(fmt, `Feature "${opts.featureId}" is already in the archive.`, {
+          already_archived: true,
+          id: opts.featureId,
+        });
         return;
       }
-      console.error(`Feature "${opts.featureId}" not found.`);
-      process.exit(1);
+      outputError(fmt, `Feature "${opts.featureId}" not found.`);
       return;
     }
     toArchive = [data.features[idx]];
@@ -64,14 +69,21 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
   }
 
   if (toArchive.length === 0) {
-    console.log("No features to archive.");
+    outputMessage(fmt, "No features to archive.", { count: 0 });
     return;
   }
 
   if (opts.dryRun) {
-    console.log(`\nWould archive ${toArchive.length} feature(s):\n`);
-    for (const f of toArchive) {
-      console.log(`  ${f.id} — ${f.title} (${f.status})`);
+    outputMessage(fmt, `Would archive ${toArchive.length} feature(s)`, {
+      dry_run: true,
+      count: toArchive.length,
+      features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
+    });
+    if (fmt === "text") {
+      console.log("");
+      for (const f of toArchive) {
+        console.log(`  ${f.id} — ${f.title} (${f.status})`);
+      }
     }
     return;
   }
@@ -83,8 +95,13 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
 
   saveFeatures(projectRoot, config, data);
 
-  console.log(`\nArchived ${toArchive.length} feature(s):`);
-  for (const f of toArchive) {
-    console.log(`  ${f.id} — ${f.title} (${f.status})`);
+  outputMessage(fmt, `Archived ${toArchive.length} feature(s)`, {
+    count: toArchive.length,
+    features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
+  });
+  if (fmt === "text") {
+    for (const f of toArchive) {
+      console.log(`  ${f.id} — ${f.title} (${f.status})`);
+    }
   }
 }

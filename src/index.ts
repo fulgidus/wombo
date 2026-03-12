@@ -658,6 +658,7 @@ async function handleFeaturesSubcommand(
         config,
         featureId: args.featureId,
         dryRun: args.dryRun,
+        outputFmt: args.outputFmt,
       });
       break;
 
