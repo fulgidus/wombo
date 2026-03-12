@@ -20,6 +20,7 @@
  *   wombo abort <feature-id> [--requeue] [--output json]
  *   wombo logs <feature-id> [--tail N] [--follow] [--output json]
  *   wombo cleanup
+ *   wombo history [wave-id] [--output json]
  *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
  *   wombo features add <id> <title> [options]
  *   wombo features set-status <feature-id> <status>
@@ -87,6 +88,7 @@ import { cmdCleanup } from "./commands/cleanup.js";
 import { cmdAbort } from "./commands/abort.js";
 import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
+import { cmdHistory } from "./commands/history.js";
 import { cmdFeaturesList } from "./commands/features/list.js";
 import { cmdFeaturesAdd } from "./commands/features/add.js";
 import { cmdFeaturesSetStatus } from "./commands/features/set-status.js";
@@ -153,6 +155,8 @@ export interface CLIArgs {
   ascii?: boolean;
   mermaidRaw?: boolean;
   graphSubtasks?: boolean;
+  // Browser verification
+  browser?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +310,11 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.follow = true;
         break;
 
+      // --- Browser verification ---
+      case "--browser":
+        result.browser = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -342,7 +351,8 @@ Commands:
   retry          Retry a failed agent
   abort          Kill a single running agent (--requeue to return to queue)
   logs           Pretty-print agent logs for a feature
-  cleanup        Remove all wave worktrees and tmux sessions
+  cleanup        Remove all wave worktrees and multiplexer sessions
+  history        List/view past wave results (stored in .wombo-history/)
   features       Manage .features.yml (see below)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
@@ -375,12 +385,13 @@ Selection Options (for launch):
 Launch Options:
   --max-concurrent N       Max agents running in parallel (default: from config)
   --model <model>          Model to use (e.g., "anthropic/claude-sonnet-4-20250514")
-  --interactive            Use tmux TUI mode instead of headless
+  --interactive            Use multiplexer (dmux/tmux) TUI mode instead of headless
   --no-tui                 Headless mode without neo-blessed TUI (periodic console dashboard)
   --auto-push              Push base branch to remote after all merges complete
   --dry-run                Show what would be launched without launching
   --base-branch <branch>   Base branch (default: from config)
   --max-retries N          Max retries per agent (default: from config)
+  --browser                Enable browser-based verification (run after build passes)
 
 General:
   --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
@@ -422,6 +433,9 @@ Examples:
   wombo features check
   wombo features archive --dry-run
   wombo features show my-feature
+  wombo history
+  wombo history wave-2026-03-12-420
+  wombo history --output json
   wombo describe                           # list all commands as JSON
   wombo describe launch                    # describe a specific command
   wombo describe features add              # describe a subcommand
@@ -549,6 +563,10 @@ async function main(): Promise<void> {
 
   switch (args.command) {
     case "launch":
+      // Apply browser verification override if --browser flag was passed
+      if (args.browser !== undefined) {
+        config.browser.enabled = args.browser;
+      }
       await cmdLaunch({
         projectRoot: PROJECT_ROOT,
         config,
@@ -595,6 +613,7 @@ async function main(): Promise<void> {
         featureId: args.featureId,
         model: args.model,
         maxRetries: args.maxRetries,
+        browserVerify: args.browser,
       });
       break;
 
@@ -627,6 +646,15 @@ async function main(): Promise<void> {
 
     case "cleanup":
       await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
+      break;
+
+    case "history":
+      await cmdHistory({
+        projectRoot: PROJECT_ROOT,
+        config,
+        waveId: args.featureId,
+        outputFmt: args.outputFmt,
+      });
       break;
 
     case "abort": {

@@ -6,6 +6,7 @@
  *   - Capture and parse build output
  *   - Determine pass/fail
  *   - Extract error messages for retry prompts
+ *   - Run browser-based verification when enabled
  *
  * IMPORTANT: runBuild is ASYNC — does not block the event loop.
  */
@@ -14,6 +15,11 @@ import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
+import {
+  runBrowserVerification,
+  extractBrowserErrorSummary,
+  type BrowserVerificationResult,
+} from "./browser-verifier.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -28,6 +34,20 @@ export interface BuildResult {
   errorSummary: string;
   /** Duration in milliseconds */
   durationMs: number;
+}
+
+/**
+ * Combined result of build verification + browser verification.
+ */
+export interface FullVerificationResult {
+  /** Build result (always runs) */
+  build: BuildResult;
+  /** Browser verification result (may be skipped) */
+  browser: BrowserVerificationResult;
+  /** Overall pass: build passed AND browser passed (or was skipped) */
+  overallPassed: boolean;
+  /** Combined error summary for retry prompts */
+  combinedErrorSummary: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -144,4 +164,69 @@ export function hasBuildArtifacts(
   } catch {
     return false;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Full Verification (Build + Browser)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the complete verification pipeline:
+ *   1. Run the build command
+ *   2. If build passes and browser testing is enabled, run browser tests
+ *
+ * Browser testing is additive — it runs AFTER the build passes and is
+ * skipped if the build fails (no point testing a broken build in browser).
+ */
+export async function runFullVerification(
+  worktreePath: string,
+  featureId: string,
+  config: WomboConfig
+): Promise<FullVerificationResult> {
+  // Step 1: Build verification (always runs)
+  const buildResult = await runBuild(worktreePath, config);
+
+  // If build failed, skip browser testing
+  if (!buildResult.passed) {
+    return {
+      build: buildResult,
+      browser: {
+        ran: false,
+        skipReason: "Skipped because build failed",
+        browserResult: null,
+      },
+      overallPassed: false,
+      combinedErrorSummary: buildResult.errorSummary,
+    };
+  }
+
+  // Step 2: Browser verification (runs only if build passed and browser enabled)
+  const browserResult = await runBrowserVerification({
+    worktreePath,
+    featureId,
+    config,
+  });
+
+  // Determine overall pass
+  const browserPassed = !browserResult.ran || (browserResult.browserResult?.allPassed ?? true);
+  const overallPassed = buildResult.passed && browserPassed;
+
+  // Combine error summaries
+  let combinedErrorSummary = "";
+  if (!buildResult.passed) {
+    combinedErrorSummary = buildResult.errorSummary;
+  }
+  if (browserResult.ran && browserResult.browserResult && !browserResult.browserResult.allPassed) {
+    const browserErrors = extractBrowserErrorSummary(browserResult.browserResult);
+    combinedErrorSummary = combinedErrorSummary
+      ? `${combinedErrorSummary}\n\n--- Browser Test Errors ---\n\n${browserErrors}`
+      : browserErrors;
+  }
+
+  return {
+    build: buildResult,
+    browser: browserResult,
+    overallPassed,
+    combinedErrorSummary,
+  };
 }

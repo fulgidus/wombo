@@ -25,7 +25,8 @@
       "AGENTS.md",
       "agent/"
     ],
-    "tmuxPrefix": "wombo"
+    "tmuxPrefix": "wombo",
+    "multiplexer": "auto"
   },
   "defaults": {
     "maxConcurrent": 10,

@@ -44,6 +44,12 @@ export interface AgentState {
   error: string | null;
   /** Estimated effort in milliseconds (from feature's ISO 8601 duration) */
   effort_estimate_ms: number | null;
+  /** Stream index this agent belongs to (for dependency-aware scheduling) */
+  stream_index: number | null;
+  /** IDs of features this agent depends on (within the current wave) */
+  depends_on: string[];
+  /** IDs of features that depend on this agent (within the current wave) */
+  depended_on_by: string[];
 }
 
 export interface WaveState {
@@ -55,6 +61,21 @@ export interface WaveState {
   model: string | null;
   interactive: boolean;
   agents: AgentState[];
+  /** Dependency-aware scheduling plan (null if no dependencies exist) */
+  schedule_plan: SerializedSchedulePlan | null;
+}
+
+/**
+ * Serialized schedule plan stored in wave state JSON.
+ * Uses plain arrays instead of the rich SchedulePlan type for JSON compatibility.
+ */
+export interface SerializedSchedulePlan {
+  /** Streams: each is a list of feature IDs to execute sequentially */
+  streams: string[][];
+  /** Merge gates: features that must wait for multiple deps from different streams */
+  merge_gates: Array<{ feature_id: string; wait_for: string[] }>;
+  /** Topological order of all features */
+  topological_order: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +162,7 @@ export function createWaveState(opts: {
     model: opts.model,
     interactive: opts.interactive,
     agents: [],
+    schedule_plan: null,
   };
 }
 
@@ -170,6 +192,9 @@ export function createAgentState(
     build_output: null,
     error: null,
     effort_estimate_ms: null,
+    stream_index: null,
+    depends_on: [],
+    depended_on_by: [],
   };
 }
 
@@ -244,4 +269,110 @@ export function isWaveComplete(state: WaveState): boolean {
       a.status === "failed" ||
       a.status === "merged"
   );
+}
+
+// ---------------------------------------------------------------------------
+// Dependency-Aware Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Terminal statuses that count as "dependency satisfied" for downstream features.
+ * A dependency is satisfied when it has been verified or merged.
+ */
+const DEP_SATISFIED_STATUSES: Set<AgentStatus> = new Set(["verified", "merged"]);
+
+/**
+ * Check if an agent's dependencies within the wave are all satisfied.
+ * Dependencies are satisfied when their agents reach "verified" or "merged" status.
+ *
+ * If the agent has no depends_on entries, it's always ready.
+ */
+export function areAgentDepsReady(
+  state: WaveState,
+  agent: AgentState
+): boolean {
+  if (agent.depends_on.length === 0) return true;
+
+  for (const depId of agent.depends_on) {
+    const depAgent = state.agents.find((a) => a.feature_id === depId);
+    if (depAgent && !DEP_SATISFIED_STATUSES.has(depAgent.status)) {
+      return false;
+    }
+    // If depAgent doesn't exist in this wave, the dep is external — assumed satisfied
+  }
+  return true;
+}
+
+/**
+ * Get queued agents whose dependencies are all satisfied.
+ * This is the dependency-aware replacement for plain queuedAgents().
+ */
+export function readyToLaunchAgents(state: WaveState): AgentState[] {
+  return state.agents.filter(
+    (a) => a.status === "queued" && areAgentDepsReady(state, a)
+  );
+}
+
+/**
+ * Get all agents that are downstream (depend on) a given feature, directly or transitively.
+ * Used for failure cascading — when a feature fails, cancel all downstream.
+ */
+export function getDownstreamAgents(
+  state: WaveState,
+  featureId: string
+): AgentState[] {
+  const visited = new Set<string>();
+  const result: AgentState[] = [];
+
+  function collect(id: string): void {
+    const agent = state.agents.find((a) => a.feature_id === id);
+    if (!agent) return;
+
+    for (const downstreamId of agent.depended_on_by) {
+      if (visited.has(downstreamId)) continue;
+      visited.add(downstreamId);
+
+      const downstream = state.agents.find((a) => a.feature_id === downstreamId);
+      if (downstream) {
+        result.push(downstream);
+        collect(downstreamId);
+      }
+    }
+  }
+
+  collect(featureId);
+  return result;
+}
+
+/**
+ * Cancel all downstream agents when an upstream dependency fails.
+ * Sets status to "failed" with an error explaining the dependency failure.
+ * Returns the list of cancelled agent IDs.
+ */
+export function cancelDownstream(
+  state: WaveState,
+  failedFeatureId: string
+): string[] {
+  const downstream = getDownstreamAgents(state, failedFeatureId);
+  const cancelled: string[] = [];
+
+  for (const agent of downstream) {
+    // Only cancel agents that haven't already reached a terminal state
+    if (
+      agent.status === "queued" ||
+      agent.status === "installing" ||
+      agent.status === "running" ||
+      agent.status === "retry"
+    ) {
+      updateAgent(state, agent.feature_id, {
+        status: "failed",
+        error: `Dependency "${failedFeatureId}" failed — downstream cancelled`,
+        activity: null,
+        completed_at: new Date().toISOString(),
+      });
+      cancelled.push(agent.feature_id);
+    }
+  }
+
+  return cancelled;
 }

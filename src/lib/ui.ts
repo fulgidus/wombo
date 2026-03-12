@@ -9,7 +9,7 @@
  */
 
 import type { WaveState, AgentState, AgentStatus } from "./state.js";
-import { agentCounts } from "./state.js";
+import { agentCounts, areAgentDepsReady } from "./state.js";
 import { formatDuration, parseDurationMinutes } from "./features.js";
 
 // ---------------------------------------------------------------------------
@@ -110,6 +110,16 @@ export function renderDashboard(state: WaveState): string {
   if (state.model) {
     lines.push(`${DIM}Model: ${state.model}${RESET}`);
   }
+  if (state.schedule_plan) {
+    const { streams, merge_gates } = state.schedule_plan;
+    const chainCount = streams.filter((s) => s.length > 1).length;
+    lines.push(
+      `${DIM}Scheduling: ${streams.length} stream(s)` +
+      (chainCount > 0 ? `, ${chainCount} chain(s)` : "") +
+      (merge_gates.length > 0 ? `, ${merge_gates.length} merge gate(s)` : "") +
+      `${RESET}`
+    );
+  }
   lines.push("");
 
   // Table header
@@ -142,6 +152,17 @@ export function renderDashboard(state: WaveState): string {
       activityText = "build passed";
     } else if (agent.status === "merged") {
       activityText = agent.branch;
+    } else if (agent.status === "queued" && agent.depends_on.length > 0) {
+      // Show what this queued agent is waiting for
+      const unsatisfied = agent.depends_on.filter((depId) => {
+        const dep = state.agents.find((a) => a.feature_id === depId);
+        return dep && dep.status !== "verified" && dep.status !== "merged";
+      });
+      if (unsatisfied.length > 0) {
+        activityText = `waiting: ${unsatisfied.join(", ")}`.slice(0, 28);
+      } else {
+        activityText = "deps ready, queued";
+      }
     }
 
     const row = [
@@ -184,6 +205,39 @@ export function renderDashboard(state: WaveState): string {
     summaryParts.push(colorize(`${counts.resolving_conflict} resolving`, FG.cyan));
 
   lines.push(summaryParts.join(" | "));
+
+  // Show merge gate status if applicable
+  if (state.schedule_plan && state.schedule_plan.merge_gates.length > 0) {
+    const gateParts: string[] = [];
+    for (const gate of state.schedule_plan.merge_gates) {
+      const gateAgent = state.agents.find((a) => a.feature_id === gate.feature_id);
+      if (!gateAgent) continue;
+
+      if (gateAgent.status === "queued") {
+        const waitingOn = gate.wait_for.filter((depId) => {
+          const dep = state.agents.find((a) => a.feature_id === depId);
+          return dep && dep.status !== "verified" && dep.status !== "merged";
+        });
+        if (waitingOn.length > 0) {
+          gateParts.push(
+            `${DIM}⊘ ${gate.feature_id} gate: waiting for ${waitingOn.join(", ")}${RESET}`
+          );
+        } else {
+          gateParts.push(
+            colorize(`⊙ ${gate.feature_id} gate: ready`, FG.green)
+          );
+        }
+      } else {
+        gateParts.push(
+          colorize(`⊙ ${gate.feature_id} gate: ${gateAgent.status}`, STATUS_COLORS[gateAgent.status])
+        );
+      }
+    }
+    if (gateParts.length > 0) {
+      lines.push(`${DIM}Merge Gates:${RESET} ${gateParts.join(" | ")}`);
+    }
+  }
+
   lines.push("");
 
   return lines.join("\n");

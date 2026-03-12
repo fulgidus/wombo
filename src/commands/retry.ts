@@ -4,7 +4,7 @@
  * Usage: wombo retry <feature-id> [--interactive] [--model <model>]
  *
  * Resets the agent's retry count and re-launches it. Can launch in either
- * headless mode (default) or interactive (tmux) mode.
+ * headless mode (default) or interactive (dmux/tmux) mode.
  */
 
 import type { WomboConfig } from "../config.js";
@@ -16,7 +16,7 @@ import {
 } from "../lib/state.js";
 import { worktreeReady } from "../lib/worktree.js";
 import { generatePrompt } from "../lib/prompt.js";
-import { launchInteractive } from "../lib/launcher.js";
+import { launchInteractive, getMultiplexerName } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { launchSingleHeadless } from "./launch.js";
 
@@ -73,7 +73,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
     console.log(`  Current status: ${agent.status}`);
     console.log(`  Retries so far: ${agent.retries}`);
     console.log(`  Worktree: ${agent.worktree}`);
-    console.log(`  Mode: ${opts.interactive ? "interactive (tmux)" : "headless"}`);
+    console.log(`  Mode: ${opts.interactive ? "interactive (multiplexer)" : "headless"}`);
     if (opts.model) console.log(`  Model: ${opts.model}`);
     return;
   }
@@ -113,7 +113,8 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       started_at: new Date().toISOString(),
     });
     saveState(projectRoot, state);
-    console.log(`Retrying ${opts.featureId} in tmux session ${config.agent.tmuxPrefix}-${opts.featureId}`);
+    const muxName = getMultiplexerName(config);
+    console.log(`Retrying ${opts.featureId} in ${muxName} session ${config.agent.tmuxPrefix}-${opts.featureId}`);
   } else {
     const monitor = new ProcessMonitor(projectRoot);
     await launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, opts.model);
