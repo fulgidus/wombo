@@ -495,6 +495,7 @@ async function main(): Promise<void> {
         maxRetries: args.maxRetries ?? config.defaults.maxRetries,
         noTui: args.noTui,
         autoPush: args.autoPush,
+        outputFmt: args.outputFmt,
       });
       break;
 

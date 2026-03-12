@@ -38,6 +38,7 @@ import {
   worktreePath,
   worktreeReady,
   branchHasChanges,
+  branchExists,
   removeWorktree,
   log as wtLog,
 } from "../lib/worktree.js";
@@ -60,6 +61,7 @@ import {
 } from "../lib/ui.js";
 import { WomboTUI } from "../lib/tui.js";
 import { ensureAgentDefinition } from "../lib/templates.js";
+import { outputError, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -84,6 +86,8 @@ export interface LaunchCommandOptions {
   maxRetries: number;
   noTui: boolean;
   autoPush: boolean;
+  // Output
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -877,6 +881,17 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
   // Ensure agent definition exists — reinstall from template if missing
   ensureAgentDefinition(projectRoot, config);
+
+  // -------------------------------------------------------------------------
+  // Validate that the configured baseBranch exists as a local branch
+  // -------------------------------------------------------------------------
+  if (!branchExists(projectRoot, opts.baseBranch)) {
+    const fmt = opts.outputFmt ?? "text";
+    const msg = `Base branch "${opts.baseBranch}" does not exist as a local branch. ` +
+      `Create it first (e.g. "git checkout -b ${opts.baseBranch}") or specify ` +
+      `a different branch with --base-branch.`;
+    outputError(fmt, msg);
+  }
 
   // -------------------------------------------------------------------------
   // Check for existing wave state — don't overwrite work in progress
