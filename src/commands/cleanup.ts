@@ -11,7 +11,7 @@ import { execSync } from "node:child_process";
 import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
 import { killAllTmuxSessions } from "../lib/launcher.js";
-import { cleanupAllWorktrees } from "../lib/worktree.js";
+import { cleanupAllWorktrees, listWomboWorktrees } from "../lib/worktree.js";
 
 export interface CleanupOptions {
   projectRoot: string;
@@ -43,20 +43,12 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
       console.log("  tmux sessions to kill: 0 (no tmux server running)");
     }
 
-    // List worktrees that would be removed
+    // List worktrees that would be removed (using safe filtering)
     try {
-      const worktrees = execSync("git worktree list --porcelain", {
-        cwd: projectRoot,
-        encoding: "utf-8",
-      }).trim();
-      const prefix = config.git.worktreePrefix;
-      const matching = worktrees
-        .split("\n")
-        .filter((line) => line.startsWith("worktree ") && line.includes(prefix))
-        .map((line) => line.replace("worktree ", ""));
+      const matching = listWomboWorktrees(projectRoot, config);
       console.log(`  worktrees to remove: ${matching.length}`);
-      for (const w of matching) {
-        console.log(`    ${w}`);
+      for (const wt of matching) {
+        console.log(`    ${wt.path}`);
       }
     } catch {
       console.log("  worktrees to remove: 0");
