@@ -59,7 +59,7 @@ import {
   getMultiplexerName,
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
-import { runBuild, runFullVerification } from "../lib/verifier.js";
+import { runBuild, runFullVerification, type FullVerificationOptions } from "../lib/verifier.js";
 import { mergeBranch, mergeBaseIntoFeature, pushBaseBranch, canMerge, enqueueMerge } from "../lib/merger.js";
 import {
   printDashboard,
@@ -304,13 +304,14 @@ export async function handleBuildVerification(
   feature: Feature,
   config: WomboConfig,
   model?: string,
-  monitor?: ProcessMonitor
+  monitor?: ProcessMonitor,
+  tddOpts?: FullVerificationOptions
 ): Promise<void> {
   try {
     printAgentUpdate(agent, "verifying build...");
 
-    // Use full verification pipeline (build + optional browser tests)
-    const fullResult = await runFullVerification(agent.worktree, agent.feature_id, config);
+    // Use full verification pipeline (build + optional browser tests + optional TDD)
+    const fullResult = await runFullVerification(agent.worktree, agent.feature_id, config, tddOpts);
     const buildResult = fullResult.build;
 
     // Report browser test status if they ran
@@ -322,6 +323,18 @@ export async function handleBuildVerification(
       );
     } else if (fullResult.browser.skipReason && config.browser.enabled) {
       printAgentUpdate(agent, `BROWSER: skipped — ${fullResult.browser.skipReason}`);
+    }
+
+    // Report TDD verification status if it ran
+    if (fullResult.tdd.ran) {
+      const tdd = fullResult.tdd;
+      const tddIcon = tdd.passed ? "✓" : "✗";
+      printAgentUpdate(agent, `TDD: ${tddIcon} ${tdd.summary}`);
+      if (tdd.hasWarnings) {
+        printAgentUpdate(agent, `TDD: ⚠ Missing tests detected (non-blocking)`);
+      }
+    } else if (fullResult.tdd.skipReason && config.tdd?.enabled) {
+      printAgentUpdate(agent, `TDD: skipped — ${fullResult.tdd.skipReason}`);
     }
 
     if (fullResult.overallPassed) {

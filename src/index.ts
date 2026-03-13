@@ -162,6 +162,9 @@ export interface CLIArgs {
   graphSubtasks?: boolean;
   // Browser verification
   browser?: boolean;
+  // TDD verification
+  skipTests?: boolean;
+  strictTdd?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +367,14 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.browser = true;
         break;
 
+      // --- TDD verification ---
+      case "--skip-tests":
+        result.skipTests = true;
+        break;
+      case "--strict-tdd":
+        result.strictTdd = true;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -438,6 +449,8 @@ Launch Options:
   --base-branch <branch>   Base branch (default: from config)
   --max-retries N          Max retries per agent (default: from config)
   --browser                Enable browser-based verification (run after build passes)
+  --skip-tests             Skip running tests during TDD verification
+  --strict-tdd             Strict TDD: fail verification if new files are missing tests
 
 General:
   --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
@@ -723,6 +736,8 @@ async function main(): Promise<void> {
         model: args.model,
         maxRetries: args.maxRetries,
         browserVerify: args.browser,
+        skipTests: args.skipTests,
+        strictTdd: args.strictTdd,
       });
       break;
 
