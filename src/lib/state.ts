@@ -51,6 +51,17 @@ export interface AgentState {
   depends_on: string[];
   /** IDs of features that depend on this agent (within the current wave) */
   depended_on_by: string[];
+  /**
+   * Override agent name for this specific agent (from registry).
+   * When set, uses this agent definition instead of the default generalist.
+   * e.g. "engineering-frontend-developer"
+   */
+  agent_name: string | null;
+  /**
+   * The agent_type from the task (e.g. "engineering/engineering-frontend-developer").
+   * Stored for informational purposes and to support resume with re-fetch.
+   */
+  agent_type: string | null;
 }
 
 export interface WaveState {
@@ -198,6 +209,8 @@ export function createAgentState(
     stream_index: null,
     depends_on: [],
     depended_on_by: [],
+    agent_name: null,
+    agent_type: null,
   };
 }
 

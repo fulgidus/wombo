@@ -85,6 +85,17 @@ import {
   muxListCommand,
 } from "../lib/multiplexer.js";
 import { exportWaveHistory } from "../lib/history.js";
+import {
+  prepareAgentDefinitions,
+  isSpecializedAgent,
+  writeAgentToWorktree,
+  type AgentResolution,
+} from "../lib/agent-registry.js";
+import { patchImportedAgent } from "../lib/templates.js";
+import {
+  tuiPreflightConfirm,
+  consolePreflightConfirm,
+} from "../lib/preflight.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,6 +175,8 @@ export function markFeatureDone(
 /**
  * Launch a single agent in headless mode.
  * Sets up worktree, installs deps, generates prompt, launches agent process.
+ * If agentResolutions is provided and contains a specialized agent for this
+ * feature, the patched agent definition is written into the worktree.
  */
 export async function launchSingleHeadless(
   projectRoot: string,
@@ -172,7 +185,8 @@ export async function launchSingleHeadless(
   feature: Feature,
   monitor: ProcessMonitor,
   config: WomboConfig,
-  model?: string
+  model?: string,
+  agentResolutions?: Map<string, AgentResolution>
 ): Promise<void> {
   updateAgent(state, agent.feature_id, {
     status: "installing",
@@ -221,6 +235,19 @@ export async function launchSingleHeadless(
     // Generate prompt
     const prompt = generatePrompt(feature, state.base_branch, config);
 
+    // Write specialized agent to worktree if applicable
+    const resolution = agentResolutions?.get(feature.id);
+    const agentName = agent.agent_name ?? undefined;
+    if (resolution && isSpecializedAgent(resolution)) {
+      try {
+        const patchedContent = patchImportedAgent(resolution.rawContent, config, projectRoot);
+        writeAgentToWorktree(agent.worktree, resolution.name, patchedContent);
+        wtLog(agent.feature_id, `wrote specialized agent: ${resolution.name}`);
+      } catch (err: any) {
+        wtLog(agent.feature_id, `WARN: failed to write specialized agent, using generalist: ${err.message}`);
+      }
+    }
+
     // Launch agent
     wtLog(agent.feature_id, "launching agent...");
     const result = launchHeadless({
@@ -229,6 +256,7 @@ export async function launchSingleHeadless(
       prompt,
       model,
       config,
+      agentName,
     });
 
     updateAgent(state, agent.feature_id, {
@@ -721,7 +749,8 @@ export function launchNextQueued(
   featureMap: Map<string, Feature>,
   monitor: ProcessMonitor,
   config: WomboConfig,
-  model?: string
+  model?: string,
+  agentResolutions?: Map<string, AgentResolution>
 ): void {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
@@ -730,7 +759,7 @@ export function launchNextQueued(
     const next = ready[0];
     const feature = featureMap.get(next.feature_id);
     if (feature) {
-      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
+      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
     }
   }
 }
@@ -748,7 +777,8 @@ export function launchAllReady(
   featureMap: Map<string, Feature>,
   monitor: ProcessMonitor,
   config: WomboConfig,
-  model?: string
+  model?: string,
+  agentResolutions?: Map<string, AgentResolution>
 ): void {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
@@ -774,7 +804,7 @@ export function launchAllReady(
       }
     }
 
-    launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model);
+    launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
   }
 }
 
@@ -836,7 +866,8 @@ async function launchWaveHeadless(
   projectRoot: string,
   state: WaveState,
   features: Feature[],
-  opts: LaunchCommandOptions
+  opts: LaunchCommandOptions,
+  agentResolutions?: Map<string, AgentResolution>
 ): Promise<void> {
   const { config, model } = opts;
   const featureMap = new Map(features.map((f) => [f.id, f]));
@@ -859,11 +890,11 @@ async function launchWaveHeadless(
         .then(() => {
           // After verification/merge, try to launch dependency-ready agents
           // Multiple queued agents may now be unblocked
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
         })
         .catch((err) => {
           wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
         });
     },
     onError: (featureId, error) => {
@@ -895,7 +926,7 @@ async function launchWaveHeadless(
       }
 
       // Try to launch dependency-ready agents
-      launchAllReady(projectRoot, state, featureMap, monitor, config, model);
+      launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
     },
     onOutput: (_featureId, _data) => {
       // Raw output — logged to file by ProcessMonitor
@@ -962,7 +993,8 @@ async function launchWaveHeadless(
         featureMap.get(agent.feature_id)!,
         monitor,
         config,
-        model
+        model,
+        agentResolutions
       )
     )
   );
@@ -1029,7 +1061,7 @@ async function launchWaveHeadless(
             wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
           }
         }
-        launchAllReady(projectRoot, state, featureMap, monitor, config, model);
+        launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
       }
     }
 
@@ -1095,7 +1127,8 @@ async function launchWaveInteractive(
   projectRoot: string,
   state: WaveState,
   features: Feature[],
-  opts: LaunchCommandOptions
+  opts: LaunchCommandOptions,
+  agentResolutions?: Map<string, AgentResolution>
 ): Promise<void> {
   const { config, model } = opts;
   const featureMap = new Map(features.map((f) => [f.id, f]));
@@ -1131,6 +1164,19 @@ async function launchWaveInteractive(
           config
         );
 
+        // Write specialized agent to worktree if applicable
+        const resolution = agentResolutions?.get(agent.feature_id);
+        const agentName = agent.agent_name ?? undefined;
+        if (resolution && isSpecializedAgent(resolution)) {
+          try {
+            const patchedContent = patchImportedAgent(resolution.rawContent, config, projectRoot);
+            writeAgentToWorktree(agent.worktree, resolution.name, patchedContent);
+            wtLog(agent.feature_id, `wrote specialized agent: ${resolution.name}`);
+          } catch (err: any) {
+            wtLog(agent.feature_id, `WARN: failed to write specialized agent, using generalist: ${err.message}`);
+          }
+        }
+
         wtLog(agent.feature_id, "launching interactive session...");
         const result = launchInteractive({
           worktreePath: agent.worktree,
@@ -1139,6 +1185,7 @@ async function launchWaveInteractive(
           model,
           interactive: true,
           config,
+          agentName,
         });
 
         const muxName = getMultiplexerName(config);
@@ -1344,6 +1391,44 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     return;
   }
 
+  // ---------------------------------------------------------------------------
+  // Agent registry: resolve specialized agents for tasks with agent_type
+  // ---------------------------------------------------------------------------
+  let agentResolutions: Map<string, AgentResolution> | undefined;
+
+  if (config.agentRegistry.mode !== "disabled") {
+    const tasksWithAgentType = selected.filter((t) => t.agent_type);
+    if (tasksWithAgentType.length > 0) {
+      console.log(`\nResolving ${tasksWithAgentType.length} specialized agent(s) from registry...`);
+      agentResolutions = await prepareAgentDefinitions(selected, config, projectRoot);
+
+      const specialized = [...agentResolutions.values()].filter(isSpecializedAgent);
+      const cached = specialized.filter((r) => r.fromCache);
+      console.log(
+        `  ${specialized.length} specialized (${cached.length} cached, ${specialized.length - cached.length} fetched), ` +
+        `${selected.length - specialized.length} generalist`
+      );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Preflight confirmation
+  // ---------------------------------------------------------------------------
+  if (agentResolutions && agentResolutions.size > 0) {
+    const isTTY = process.stdout.isTTY && process.stdin.isTTY;
+    const preflight = isTTY && !opts.noTui
+      ? await tuiPreflightConfirm(selected, agentResolutions, config)
+      : await consolePreflightConfirm(selected, agentResolutions, config);
+
+    if (!preflight.proceed) {
+      console.log("Launch cancelled.\n");
+      return;
+    }
+
+    // Apply user's changes (rejected agents, mode changes)
+    agentResolutions = preflight.agents;
+  }
+
   // Create wave state
   const state = createWaveState({
     baseBranch: opts.baseBranch,
@@ -1405,6 +1490,13 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       agent.stream_index = getStreamForFeature(schedulePlan, feature.id);
     }
 
+    // Set specialized agent info from resolution
+    const resolution = agentResolutions?.get(feature.id);
+    if (resolution && isSpecializedAgent(resolution)) {
+      agent.agent_name = resolution.name;
+      agent.agent_type = resolution.agentType;
+    }
+
     state.agents.push(agent);
   }
 
@@ -1413,8 +1505,8 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
   // Launch agents up to max_concurrent
   if (opts.interactive) {
-    await launchWaveInteractive(projectRoot, state, selected, opts);
+    await launchWaveInteractive(projectRoot, state, selected, opts, agentResolutions);
   } else {
-    await launchWaveHeadless(projectRoot, state, selected, opts);
+    await launchWaveHeadless(projectRoot, state, selected, opts, agentResolutions);
   }
 }

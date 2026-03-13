@@ -20,6 +20,9 @@ export const WOMBO_DIR = ".wombo-combo";
 // Types
 // ---------------------------------------------------------------------------
 
+/** Agent registry download mode */
+export type AgentRegistryMode = "auto" | "monitored" | "disabled";
+
 export interface WomboConfig {
   /** Path to the tasks YAML file relative to .wombo-combo/ */
   tasksFile: string;
@@ -92,6 +95,8 @@ export interface WomboConfig {
   };
   /** Browser testing configuration */
   browser: BrowserConfig;
+  /** Agent registry configuration for specialized agent downloads */
+  agentRegistry: AgentRegistryConfig;
 }
 
 /** Configuration for browser-based verification and testing */
@@ -113,6 +118,21 @@ export interface BrowserConfig {
     width: number;
     height: number;
   };
+}
+
+/** Configuration for the external agent registry (e.g. agency-agents) */
+export interface AgentRegistryConfig {
+  /**
+   * Download mode:
+   * - "auto"      — download agents without asking (default)
+   * - "monitored" — user reviews/edits/rejects each agent before launch
+   * - "disabled"  — always use the generalist agent
+   */
+  mode: AgentRegistryMode;
+  /** GitHub repo in "owner/repo" format to pull agent definitions from */
+  source: string;
+  /** Cache directory name (relative to .wombo-combo/) */
+  cacheDir: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +189,11 @@ export const DEFAULT_CONFIG: WomboConfig = {
       width: 1280,
       height: 720,
     },
+  },
+  agentRegistry: {
+    mode: "auto",
+    source: "msitarzewski/agency-agents",
+    cacheDir: "agents-cache",
   },
 };
 
@@ -272,6 +297,16 @@ export function validateConfig(config: WomboConfig): void {
   }
   if (config.backup.maxBackups < 0) {
     throw new Error("config.backup.maxBackups must be >= 0");
+  }
+  const validModes: AgentRegistryMode[] = ["auto", "monitored", "disabled"];
+  if (!validModes.includes(config.agentRegistry.mode)) {
+    throw new Error(`config.agentRegistry.mode must be one of: ${validModes.join(", ")}`);
+  }
+  if (!config.agentRegistry.source) {
+    throw new Error("config.agentRegistry.source must be a non-empty string");
+  }
+  if (!config.agentRegistry.cacheDir) {
+    throw new Error("config.agentRegistry.cacheDir must be a non-empty string");
   }
 }
 

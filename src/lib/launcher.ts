@@ -47,6 +47,8 @@ export interface LaunchOptions {
   model?: string;
   interactive?: boolean;
   config: WomboConfig;
+  /** Override the agent name (for specialized agents from the registry) */
+  agentName?: string;
 }
 
 export interface RetryOptions {
@@ -112,7 +114,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const args = [
     "run",
     "--format", "json",
-    "--agent", opts.config.agent.name,
+    "--agent", opts.agentName ?? opts.config.agent.name,
     "--dir", opts.worktreePath,
     "--title", `wombo: ${opts.featureId}`,
   ];
