@@ -162,6 +162,27 @@ export function generatePrompt(
     sections.push("- If you need to reference the server URL in tests or config, use the `PORTLESS_URL` env var");
   }
 
+  // TDD instructions — deterministic injection based on config
+  if (config.tdd?.enabled) {
+    const testCmd = config.tdd.testCommand || "bun test";
+    sections.push(`\n## Test-Driven Development (TDD)\n`);
+    sections.push(
+      "You MUST follow the **red-green-refactor** TDD cycle for all implementation work:\n"
+    );
+    sections.push("### Workflow\n");
+    sections.push(`1. **🔴 Red** — Write a failing test first. Run \`${testCmd}\` to confirm it fails.`);
+    sections.push(`2. **🟢 Green** — Write minimal code to make the test pass. Run \`${testCmd}\` to confirm.`);
+    sections.push(`3. **🔵 Refactor** — Clean up while keeping tests green. Run \`${testCmd}\` after each change.`);
+    sections.push(`4. **Repeat** for each new behavior or edge case.\n`);
+    sections.push("### Rules\n");
+    sections.push("- **Never skip the red step.** Every new behavior starts with a failing test.");
+    sections.push("- **One behavior per cycle.** Each iteration covers exactly one small behavior.");
+    sections.push("- **Commit at green.** Each commit should have all tests passing.");
+    sections.push(`- **Run tests frequently.** Run \`${testCmd}\` after every meaningful change.`);
+    sections.push("- Use `import { describe, test, expect } from \"bun:test\";` for test files.");
+    sections.push("- Place tests next to source: `src/foo.ts` → `src/foo.test.ts` (or `tests/foo.test.ts`).");
+  }
+
   // Commit guidelines
   sections.push(`\n## Commit Guidelines\n`);
   sections.push("- Use conventional commits: `feat(scope):`, `fix(scope):`, `refactor(scope):`, `docs(scope):`");
