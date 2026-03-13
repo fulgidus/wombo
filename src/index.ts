@@ -351,7 +351,7 @@ export function parseArgs(argv: string[]): CLIArgs {
 
       // --- Logs options ---
       case "--tail":
-        result.tail = parseInt(args[++i], 10);
+        result.tail = parseInt(requireValue(arg), 10);
         break;
       case "--follow":
       case "-f":
