@@ -1,0 +1,19 @@
+id: agent-template-file
+title: Ship generalist-agent.md as a bundled template in src/templates/
+description: >
+  Move/copy the current agent definition into src/templates/generalist-agent.md so wombo-combo always has a canonical
+  agent definition to install. The template should use placeholders (e.g. {{project}}) where appropriate so it can be
+  customized per-project.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T15:57:50.829Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

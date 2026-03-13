@@ -1,0 +1,32 @@
+id: dependency-aware-sequencing
+title: Dependency-aware sequential agent scheduling
+description: >
+  When launching a wave with inter-dependent features, wombo must handle dependencies programmatically: dependent
+  features should be queued and only started once their blocking features are verified/merged. Within the same
+  dependency chain, agents should work sequentially in the same worktree, maintaining validation at each step.
+  Cross-wave and cross-stream dependencies (where a feature must wait for 2+ features from different waves/streams to
+  complete) must also be supported. All dependency resolution happens programmatically with no LLM intermediary — LLM
+  decisions happen in the planning phase that produces the .features.yml, not during execution.
+status: done
+completion: 100
+difficulty: hard
+priority: critical
+depends_on:
+  - dep-diamond-merge-gates
+effort: P2D
+started_at: null
+ended_at: 2026-03-12T21:52:21.214Z
+constraints:
+  - Dependency resolution must be fully programmatic, no LLM calls during execution
+  - Must handle diamond dependencies (feature C depends on both A and B)
+  - Must detect circular dependencies and error before launching
+  - Sequential features in the same chain should reuse the same worktree
+  - Build verification must pass at each dependency boundary before the next feature starts
+  - Must handle the case where a dependency fails (cancel downstream or re-queue)
+forbidden:
+  - Do not invoke LLM/agent for dependency decisions — this is pure graph scheduling
+references: []
+notes:
+  - "2026-03-12: User requirement. Waves (parallel) of streams (sequential) can merge downstream. This is
+    topological-sort-based scheduling."
+subtasks: []

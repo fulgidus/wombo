@@ -1,0 +1,24 @@
+id: wombo-abort-command
+title: wombo abort <feature-id> — kill single agent
+description: >
+  Add a `wombo abort <feature-id>` command that kills a single running agent without nuking the entire wave. Should kill
+  the tmux session, mark the agent as failed (or optionally return it to queued for retry), and update wave state.
+  Currently the only options are `cleanup` (kills everything) or manual `kill` of the PID.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: 2026-03-12T21:41:10.293Z
+constraints:
+  - Must kill the tmux session cleanly
+  - Must update wave state to reflect the abort
+  - Must support --requeue flag to return the feature to queued instead of failed
+  - Must support --output json
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

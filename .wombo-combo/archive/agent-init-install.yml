@@ -1,0 +1,20 @@
+id: agent-init-install
+title: Install agent template into project during 'woco init'
+description: >
+  During 'woco init', create the .opencode/agents/ directory and write the generalist-agent.md template into it. Also
+  ensure it is added to the configFiles array in the generated config. If the agent template already exists, prompt the
+  user before overwriting.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on:
+  - agent-template-file
+effort: PT1H
+started_at: null
+ended_at: 2026-03-13T15:59:50.369Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

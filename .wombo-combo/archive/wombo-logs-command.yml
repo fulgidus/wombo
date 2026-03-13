@@ -1,0 +1,23 @@
+id: wombo-logs-command
+title: wombo logs <feature-id> command
+description: >
+  Add a `wombo logs <feature-id>` command that pretty-prints agent logs from .wombo-logs/<feature-id>.log with activity
+  annotations, timestamps, and optional filtering. Currently debugging failed waves requires manually reading log files.
+status: done
+completion: 100
+difficulty: easy
+priority: medium
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: 2026-03-12T21:45:25.134Z
+constraints:
+  - Must support --output json for agent consumption
+  - Must support --tail N to show last N lines
+  - Must support --follow to stream new output (like tail -f)
+  - Must show a helpful error if the log file doesn't exist
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

@@ -252,7 +252,7 @@ function copyConfigFiles(
  * Logs a warning for any that are missing. This is a safety net on top
  * of the best-effort cpSync logic in createWorktree.
  */
-function verifyConfigFiles(
+export function verifyConfigFiles(
   projectRoot: string,
   wtPath: string,
   featureId: string,

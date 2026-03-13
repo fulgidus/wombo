@@ -1,0 +1,25 @@
+id: dmux-migration
+title: Switch from tmux to dmux (Rust-based terminal multiplexer)
+description: >
+  Replace tmux with dmux, a faster Rust-based terminal multiplexer, for agent session management. This should be a
+  drop-in replacement in the launcher module, with all tmux-specific commands translated to their dmux equivalents. Must
+  maintain backward compatibility for systems that only have tmux installed (detect and use whichever is available,
+  preferring dmux).
+status: done
+completion: 100
+difficulty: medium
+priority: medium
+depends_on: []
+effort: PT6H
+started_at: null
+ended_at: 2026-03-12T21:57:35.225Z
+constraints:
+  - Must detect available multiplexer (dmux preferred, tmux fallback)
+  - Must maintain all existing session management functionality
+  - Must be configurable via wombo.json (multiplexer preference)
+forbidden:
+  - Do not remove tmux support entirely — it must remain as a fallback
+references: []
+notes:
+  - "2026-03-12: User requirement. dmux is faster and more resource-efficient than tmux."
+subtasks: []

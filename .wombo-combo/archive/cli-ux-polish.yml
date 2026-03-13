@@ -1,0 +1,18 @@
+id: cli-ux-polish
+title: "UX polish: --version flag, better error messages"
+description: Add missing standard CLI conventions (--version/-V) and improve misleading error messages found during testing.
+status: done
+completion: 100
+difficulty: easy
+priority: medium
+depends_on:
+  - ux-version-flag
+  - ux-launch-no-features-msg
+effort: PT2H
+started_at: null
+ended_at: 2026-03-13T16:22:19.199Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

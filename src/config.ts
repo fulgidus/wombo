@@ -137,6 +137,8 @@ export interface AgentRegistryConfig {
   source: string;
   /** Cache directory name (relative to .wombo-combo/) */
   cacheDir: string;
+  /** Cache TTL in milliseconds. Cached agents older than this are re-fetched. Default 24h. */
+  cacheTTL: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +200,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
     mode: "auto",
     source: "msitarzewski/agency-agents",
     cacheDir: "agents-cache",
+    cacheTTL: 24 * 60 * 60 * 1000, // 24 hours
   },
 };
 
