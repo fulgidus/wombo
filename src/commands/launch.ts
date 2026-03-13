@@ -151,12 +151,15 @@ export interface LaunchCommandOptions {
  * GUARD: Verifies that the feature branch has actually been merged into
  * baseBranch before allowing the status change. This prevents callers
  * from accidentally marking verified-but-unmerged features as done.
+ *
+ * @param fmt - Output format. When "json" or "toon", suppresses console warnings.
  */
 export function markFeatureDone(
   projectRoot: string,
   featureId: string,
   config: WomboConfig,
-  baseBranch: string
+  baseBranch: string,
+  fmt: OutputFormat = "text"
 ): void {
   try {
     // Verify the feature branch was actually merged into base
@@ -168,9 +171,11 @@ export function markFeatureDone(
       });
     } catch {
       // git merge-base --is-ancestor exits non-zero if NOT an ancestor
-      console.error(
-        `Warning: ${featureId} branch "${branch}" is not merged into "${baseBranch}" — refusing to mark as done`
-      );
+      if (fmt === "text") {
+        console.error(
+          `Warning: ${featureId} branch "${branch}" is not merged into "${baseBranch}" — refusing to mark as done`
+        );
+      }
       return;
     }
 
@@ -184,7 +189,9 @@ export function markFeatureDone(
     }
   } catch (err: any) {
     // Non-fatal — log but don't crash the wave
-    console.error(`Warning: failed to update feature status for ${featureId}: ${err.message}`);
+    if (fmt === "text") {
+      console.error(`Warning: failed to update feature status for ${featureId}: ${err.message}`);
+    }
   }
 }
 
@@ -880,8 +887,15 @@ export async function launchAllReady(
 /**
  * Print full log contents for every failed agent so the user can diagnose
  * issues after the wave finishes. Handles missing log files gracefully.
+ *
+ * In JSON/TOON mode, this function is a no-op — callers should emit
+ * structured failure data through the output() helper instead.
+ *
+ * @param fmt - Output format. Only prints when "text".
  */
-export function dumpFailedAgentLogs(projectRoot: string, state: WaveState): void {
+export function dumpFailedAgentLogs(projectRoot: string, state: WaveState, fmt: OutputFormat = "text"): void {
+  if (fmt !== "text") return; // suppress in JSON/TOON mode
+
   const failed = state.agents.filter((a) => a.status === "failed");
   if (failed.length === 0) return;
 
@@ -935,6 +949,7 @@ async function launchWaveHeadless(
   agentResolutions?: Map<string, AgentResolution>
 ): Promise<void> {
   const { config, model } = opts;
+  const fmt = opts.outputFmt ?? "text";
   const featureMap = new Map(features.map((f) => [f.id, f]));
 
   const monitor = new ProcessMonitor(projectRoot, {
@@ -1026,7 +1041,7 @@ async function launchWaveHeadless(
         }
         monitor.killAll();
         saveState(projectRoot, state);
-        console.log("State saved. Use 'woco resume' to continue.");
+        if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
         process.exit(0);
       },
       onRetry: (featureId: string) => {
@@ -1062,7 +1077,7 @@ async function launchWaveHeadless(
     }
     monitor.killAll();
     saveState(projectRoot, state);
-    console.log("\nState saved. Use 'woco resume' to continue.");
+    if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
     process.exit(0);
   });
 
@@ -1071,7 +1086,7 @@ async function launchWaveHeadless(
   // each agent spawns its own DB, and simultaneous CREATE TABLE calls collide.
   const ready = readyToLaunchAgents(state);
   const tolaunch = ready.slice(0, opts.maxConcurrent);
-  console.log(`Setting up ${tolaunch.length} agent(s) (staggered)...\n`);
+  if (fmt === "text") console.log(`Setting up ${tolaunch.length} agent(s) (staggered)...\n`);
 
   for (let i = 0; i < tolaunch.length; i++) {
     await launchSingleHeadless(
@@ -1094,10 +1109,12 @@ async function launchWaveHeadless(
 
   // Start the TUI dashboard (or skip if --no-tui)
   if (opts.noTui) {
-    console.log(`${launched} agent(s) running. (--no-tui mode, dashboard prints every 15s)\n`);
-    printDashboard(state);
+    if (fmt === "text") {
+      console.log(`${launched} agent(s) running. (--no-tui mode, dashboard prints every 15s)\n`);
+      printDashboard(state);
+    }
   } else {
-    console.log(`${launched} agent(s) running. Launching TUI...\n`);
+    if (fmt === "text") console.log(`${launched} agent(s) running. Launching TUI...\n`);
     startTUI();
   }
 
@@ -1202,7 +1219,7 @@ async function launchWaveHeadless(
     // Update TUI state reference (or print dashboard in --no-tui mode)
     if (tuiRef.current) {
       tuiRef.current.updateState(state);
-    } else if (opts.noTui) {
+    } else if (opts.noTui && fmt === "text") {
       dashboardCounter++;
       if (dashboardCounter % 3 === 0) {
         printDashboard(state);
@@ -1229,17 +1246,17 @@ async function launchWaveHeadless(
   }
 
   // Print final dashboard after TUI is closed
-  printDashboard(state);
+  if (fmt === "text") printDashboard(state);
 
   // Dump full logs for failed agents (post-mortem)
-  dumpFailedAgentLogs(projectRoot, state);
+  dumpFailedAgentLogs(projectRoot, state, fmt);
 
   // Auto-export wave history
   try {
     const historyPath = exportWaveHistory(projectRoot, state);
-    console.log(`Wave history exported to ${historyPath}`);
+    if (fmt === "text") console.log(`Wave history exported to ${historyPath}`);
   } catch (err: any) {
-    console.error(`Warning: failed to export wave history: ${err.message}`);
+    if (fmt === "text") console.error(`Warning: failed to export wave history: ${err.message}`);
   }
 
   // Auto-push base branch if requested
@@ -1248,13 +1265,15 @@ async function launchWaveHeadless(
   }
 
   // Completion double-check: verify worktrees directory is empty
-  if (isWorktreesDirEmpty(projectRoot)) {
-    console.log("All worktrees cleaned up — worktrees directory is empty.");
-  } else {
-    console.log("\x1b[33mNote:\x1b[0m worktrees directory still has contents. Run 'woco cleanup' to clean up.");
-  }
+  if (fmt === "text") {
+    if (isWorktreesDirEmpty(projectRoot)) {
+      console.log("All worktrees cleaned up — worktrees directory is empty.");
+    } else {
+      console.log("\x1b[33mNote:\x1b[0m worktrees directory still has contents. Run 'woco cleanup' to clean up.");
+    }
 
-  console.log("Wave complete.");
+    console.log("Wave complete.");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1269,14 +1288,15 @@ async function launchWaveInteractive(
   agentResolutions?: Map<string, AgentResolution>
 ): Promise<void> {
   const { config, model } = opts;
+  const fmt = opts.outputFmt ?? "text";
   const featureMap = new Map(features.map((f) => [f.id, f]));
 
   // Show dashboard immediately
-  printDashboard(state);
+  if (fmt === "text") printDashboard(state);
 
   // Launch initial batch — parallelize setup
   const tolaunch = queuedAgents(state).slice(0, opts.maxConcurrent);
-  console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
+  if (fmt === "text") console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
 
   await Promise.all(
     tolaunch.map(async (agent) => {
@@ -1349,15 +1369,17 @@ async function launchWaveInteractive(
 
   const mux = detectMultiplexer(config.agent.multiplexer);
   const muxName = getMultiplexerName(config);
-  console.log("\nInteractive sessions launched. Use these commands:");
-  console.log(`  ${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<feature-id>`)}   # attach to a session`);
-  console.log(`  ${muxListCommand(mux)}${" ".repeat(Math.max(1, 54 - muxListCommand(mux).length))}# list sessions`);
-  console.log("  woco status                                             # check status");
-  console.log("  woco verify                                             # verify builds");
-  console.log("  woco merge                                              # merge verified");
-  console.log("  woco cleanup                                            # remove worktrees");
+  if (fmt === "text") {
+    console.log("\nInteractive sessions launched. Use these commands:");
+    console.log(`  ${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<feature-id>`)}   # attach to a session`);
+    console.log(`  ${muxListCommand(mux)}${" ".repeat(Math.max(1, 54 - muxListCommand(mux).length))}# list sessions`);
+    console.log("  woco status                                             # check status");
+    console.log("  woco verify                                             # verify builds");
+    console.log("  woco merge                                              # merge verified");
+    console.log("  woco cleanup                                            # remove worktrees");
 
-  printDashboard(state);
+    printDashboard(state);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1426,7 +1448,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       if (merged.length > 0) {
         if (fmt === "text") console.log("\nFinalizing merged tasks in tasks file...");
         for (const agent of merged) {
-          markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch);
+          markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch, fmt);
           // Clean up worktree and branch (already merged, safe to delete)
           try {
             removeWorktree(projectRoot, agent.worktree, true);

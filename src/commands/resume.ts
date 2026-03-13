@@ -163,7 +163,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
       case "merged":
         if (fmt === "text") console.log(`  ${agent.feature_id}: merged — marking feature as done`);
-        markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
+        markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch, fmt);
         try {
           removeWorktree(projectRoot, agent.worktree, true);
           if (fmt === "text") console.log(`  ${agent.feature_id}: worktree and branch removed`);
@@ -669,7 +669,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       printDashboard(state);
 
       // Dump full logs for failed agents (post-mortem)
-      dumpFailedAgentLogs(projectRoot, state);
+      dumpFailedAgentLogs(projectRoot, state, fmt);
     }
 
     // Auto-export wave history
