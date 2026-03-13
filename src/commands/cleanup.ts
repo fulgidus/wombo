@@ -22,6 +22,7 @@ import {
   muxListSessions,
 } from "../lib/multiplexer.js";
 import { output, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderCleanup } from "../lib/toon.js";
 
 export interface CleanupOptions {
   projectRoot: string;
@@ -84,6 +85,8 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
       for (const f of filesToRemove) {
         console.log(`  Would remove: ${f}`);
       }
+    }, () => {
+      console.log(renderCleanup(dryRunResult));
     });
 
     return;
@@ -154,5 +157,7 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
     if (historyPreserved) {
       console.log("Note: .wombo-combo/history/ is preserved. Use 'woco history' to view past waves.");
     }
+  }, () => {
+    console.log(renderCleanup(result));
   });
 }

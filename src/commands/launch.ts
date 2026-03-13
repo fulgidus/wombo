@@ -79,6 +79,7 @@ import {
 } from "../lib/dependency-graph.js";
 import { ensureProxyRunning, isPortlessAvailable, portlessUrl } from "../lib/portless.js";
 import { output, outputError, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderLaunchDryRun } from "../lib/toon.js";
 import {
   detectMultiplexer,
   muxAttachCommand,
@@ -1556,6 +1557,8 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
     output(fmt, dryRunResult, () => {
       console.log("Dry run — not launching agents.");
+    }, () => {
+      console.log(renderLaunchDryRun(dryRunResult));
     });
     return;
   }

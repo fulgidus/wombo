@@ -20,6 +20,7 @@ import { launchInteractive, getMultiplexerName } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { launchSingleHeadless } from "./launch.js";
 import { output, outputError, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderRetry } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,6 +88,8 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       console.log(`  Worktree: ${agent.worktree}`);
       console.log(`  Mode: ${opts.interactive ? "interactive (multiplexer)" : "headless"}`);
       if (opts.model) console.log(`  Model: ${opts.model}`);
+    }, () => {
+      console.log(renderRetry(dryRunResult));
     });
     return;
   }
@@ -134,6 +137,13 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       mux_session: `${config.agent.tmuxPrefix}-${opts.featureId}`,
     }, () => {
       console.log(`Retrying ${opts.featureId} in ${muxName} session ${config.agent.tmuxPrefix}-${opts.featureId}`);
+    }, () => {
+      console.log(renderRetry({
+        feature_id: opts.featureId,
+        mode: "interactive",
+        status: "running",
+        mux_session: `${config.agent.tmuxPrefix}-${opts.featureId}`,
+      }));
     });
   } else {
     const monitor = new ProcessMonitor(projectRoot);
@@ -149,6 +159,13 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       pid: updatedAgent?.pid ?? null,
     }, () => {
       console.log(`Retrying ${opts.featureId} in headless mode`);
+    }, () => {
+      console.log(renderRetry({
+        feature_id: opts.featureId,
+        mode: "headless",
+        status: updatedAgent?.status ?? "running",
+        pid: updatedAgent?.pid ?? null,
+      }));
     });
   }
 }

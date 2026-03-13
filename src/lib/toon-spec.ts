@@ -286,6 +286,89 @@ export const TOON_COMMAND_SPECS: readonly ToonCommandSpec[] = [
     ],
     example: "#FIELDS wave_id|started_at|ended_at|total_agents|succeeded|failed\nwave-2026-03-10-001|2026-03-10T08:00:00Z|2026-03-10T09:30:00Z|5|4|1",
   },
+  {
+    command: "verify",
+    fields: [
+      { name: "feature_id", description: "Feature/task identifier", type: "string" },
+      { name: "branch", description: "Git branch name", type: "string" },
+      { name: "status", description: "Post-verification status (verified/failed)", type: "string" },
+      { name: "build_passed", description: "Build passed (1/0 or empty if not run)", type: "bool" },
+      { name: "error", description: "Error message (empty if none)", type: "string" },
+    ],
+    example: "#VERIFY wave:wave-001|verified:2|failed:0\n#FIELDS feature_id|branch|status|build_passed|error\nauth-flow|feature/auth-flow|verified|1|",
+  },
+  {
+    command: "abort",
+    fields: [
+      { name: "fid", description: "Feature ID that was aborted", type: "string" },
+      { name: "prev", description: "Previous agent status", type: "string" },
+      { name: "new", description: "New agent status (failed or queued)", type: "string" },
+      { name: "mux", description: "Multiplexer session killed (1/0)", type: "bool" },
+      { name: "proc", description: "Process killed (1/0)", type: "bool" },
+      { name: "rq", description: "Requeued (1/0)", type: "bool" },
+    ],
+    example: "fid:auth-flow\nprev:running\nnew:failed\nmux:1\nproc:1\nrq:0",
+  },
+  {
+    command: "cleanup",
+    fields: [
+      { name: "mux", description: "Number of multiplexer sessions killed (or count for dry-run)", type: "number" },
+      { name: "wt", description: "Number of worktrees removed (or count for dry-run)", type: "number" },
+      { name: "st", description: "State file removed (1/0)", type: "bool" },
+      { name: "logs", description: "Logs directory removed (1/0)", type: "bool" },
+      { name: "hist", description: "History preserved (1/0)", type: "bool" },
+    ],
+    example: "mux:2\nwt:3\nst:1\nlogs:1\nhist:1",
+  },
+  {
+    command: "merge",
+    fields: [
+      { name: "feature_id", description: "Feature/task identifier", type: "string" },
+      { name: "branch", description: "Git branch name", type: "string" },
+      { name: "status", description: "Post-merge status (merged/failed)", type: "string" },
+      { name: "error", description: "Error message (empty if none)", type: "string" },
+    ],
+    example: "#MERGE wave:wave-001|base:main|merged:2|failed:0\n#FIELDS feature_id|branch|status|error\nauth-flow|feature/auth-flow|merged|",
+  },
+  {
+    command: "retry",
+    fields: [
+      { name: "fid", description: "Feature ID being retried", type: "string" },
+      { name: "mode", description: "Launch mode (interactive/headless)", type: "string" },
+      { name: "st", description: "Agent status after retry", type: "string" },
+    ],
+    example: "fid:auth-flow\nmode:headless\nst:running",
+  },
+  {
+    command: "logs",
+    fields: [
+      { name: "feature_id", description: "Feature ID whose logs are shown", type: "string" },
+      { name: "line_count", description: "Number of log lines", type: "number" },
+      { name: "first_line", description: "First line number shown", type: "number" },
+      { name: "last_line", description: "Last line number shown", type: "number" },
+    ],
+    example: "#LOGS fid:auth-flow|count:150|first:1|last:150\n[log lines follow]",
+  },
+  {
+    command: "tasks graph",
+    fields: [
+      { name: "nodes", description: "Number of graph nodes", type: "number" },
+      { name: "edges", description: "Number of graph edges", type: "number" },
+      { name: "orphans", description: "Number of orphan tasks", type: "number" },
+    ],
+    example: "#GRAPH nodes:5|edges:3|orphans:2\n#MERMAID\nflowchart LR\n...\n#END",
+  },
+  {
+    command: "launch",
+    fields: [
+      { name: "id", description: "Feature/task identifier", type: "string" },
+      { name: "priority", description: "Priority level (C/H/M/L/W)", type: "priority" },
+      { name: "difficulty", description: "Difficulty level (T/E/M/H/V)", type: "difficulty" },
+      { name: "effort", description: "Effort estimate (compact)", type: "duration" },
+      { name: "title", description: "Task title", type: "string" },
+    ],
+    example: "#LAUNCH dry:1|base:main|max:3|model:|interactive:0\n#FIELDS id|priority|difficulty|effort|title\nauth-flow|H|E|2h|Add authentication flow",
+  },
 ] as const;
 
 // ---------------------------------------------------------------------------

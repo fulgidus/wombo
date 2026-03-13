@@ -22,6 +22,7 @@ import {
   type FeaturesFile,
 } from "../../lib/tasks.js";
 import { output, type OutputFormat } from "../../lib/output.js";
+import { renderGraph } from "../../lib/toon.js";
 
 // mermaidtui has no type declarations — import the JS module directly
 // @ts-ignore — no .d.ts published
@@ -437,6 +438,8 @@ export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
   if (nodeCount === 0 && orphanCount === 0) {
     output(fmt, { graph: null, nodes: 0, edges: 0, message: "No tasks to graph" }, () => {
       console.log("No tasks to graph.");
+    }, () => {
+      console.log(renderGraph({ mermaid: null, nodes: 0, edges: 0, orphan_count: 0, orphans: [] }));
     });
     return;
   }
@@ -453,6 +456,14 @@ export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
           console.log(`# ${STATUS_BADGE[o.status]} ${o.id}: ${o.title}`);
         }
       }
+    }, () => {
+      console.log(renderGraph({
+        mermaid: source || null,
+        nodes: nodeCount,
+        edges: edgeCount,
+        orphan_count: orphans.length,
+        orphans,
+      }));
     });
     return;
   }
@@ -470,6 +481,18 @@ export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
         orphans,
       })
     );
+    return;
+  }
+
+  // --output toon: emit compact TOON format
+  if (fmt === "toon") {
+    console.log(renderGraph({
+      mermaid: source || null,
+      nodes: nodeCount,
+      edges: edgeCount,
+      orphan_count: orphanCount,
+      orphans,
+    }));
     return;
   }
 

@@ -18,6 +18,7 @@ import { loadFeatures } from "../lib/tasks.js";
 import { printDashboard, printAgentUpdate } from "../lib/ui.js";
 import { attemptMerge } from "./launch.js";
 import { output, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderMerge } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -88,6 +89,8 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
       if (opts.autoPush) {
         console.log(`\n  Would push ${state.base_branch} to remote after merge.`);
       }
+    }, () => {
+      console.log(renderMerge(dryRunResult));
     });
     return;
   }
@@ -151,5 +154,13 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
     agents: results,
   }, () => {
     printDashboard(state);
+  }, () => {
+    console.log(renderMerge({
+      wave_id: state.wave_id,
+      base_branch: state.base_branch,
+      merged: results.filter((r) => r.status === "merged").length,
+      failed: results.filter((r) => r.status === "failed").length,
+      agents: results,
+    }));
   });
 }

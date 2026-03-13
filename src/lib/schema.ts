@@ -84,7 +84,7 @@ const GLOBAL_FLAGS: FlagDef[] = [
   {
     name: "--output",
     alias: "-o",
-    description: "Output format: text (default) or json",
+    description: "Output format: text (default), json, or toon",
     type: "string",
     default: "text",
     enum: ["text", "json", "toon"],
@@ -402,7 +402,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         summary: "Validate tasks file (schema, deps, duplicates, cycles)",
         positionals: [],
         flags: [
-          { name: "--output", description: "Output format: text (default) or json", type: "string", default: "text" },
+          { name: "--output", description: "Output format: text (default), json, or toon", type: "string", default: "text" },
         ],
         mutating: false,
         supportsDryRun: false,

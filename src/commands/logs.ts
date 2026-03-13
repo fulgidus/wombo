@@ -15,6 +15,7 @@
 import { resolve } from "node:path";
 import { existsSync, readFileSync, statSync, openSync, readSync, closeSync } from "node:fs";
 import { output, outputError, type OutputFormat } from "../lib/output.js";
+import { renderLogs } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -147,6 +148,12 @@ async function followLog(
       for (const line of lines) {
         console.log(JSON.stringify({ feature_id: featureId, line: line.content, line_number: line.lineNumber }));
       }
+    } else if (outputFmt === "toon") {
+      // In follow + toon mode, emit a header then raw lines
+      console.log(`#FOLLOW fid:${featureId}`);
+      for (const line of lines) {
+        console.log(line.content);
+      }
     } else {
       console.log(`\x1b[1m--- Following logs for ${featureId} (Ctrl+C to stop) ---\x1b[0m`);
       console.log(`\x1b[2mFile: ${logPath}\x1b[0m`);
@@ -159,6 +166,8 @@ async function followLog(
     if (outputFmt === "text") {
       console.log(`\x1b[1m--- Following logs for ${featureId} (Ctrl+C to stop) ---\x1b[0m`);
       console.log(`\x1b[33mWaiting for log file to appear...\x1b[0m`);
+    } else if (outputFmt === "toon") {
+      console.log(`#FOLLOW fid:${featureId}|waiting:1`);
     }
   }
 
@@ -231,6 +240,9 @@ async function followLog(
         lineNumber++;
         if (outputFmt === "json") {
           console.log(JSON.stringify({ feature_id: featureId, line: part, line_number: lineNumber }));
+        } else if (outputFmt === "toon") {
+          // In toon follow mode, emit raw lines (no wrapping)
+          console.log(part);
         } else {
           console.log(colorize(part));
         }
@@ -283,5 +295,14 @@ export async function cmdLogs(opts: LogsCommandOptions): Promise<void> {
     lines: lines.map((l) => l.content),
   }, () => {
     renderText(lines, featureId, logPath);
+  }, () => {
+    console.log(renderLogs({
+      feature_id: featureId,
+      log_file: logPath,
+      line_count: lines.length,
+      first_line: lines.length > 0 ? lines[0].lineNumber : null,
+      last_line: lines.length > 0 ? lines[lines.length - 1].lineNumber : null,
+      lines: lines.map((l) => l.content),
+    }));
   });
 }
