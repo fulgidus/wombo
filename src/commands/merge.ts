@@ -1,7 +1,7 @@
 /**
  * merge.ts — Merge verified branches into the base branch.
  *
- * Usage: woco merge [feature-id]
+ * Usage: woco merge [feature-id] [--output json]
  *
  * Merges all verified agents (or a specific one) into the base branch.
  * Uses the full merge pipeline including pre-flight conflict detection,
@@ -17,6 +17,7 @@ import type { Feature } from "../lib/tasks.js";
 import { loadFeatures } from "../lib/tasks.js";
 import { printDashboard, printAgentUpdate } from "../lib/ui.js";
 import { attemptMerge } from "./launch.js";
+import { output, outputMessage, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,7 @@ export interface MergeCommandOptions {
   autoPush?: boolean;
   dryRun?: boolean;
   model?: string;
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -37,10 +39,15 @@ export interface MergeCommandOptions {
 
 export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   const state = loadState(projectRoot);
   if (!state) {
-    console.log("No active wave.");
+    outputMessage(fmt, "No active wave.", {
+      wave_id: null,
+      agents: [],
+      merged: 0,
+    });
     return;
   }
 
@@ -51,19 +58,37 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
     : state.agents.filter((a) => a.status === "verified");
 
   if (toMerge.length === 0) {
-    console.log("No verified agents to merge.");
+    outputMessage(fmt, "No verified agents to merge.", {
+      wave_id: state.wave_id,
+      agents: [],
+      merged: 0,
+    });
     return;
   }
 
   // Dry-run: show what would be merged without merging
   if (opts.dryRun) {
-    console.log(`\n[dry-run] Would merge ${toMerge.length} branch(es):\n`);
-    for (const agent of toMerge) {
-      console.log(`  ${agent.feature_id} — branch: ${agent.branch}`);
-    }
-    if (opts.autoPush) {
-      console.log(`\n  Would push ${state.base_branch} to remote after merge.`);
-    }
+    const dryRunResult = {
+      dry_run: true,
+      wave_id: state.wave_id,
+      base_branch: state.base_branch,
+      count: toMerge.length,
+      agents: toMerge.map((a) => ({
+        feature_id: a.feature_id,
+        branch: a.branch,
+      })),
+      auto_push: !!opts.autoPush,
+    };
+
+    output(fmt, dryRunResult, () => {
+      console.log(`\n[dry-run] Would merge ${toMerge.length} branch(es):\n`);
+      for (const agent of toMerge) {
+        console.log(`  ${agent.feature_id} — branch: ${agent.branch}`);
+      }
+      if (opts.autoPush) {
+        console.log(`\n  Would push ${state.base_branch} to remote after merge.`);
+      }
+    });
     return;
   }
 
@@ -82,12 +107,16 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
   indexFeatures(data.tasks);
   indexFeatures(data.archive);
 
-  console.log(`\nMerging ${toMerge.length} branch(es)...\n`);
+  if (fmt === "text") {
+    console.log(`\nMerging ${toMerge.length} branch(es)...\n`);
+  }
 
   for (const agent of toMerge) {
     const feature = featureMap.get(agent.feature_id);
     if (!feature) {
-      printAgentUpdate(agent, `SKIP — feature "${agent.feature_id}" not found in features file`);
+      if (fmt === "text") {
+        printAgentUpdate(agent, `SKIP — feature "${agent.feature_id}" not found in features file`);
+      }
       continue;
     }
 
@@ -103,5 +132,24 @@ export async function cmdMerge(opts: MergeCommandOptions): Promise<void> {
     }
   }
 
-  printDashboard(state);
+  // Collect results for JSON output
+  const results = toMerge.map((agent) => {
+    const updatedAgent = state.agents.find((a) => a.feature_id === agent.feature_id);
+    return {
+      feature_id: agent.feature_id,
+      branch: agent.branch,
+      status: updatedAgent?.status ?? agent.status,
+      error: updatedAgent?.error ?? agent.error,
+    };
+  });
+
+  output(fmt, {
+    wave_id: state.wave_id,
+    base_branch: state.base_branch,
+    merged: results.filter((r) => r.status === "merged").length,
+    failed: results.filter((r) => r.status === "failed").length,
+    agents: results,
+  }, () => {
+    printDashboard(state);
+  });
 }

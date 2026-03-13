@@ -5,14 +5,14 @@ description: >
   flag already being passed. Should say "No launchable tasks found (all tasks are done/cancelled)" or similar
   context-aware message. The relevant code is in src/commands/launch.ts around line 1339 where it outputs "No launchable
   tasks found". Check that the follow-up hint text is context-aware of which flags are already set.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: trivial
 priority: medium
 depends_on: []
 effort: PT15M
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:22:57.729Z
 constraints: []
 forbidden: []
 references: []

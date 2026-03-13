@@ -1,8 +1,8 @@
 id: cli-bugs
 title: Fix bugs found during test drive
 description: Fix crashes, validation gaps, and error handling issues discovered during comprehensive CLI testing.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on:
@@ -19,7 +19,7 @@ depends_on:
   - bug-duration-parser-mismatch
 effort: PT3H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T21:11:25.862Z
 constraints: []
 forbidden: []
 references: []

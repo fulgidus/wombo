@@ -5,8 +5,8 @@ description: >
   and validation, state management, worktree filtering (the basename bug that rm -rf'd the project), duration parsing,
   dependency resolution, CLI arg parsing, and task schema validation. This is critical — we shipped a bug that destroyed
   the project root. This umbrella task is complete when all 4 sub-tasks are done.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: critical
 depends_on:
@@ -16,7 +16,7 @@ depends_on:
   - test-state-management
 effort: P1D
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T21:14:40.514Z
 constraints:
   - Use Bun's built-in test runner (`bun test`), no external test frameworks
   - Must cover worktree filtering edge cases (basename vs full-path matching)

@@ -8,14 +8,14 @@ description: >
   loadFeatures() backward-compat wrapper in src/lib/tasks.ts: merge of tasks + archive into FeaturesFile - Duration
   parsing: ISO 8601 durations (PT30M, P1DT4H, etc.) - Dependency resolution: valid deps, missing deps, circular deps
   (should be caught by dep-graph) Place tests in tests/task-parsing.test.ts using bun's built-in test runner.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on: []
 effort: PT2H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:24:06.487Z
 constraints: []
 forbidden: []
 references: []

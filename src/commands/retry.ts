@@ -1,7 +1,7 @@
 /**
  * retry.ts — Retry a specific failed agent.
  *
- * Usage: woco retry <feature-id> [--interactive] [--model <model>]
+ * Usage: woco retry <feature-id> [--interactive] [--model <model>] [--output json]
  *
  * Resets the agent's retry count and re-launches it. Can launch in either
  * headless mode (default) or interactive (dmux/tmux) mode.
@@ -19,6 +19,7 @@ import { generatePrompt } from "../lib/prompt.js";
 import { launchInteractive, getMultiplexerName } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { launchSingleHeadless } from "./launch.js";
+import { output, outputError, outputMessage, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,7 @@ export interface RetryCommandOptions {
   model?: string;
   interactive: boolean;
   dryRun?: boolean;
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -39,42 +41,53 @@ export interface RetryCommandOptions {
 
 export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId) {
-    console.error("Usage: woco retry <feature-id>");
-    process.exit(1);
-    return; // unreachable — helps TypeScript narrow
+    outputError(fmt, "Usage: woco retry <feature-id>");
+    return; // unreachable — outputError calls process.exit
   }
 
   const state = loadState(projectRoot);
   if (!state) {
-    console.log("No active wave.");
+    outputMessage(fmt, "No active wave.", { wave_id: null });
     return;
   }
 
   const agent = state.agents.find((a) => a.feature_id === opts.featureId);
   if (!agent) {
-    console.error(`Agent not found for feature: ${opts.featureId}`);
-    process.exit(1);
-    return; // unreachable — helps TypeScript narrow
+    outputError(fmt, `Agent not found for feature: ${opts.featureId}`);
+    return; // unreachable
   }
 
   if (agent.status !== "failed") {
-    console.error(
+    outputError(
+      fmt,
       `Agent ${opts.featureId} is not in failed state (current: ${agent.status})`
     );
-    process.exit(1);
-    return; // unreachable — helps TypeScript narrow
+    return; // unreachable
   }
 
   // Dry-run: show what would be retried without doing it
   if (opts.dryRun) {
-    console.log(`\n[dry-run] Would retry agent: ${opts.featureId}`);
-    console.log(`  Current status: ${agent.status}`);
-    console.log(`  Retries so far: ${agent.retries}`);
-    console.log(`  Worktree: ${agent.worktree}`);
-    console.log(`  Mode: ${opts.interactive ? "interactive (multiplexer)" : "headless"}`);
-    if (opts.model) console.log(`  Model: ${opts.model}`);
+    const dryRunResult = {
+      dry_run: true,
+      feature_id: opts.featureId,
+      current_status: agent.status,
+      retries_so_far: agent.retries,
+      worktree: agent.worktree,
+      mode: opts.interactive ? "interactive" : "headless",
+      model: opts.model ?? null,
+    };
+
+    output(fmt, dryRunResult, () => {
+      console.log(`\n[dry-run] Would retry agent: ${opts.featureId}`);
+      console.log(`  Current status: ${agent.status}`);
+      console.log(`  Retries so far: ${agent.retries}`);
+      console.log(`  Worktree: ${agent.worktree}`);
+      console.log(`  Mode: ${opts.interactive ? "interactive (multiplexer)" : "headless"}`);
+      if (opts.model) console.log(`  Model: ${opts.model}`);
+    });
     return;
   }
 
@@ -92,9 +105,8 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   const data = loadFeatures(projectRoot, config);
   const feature = data.tasks.find((f: Feature) => f.id === opts.featureId);
   if (!feature) {
-    console.error(`Feature ${opts.featureId} not found in ${config.tasksDir}`);
-    process.exit(1);
-    return; // unreachable — helps TypeScript narrow
+    outputError(fmt, `Feature ${opts.featureId} not found in ${config.tasksDir}`);
+    return; // unreachable
   }
 
   if (opts.interactive) {
@@ -114,10 +126,29 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
     });
     saveState(projectRoot, state);
     const muxName = getMultiplexerName(config);
-    console.log(`Retrying ${opts.featureId} in ${muxName} session ${config.agent.tmuxPrefix}-${opts.featureId}`);
+
+    output(fmt, {
+      feature_id: opts.featureId,
+      mode: "interactive",
+      status: "running",
+      mux_session: `${config.agent.tmuxPrefix}-${opts.featureId}`,
+    }, () => {
+      console.log(`Retrying ${opts.featureId} in ${muxName} session ${config.agent.tmuxPrefix}-${opts.featureId}`);
+    });
   } else {
     const monitor = new ProcessMonitor(projectRoot);
     await launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, opts.model);
-    console.log(`Retrying ${opts.featureId} in headless mode`);
+
+    // Re-read agent after launch to get PID
+    const updatedAgent = state.agents.find((a) => a.feature_id === opts.featureId);
+
+    output(fmt, {
+      feature_id: opts.featureId,
+      mode: "headless",
+      status: updatedAgent?.status ?? "running",
+      pid: updatedAgent?.pid ?? null,
+    }, () => {
+      console.log(`Retrying ${opts.featureId} in headless mode`);
+    });
   }
 }

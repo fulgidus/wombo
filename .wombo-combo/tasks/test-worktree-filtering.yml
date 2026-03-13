@@ -8,14 +8,14 @@ description: >
   - removeWorktree(): safety guard must never remove project root or non-worktree directories - cleanupAllWorktrees():
   removes all woco worktrees, skips non-woco ones - verifyConfigFiles(): ensures .opencode/agents/ and config files are
   copied into worktrees Place tests in tests/worktree-filtering.test.ts. Mock git commands or use a real temp git repo.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: critical
 depends_on: []
 effort: PT2H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:24:34.677Z
 constraints: []
 forbidden: []
 references: []

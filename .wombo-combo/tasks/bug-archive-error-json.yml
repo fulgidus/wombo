@@ -5,14 +5,14 @@ description: >
   outputError() from src/lib/output.ts. Check src/commands/tasks/archive.ts — it already imports outputError but may
   have code paths that bypass it (e.g. early returns with console.error). All error paths must go through
   outputError(fmt, message) so JSON consumers get structured error responses.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: trivial
 priority: medium
 depends_on: []
 effort: PT15M
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:27:53.981Z
 constraints: []
 forbidden: []
 references: []

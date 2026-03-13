@@ -13,14 +13,14 @@ description: >
 
   The spec must be self-describing: an agent can call `woco describe --output toon` once per session to learn the
   format, then parse all subsequent toon output without further context.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on: []
 effort: PT1H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:27:55.705Z
 constraints: []
 forbidden: []
 references: []

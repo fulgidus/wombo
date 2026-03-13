@@ -9,14 +9,14 @@ description: >
   with a warning Use Bun's fetch() for HTTP requests. Parse the agency-agents repo structure (may need to inspect their
   README/format first). The client only fetches and caches — conversion to woco format is handled by
   agent-format-converter.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on: []
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:24:25.227Z
 constraints: []
 forbidden: []
 references: []

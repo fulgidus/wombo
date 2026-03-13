@@ -5,14 +5,14 @@ description: >
   to parse .wombo-combo/tasks/<filename>.yml: <reason>" for better UX. The YAML parsing happens in loadTasksFromStore()
   in src/lib/task-store.ts. Add a try/catch around YAML.parse() calls and emit a user-friendly message that includes the
   filename and the original parse error reason.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: trivial
 priority: low
 depends_on: []
 effort: PT15M
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:22:55.449Z
 constraints: []
 forbidden: []
 references: []

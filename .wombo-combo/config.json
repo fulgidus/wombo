@@ -1,5 +1,4 @@
 {
-  "$schema": "../schemas/config.schema.json",
   "tasksDir": "tasks",
   "archiveDir": "archive",
   "baseBranch": "main",
@@ -14,7 +13,7 @@
   },
   "git": {
     "branchPrefix": "feature/",
-    "worktreePrefix": "woco-",
+    "worktreePrefix": "wt-wombo-",
     "remote": "origin",
     "mergeStrategy": "--no-ff"
   },
@@ -26,21 +25,21 @@
       "opencode.json",
       "AGENTS.md"
     ],
-    "tmuxPrefix": "woco",
+    "tmuxPrefix": "wombo",
     "multiplexer": "auto"
   },
   "portless": {
     "enabled": true,
     "bin": null,
     "proxyPort": 1355,
-    "https": false
+    "https": true
   },
   "backup": {
     "maxBackups": 5
   },
   "defaults": {
-    "maxConcurrent": 10,
-    "maxRetries": 5
+    "maxConcurrent": 20,
+    "maxRetries": 2
   },
   "browser": {
     "enabled": false,

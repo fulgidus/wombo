@@ -1,7 +1,7 @@
 /**
  * resume.ts — Resume a previously stopped wave.
  *
- * Usage: woco resume [options]
+ * Usage: woco resume [options] [--output json]
  *
  * Restores from .wombo-combo/state.json:
  *   - Agents in "running"/"installing" whose PID is dead → re-check or re-launch
@@ -58,6 +58,7 @@ import {
   muxAttachCommand,
 } from "../lib/multiplexer.js";
 import { exportWaveHistory } from "../lib/history.js";
+import { outputError, outputMessage, type OutputFormat } from "../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +74,7 @@ export interface ResumeCommandOptions {
   autoPush: boolean;
   baseBranch?: string;
   maxRetries?: number;
+  outputFmt?: OutputFormat;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,15 +83,17 @@ export interface ResumeCommandOptions {
 
 export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   const state = loadState(projectRoot);
   if (!state) {
-    console.error("No wave state found. Use 'woco launch' to start a new wave.");
-    process.exit(1);
-    return; // unreachable — helps TypeScript narrow
+    outputError(fmt, "No wave state found. Use 'woco launch' to start a new wave.");
+    return; // unreachable — outputError calls process.exit
   }
 
-  console.log(`\n--- wombo-combo: Resume ${state.wave_id} ---\n`);
+  if (fmt === "text") {
+    console.log(`\n--- wombo-combo: Resume ${state.wave_id} ---\n`);
+  }
 
   // Load feature data for prompt generation
   const data = loadFeatures(projectRoot, config);
@@ -107,21 +111,21 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       case "resolving_conflict":
         // Was in-flight when we stopped — check if PID is still alive
         if (agent.pid && isProcessRunning(agent.pid)) {
-          console.log(`  ${agent.feature_id}: still running (PID ${agent.pid}), leaving alone`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: still running (PID ${agent.pid}), leaving alone`);
         } else {
           // Process is dead — check if worktree exists with meaningful changes.
           // Use worktreeExists (not worktreeReady) because node_modules may be
           // missing — the worktree still has code that should be verified.
           if (worktreeExists(agent.worktree) && branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
             // Worktree exists AND branch has commits — try build verification
-            console.log(`  ${agent.feature_id}: process dead, worktree has changes — will verify build`);
+            if (fmt === "text") console.log(`  ${agent.feature_id}: process dead, worktree has changes — will verify build`);
             toVerify.push(agent);
           } else {
             // No worktree, or worktree exists but branch has no commits (agent did nothing)
             const reason = worktreeExists(agent.worktree)
               ? "worktree exists but no code changes"
               : "no worktree";
-            console.log(`  ${agent.feature_id}: process dead, ${reason} — will re-launch`);
+            if (fmt === "text") console.log(`  ${agent.feature_id}: process dead, ${reason} — will re-launch`);
             updateAgent(state, agent.feature_id, {
               status: "queued",
               pid: null,
@@ -134,28 +138,28 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         break;
 
       case "queued":
-        console.log(`  ${agent.feature_id}: queued — will launch`);
+        if (fmt === "text") console.log(`  ${agent.feature_id}: queued — will launch`);
         toRelaunch.push(agent);
         break;
 
       case "completed":
         // Completed but not verified — verify
-        console.log(`  ${agent.feature_id}: completed — will verify build`);
+        if (fmt === "text") console.log(`  ${agent.feature_id}: completed — will verify build`);
         toVerify.push(agent);
         break;
 
       case "verified":
         // Build passed but NOT yet merged — need to attempt merge (+ conflict resolution)
-        console.log(`  ${agent.feature_id}: verified — will attempt merge`);
+        if (fmt === "text") console.log(`  ${agent.feature_id}: verified — will attempt merge`);
         toVerify.push(agent);
         break;
 
       case "merged":
-        console.log(`  ${agent.feature_id}: merged — marking feature as done`);
+        if (fmt === "text") console.log(`  ${agent.feature_id}: merged — marking feature as done`);
         markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
         try {
           removeWorktree(projectRoot, agent.worktree, true);
-          console.log(`  ${agent.feature_id}: worktree and branch removed`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: worktree and branch removed`);
         } catch {
           // Already cleaned — not critical
         }
@@ -167,7 +171,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         if (agent.retries < agent.max_retries &&
             worktreeExists(agent.worktree) &&
             branchHasChanges(projectRoot, agent.branch, state.base_branch)) {
-          console.log(`  ${agent.feature_id}: failed but has work (retry ${agent.retries}/${agent.max_retries}) — will verify build`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: failed but has work (retry ${agent.retries}/${agent.max_retries}) — will verify build`);
           // Clear stale error and mark as completed so handleBuildVerification
           // processes it correctly (it expects a non-failed agent)
           updateAgent(state, agent.feature_id, {
@@ -180,7 +184,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           toVerify.push(agent);
         } else if (agent.retries < agent.max_retries) {
           // No worktree or no changes — re-launch from scratch
-          console.log(`  ${agent.feature_id}: failed, no salvageable work (retry ${agent.retries}/${agent.max_retries}) — will re-launch`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: failed, no salvageable work (retry ${agent.retries}/${agent.max_retries}) — will re-launch`);
           updateAgent(state, agent.feature_id, {
             status: "queued",
             pid: null,
@@ -193,7 +197,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           });
           toRelaunch.push(agent);
         } else {
-          console.log(`  ${agent.feature_id}: failed — max retries reached (use 'woco retry' to reset)`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: failed — max retries reached (use 'woco retry' to reset)`);
         }
         break;
     }
@@ -207,7 +211,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   // concurrently. Merges must remain sequential (they mutate the project root).
   // ---------------------------------------------------------------------------
   if (toVerify.length > 0) {
-    console.log(`\nVerifying ${toVerify.length} agent(s) in parallel...\n`);
+    if (fmt === "text") console.log(`\nVerifying ${toVerify.length} agent(s) in parallel...\n`);
 
     const verifyResults = await Promise.all(
       toVerify.map(async (agent): Promise<{ agent: AgentState; needsMerge: boolean }> => {
@@ -297,7 +301,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     // -------------------------------------------------------------------------
     const toMerge = verifyResults.filter((r) => r.needsMerge);
     if (toMerge.length > 0) {
-      console.log(`\nMerging ${toMerge.length} verified agent(s)...\n`);
+      if (fmt === "text") console.log(`\nMerging ${toMerge.length} verified agent(s)...\n`);
       for (const { agent } of toMerge) {
         const feature = featureMap.get(agent.feature_id);
         if (!feature) continue;
@@ -321,14 +325,27 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   const maxConcurrent = opts.maxConcurrent ?? state.max_concurrent;
   const toLaunchNow = toRelaunch.slice(0, maxConcurrent);
   if (toLaunchNow.length === 0) {
-    console.log("\nNo agents need (re)launching.");
-    printDashboard(state);
+    outputMessage(fmt, "No agents need (re)launching.", {
+      wave_id: state.wave_id,
+      triage: {
+        to_verify: toVerify.length,
+        to_relaunch: 0,
+      },
+      agents: state.agents.map((a) => ({
+        feature_id: a.feature_id,
+        status: a.status,
+        build_passed: a.build_passed,
+        error: a.error,
+      })),
+    });
+    if (fmt === "text") printDashboard(state);
     return;
   }
 
-  console.log(`\nRe-launching ${toLaunchNow.length} agent(s)...\n`);
-  printDashboard(state);
-
+  if (fmt === "text") {
+    console.log(`\nRe-launching ${toLaunchNow.length} agent(s)...\n`);
+    printDashboard(state);
+  }
   const model = opts.model ?? state.model ?? undefined;
 
   if (opts.interactive) {
@@ -380,9 +397,11 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       })
     );
 
-    printDashboard(state);
-    const mux = detectMultiplexer(config.agent.multiplexer);
-    console.log(`\nResume complete. Use '${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<id>`)}' to check sessions.`);
+    if (fmt === "text") {
+      printDashboard(state);
+      const mux = detectMultiplexer(config.agent.multiplexer);
+      console.log(`\nResume complete. Use '${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<id>`)}' to check sessions.`);
+    }
   } else {
     // Headless resume — re-enter monitoring loop
     const monitor = new ProcessMonitor(projectRoot, {
@@ -458,7 +477,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       }
       monitor.killAll();
       saveState(projectRoot, state);
-      console.log("\nState saved. Use 'woco resume' to continue.");
+      if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
       process.exit(0);
     });
 
@@ -486,7 +505,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           }
           monitor.killAll();
           saveState(projectRoot, state);
-          console.log("State saved. Use 'woco resume' to continue.");
+          if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
           process.exit(0);
         },
         onRetry: (featureId: string) => {
@@ -510,7 +529,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       });
       tuiRef.current.start();
     } else {
-      console.log("(--no-tui mode, dashboard prints every 15s)\n");
+      if (fmt === "text") console.log("(--no-tui mode, dashboard prints every 15s)\n");
       printDashboard(state);
     }
 
@@ -602,17 +621,19 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       await tuiRef.current.waitForQuit();
     }
 
-    printDashboard(state);
+    if (fmt === "text") {
+      printDashboard(state);
 
-    // Dump full logs for failed agents (post-mortem)
-    dumpFailedAgentLogs(projectRoot, state);
+      // Dump full logs for failed agents (post-mortem)
+      dumpFailedAgentLogs(projectRoot, state);
+    }
 
     // Auto-export wave history
     try {
       const historyPath = exportWaveHistory(projectRoot, state);
-      console.log(`Wave history exported to ${historyPath}`);
+      if (fmt === "text") console.log(`Wave history exported to ${historyPath}`);
     } catch (err: any) {
-      console.error(`Warning: failed to export wave history: ${err.message}`);
+      if (fmt === "text") console.error(`Warning: failed to export wave history: ${err.message}`);
     }
 
     // Auto-push base branch if requested
@@ -620,6 +641,6 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       await pushBaseBranch(projectRoot, state.base_branch, config);
     }
 
-    console.log("Wave complete.");
+    if (fmt === "text") console.log("Wave complete.");
   }
 }

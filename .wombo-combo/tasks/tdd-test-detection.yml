@@ -8,14 +8,14 @@ description: >
   with tests, coverage ratio - Output as structured data compatible with outputMessage() for --output json support -
   Create as src/lib/test-detection.ts, exported for use by tdd-verification-step - Exclude non-testable files: *.d.ts,
   index.ts (re-export barrels), types-only files
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on: []
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:24:32.230Z
 constraints: []
 forbidden: []
 references: []

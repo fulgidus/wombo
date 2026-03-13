@@ -1,0 +1,343 @@
+version: "1.0"
+meta:
+  created_at: 2026-03-11T11:00:00+01:00
+  updated_at: 2026-03-12T22:13:11.306Z
+  project: wombo
+  generator: wombo
+  maintainer: fulgidus
+tasks:
+  - id: json-output-complete
+    title: Finish --output json retrofit across all commands
+    description: The agent-ready JSON output was only retrofitted on features subcommands. Operational commands (status,
+      launch, upgrade, cleanup, verify, merge, resume, retry) and remaining features subcommands (check, archive) still
+      ignore --output json.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: null
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: json-features-check
+        title: Retrofit features check with --output json
+        description: >
+          `features check --output json` still outputs text. Needs to emit JSON with {ok: bool, issues: [...],
+          items_checked: N} structure.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: json-features-archive
+        title: Retrofit features archive with --output json
+        description: >
+          `features archive` success path outputs text regardless of --output flag. Needs to emit JSON with {archived:
+          [...], count: N} structure.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: json-operational-commands
+        title: Retrofit operational commands with --output json
+        description: >
+          status, launch, upgrade, cleanup, verify, merge, resume, retry all ignore --output json. Each needs structured
+          JSON output for agent consumption. This is the bulk of the work.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - json-features-check
+          - json-features-archive
+        effort: PT5H
+        started_at: null
+        ended_at: null
+        constraints:
+          - Human-friendly text output must remain the default
+          - JSON schemas should be consistent with features subcommand patterns
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: dynamic-agent-types
+    title: Dynamic agent-worker types from agency-agents registry
+    description: >
+      Support different agent-worker types when launching features. Available agents are dynamically pulled from
+      https://github.com/msitarzewski/agency-agents and converted to woco-compatible agent definitions. Users can
+      specify which agent type to use per feature (e.g. a frontend specialist, a test writer, a refactoring agent).
+      Agents can be pulled on-demand at launch time, or woco can suggest alternatives from the registry based on feature
+      description/tags.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: high
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must pull agent definitions from the agency-agents GitHub repo dynamically
+      - Must convert/adapt agency-agents format to woco's agent template format
+      - Must cache pulled agents locally to avoid repeated network calls
+      - Must support per-feature agent type selection (via features YAML or --agent flag)
+      - Must support offline mode with cached agents
+    forbidden:
+      - Do not bundle all agents statically — they must be pulled from the registry
+    references:
+      - https://github.com/msitarzewski/agency-agents
+    notes:
+      - "2026-03-12: User requirement. Either pull on-demand or suggest alternatives from the registry."
+    subtasks:
+      - id: agent-registry-client
+        title: Build agency-agents registry client
+        description: >
+          Fetch agent definitions from github.com/msitarzewski/agency-agents, parse their format, and cache locally.
+          Support listing available agents and fetching by name.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-format-converter
+        title: Convert agency-agents format to woco agent template
+        description: >
+          Map the agency-agents definition format to woco's wave-worker.md template format. Handle differences in
+          structure, prompt style, and capabilities.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - agent-registry-client
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-selection-per-feature
+        title: Per-feature agent type selection
+        description: >
+          Add an `agent` field to the features YAML schema and --agent flag to launch. When launching, use the specified
+          agent type instead of the default wave-worker.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on:
+          - agent-format-converter
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: tdd-red-green-coercion
+    title: Coerce TDD red-green development cycle
+    description: >
+      Enforce test-driven development in the agent workflow. Agents must: (1) write failing tests first (red phase), (2)
+      verify tests fail, (3) implement code to make tests pass (green phase), (4) verify tests pass, (5) optionally
+      refactor. The verification pipeline should enforce this cycle — if an agent commits code without corresponding
+      test changes, the verification should flag it. Build verification should run tests and check that new tests exist
+      for new functionality.
+    status: backlog
+    completion: 0
+    difficulty: hard
+    priority: high
+    depends_on:
+      - unit-test-suite
+    effort: P1DT4H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must detect test files and verify they exist for new source files
+      - Must run tests as part of build verification
+      - Must enforce red-green cycle in agent prompts and verification
+      - Must not block features that are explicitly marked as non-testable (config, docs)
+    forbidden:
+      - Do not make TDD mandatory for trivial changes (config files, documentation)
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Agents should follow TDD discipline."
+    subtasks:
+      - id: tdd-test-detection
+        title: Detect test files and coverage for new code
+        description: >
+          Analyze git diff to identify new source files and verify corresponding test files exist. Flag when code is
+          added without tests.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: tdd-verification-step
+        title: Add TDD verification to build pipeline
+        description: >
+          Add a test-running step to the verification pipeline. Check that tests pass and that new tests were added for
+          new functionality.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - tdd-test-detection
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: tdd-agent-prompt-integration
+        title: Integrate TDD instructions into agent prompts
+        description: >
+          Update the wave-worker agent template to include TDD red-green instructions. Agents should write tests first,
+          verify they fail, then implement.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: medium
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: toon-output
+    title: "TOON: Token-Optimized Output Notation for agent efficiency"
+    description: >
+      Add a `--output toon` format across all commands that emits ultra-compact, token-minimized output designed
+      specifically for LLM agent consumption. Unlike JSON (verbose with repeated keys, quotes, braces) or text (designed
+      for human readability with padding, decorations, headers), TOON strips output to the absolute minimum tokens
+      needed to convey information. Uses short delimiters, abbreviated keys, no whitespace padding, no decorative
+      elements. Example: instead of `{"id":"cli-bugs","status":"backlog","priority":"high"}` emit `cli-bugs|BL|H`.
+      Agents consuming woco output burn fewer tokens on parsing context, leaving more budget for reasoning. The format
+      should be self-describing via `woco describe --output toon` which emits the key legend.
+    status: backlog
+    completion: 0
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: null
+    constraints:
+      - Must be a third output format alongside text and json (--output toon)
+      - Must reduce token count by at least 60% compared to JSON output
+      - Key abbreviations must be consistent across all commands
+      - Must include a legend/schema command so agents can learn the format at session start
+      - Pipe-delimited fields, single-char status codes, abbreviated enums
+      - Must auto-detect when an agent is consuming output (heuristic or explicit flag)
+    forbidden:
+      - Do not sacrifice parseability for compactness — agents must be able to split on delimiters reliably
+      - Do not use ambiguous abbreviations that could confuse LLMs
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Token efficiency matters when agents call woco repeatedly — every saved token is
+        more reasoning budget."
+    subtasks:
+      - id: toon-format-spec
+        title: Design TOON format specification and key legend
+        description: >
+          Define the TOON encoding: delimiter choice (pipe), status codes (BL=backlog, IP=in_progress, DN=done, etc.),
+          priority codes (C=critical, H=high, M=medium, L=low, W=wishlist), difficulty codes, and field ordering per
+          command. Document in a legend that `woco describe --output toon` can emit.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: toon-output-formatter
+        title: Implement TOON output formatter module
+        description: >
+          Create a toon formatter in src/lib/output.ts (or new src/lib/toon.ts) that converts structured command results
+          into TOON notation. Must handle all data types: features lists, status dashboards, wave state, verification
+          results.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: high
+        depends_on:
+          - toon-format-spec
+        effort: PT3H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: toon-wire-commands
+        title: Wire TOON output into all commands
+        description: >
+          Add toon as a third option to --output flag resolution. Wire it into every command that already supports
+          --output json. Update schema introspection to advertise toon support.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on:
+          - toon-output-formatter
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []

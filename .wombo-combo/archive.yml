@@ -1,0 +1,1433 @@
+version: "1.0"
+meta:
+  created_at: 2026-03-11T11:00:00+01:00
+  updated_at: 2026-03-12T22:13:11.306Z
+  project: wombo
+  generator: wombo
+  maintainer: fulgidus
+archive:
+  - id: features-graph-command
+    title: features graph — dependency graph visualization
+    description: >
+      Add `wombo features graph` command that builds a Mermaid flowchart from the features dependency graph and renders
+      it as a Unicode/ASCII box diagram in the terminal using mermaidtui. Shows dependency edges, status badges, orphan
+      detection, dangling dependency warnings, and cycle detection. Supports --ascii, --mermaid (raw source), --subtasks
+      (include subtask nodes), --status (filter), and --output json.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT3H
+    started_at: 2026-03-12T21:36:00Z
+    ended_at: 2026-03-12T23:30:00Z
+    constraints:
+      - Uses mermaidtui (TypeScript library, no external binary)
+      - Must support --output json for agent consumption
+      - Must include diagnostics (dangling deps, cycles, blocked-but-deps-done)
+      - Default view must show only the dependency tree (connected nodes), not orphans as full boxes
+    forbidden: []
+    references:
+      - https://github.com/tariqshams/mermaidtui
+    notes:
+      - "2026-03-12: Implemented. buildMermaidSource filters to connected nodes only, orphans shown as compact summary."
+    subtasks: []
+  - id: tui-postmortem
+    title: TUI stays open after wave completes + failed agent log dump
+    description: >
+      When a wave finishes, the TUI should remain open so the user can browse agent statuses, build output, and logs
+      without losing them to terminal scroll. The header shows a WAVE COMPLETE banner, and pressing q exits cleanly
+      (without killing processes or marking agents as interrupted). After TUI exit, full log contents for all failed
+      agents are dumped to stdout for post-mortem analysis. Works in both TUI and --no-tui modes.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: 2026-03-12T22:00:00Z
+    ended_at: 2026-03-12T23:00:00Z
+    constraints:
+      - TUI must not call onQuit (which kills processes) when wave is already complete
+      - Must dump logs for ALL failed agents, not just the last one
+      - Must handle missing or empty log files gracefully
+      - Must work in both TUI and --no-tui modes
+      - resume.ts must have the same behavior as launch.ts
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Implemented in tui.ts (markWaveComplete/waitForQuit), launch.ts (dumpFailedAgentLogs), and
+        resume.ts."
+    subtasks: []
+  - id: merge-overhaul
+    title: Merge system overhaul — fix race conditions, silent failures, and conflict resolution
+    description: >
+      Complete overhaul of the merge pipeline to fix six critical issues: (1) concurrent merge race condition where
+      multiple agents' attemptMerge fired simultaneously fighting over git checkout, (2) silent git pull failure where
+      pull --ff-only result was discarded leaving merges against stale state, (3) canMerge() pre-flight check was dead
+      code never called, (4) asymmetric failure states where different merge failure paths left agents in inconsistent
+      statuses, (5) conflict resolver was single-shot with no retry, (6) manual merge command bypassed pre-flight checks
+      and conflict resolution entirely.
+    status: done
+    completion: 100
+    difficulty: hard
+    priority: critical
+    depends_on: []
+    effort: PT4H
+    started_at: 2026-03-12T23:00:00Z
+    ended_at: 2026-03-13T01:00:00Z
+    constraints:
+      - Must serialize all merge operations to prevent concurrent checkout races
+      - Must handle git pull failures gracefully with fetch+reset fallback
+      - Must use canMerge() pre-flight before attempting real merge
+      - Retryable failures keep agent as "verified", permanent failures set "failed"
+      - Must not add new AgentStatus values — use existing status union
+      - Manual merge command must get same pipeline as automatic merge
+    forbidden:
+      - Do not add "merge_failed" to AgentStatus — keep retryable failures as "verified" with error field
+    references: []
+    notes:
+      - "2026-03-12: Six fixes implemented across merger.ts, launch.ts, merge.ts, and index.ts."
+      - "merger.ts: enqueueMerge() promise-based mutex, mergeBranch() fetch+reset fallback."
+      - "launch.ts: attemptMerge refactored into attemptMerge/handleMergeSuccess/handleMergeConflict.
+        launchResolverAndRetryMerge with retry loop up to maxRetries+1."
+      - "merge.ts: Rewritten to use attemptMerge() from launch.ts. Loads features for conflict resolution prompt."
+    subtasks:
+      - id: merge-queue
+        title: Promise-based merge queue to serialize merge operations
+        description: >
+          Added enqueueMerge() in merger.ts — a promise-based mutex that serializes all merge operations, eliminating
+          concurrent git checkout races.
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: critical
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: merge-pull-fix
+        title: Fix silent git pull --ff-only failure
+        description: >
+          mergeBranch() now handles git pull --ff-only failure by falling back to git fetch + git reset --hard
+          origin/<branch>, preventing merges against stale local state.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: merge-preflight
+        title: Activate canMerge() pre-flight check
+        description: >
+          canMerge() was exported but never called. Now activated in attemptMerge() — uses git merge-tree to detect
+          conflicts before the real merge, skipping straight to conflict resolution if conflicts found.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: merge-symmetric-states
+        title: Standardize merge failure states
+        description: >
+          Refactored attemptMerge into three functions (attemptMerge/handleMergeSuccess/handleMergeConflict). All
+          retryable failures record error on agent (stays "verified"), permanent failures set "failed" +
+          cancelDownstream().
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: critical
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: merge-retry-resolver
+        title: Add retry loop to conflict resolver
+        description: >
+          launchResolverAndRetryMerge() now loops up to maxRetries+1 attempts. Each attempt re-launches resolver,
+          re-verifies build, and retries merge. Re-merges base into feature between attempts to refresh conflict
+          markers.
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: merge-manual-pipeline
+        title: Give manual merge command the full pipeline
+        description: >
+          cmdMerge now calls attemptMerge() instead of mergeBranch() directly, getting pre-flight checks, conflict
+          resolution, and retry support. Loads features for prompt generation. Added model to MergeCommandOptions.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-13T01:00:00Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: release-workflow
+    title: GitHub Actions release workflow
+    description: >
+      Create a .github/workflows/release.yml that triggers when a new v* tag is pushed to the main branch. The workflow
+      should install bun, run the build, create a GitHub Release with the tag name, and attach the dist bundle so users
+      can install a specific version via `bun install -g github:fulgidus/wombo#vX.Y.Z`. The release body should be
+      auto-generated from commits since the previous tag.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: 2026-03-11T11:13:33.636Z
+    ended_at: 2026-03-11T11:13:58.737Z
+    constraints:
+      - Must trigger only on tags matching v* pushed to main.
+      - Must use bun (not npm/yarn) for install and build steps.
+      - Release body must include auto-generated changelog from git log between previous tag and current tag.
+      - The workflow must verify the build succeeds before creating the release.
+    forbidden:
+      - Do not use npm publish or any npm registry — distribution is GitHub-only.
+      - Do not use third-party release action if a simple gh CLI call suffices.
+    references:
+      - https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#push
+      - https://docs.github.com/en/rest/releases/releases#create-a-release
+    notes:
+      - "2026-03-11: Feature created. Package is already installable from GitHub; this adds proper release artifacts and
+        changelogs."
+    subtasks:
+      - id: release-workflow-yaml
+        title: Create release.yml workflow file
+        description: |
+          Write .github/workflows/release.yml with the trigger, build steps, and gh release create call.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: 2026-03-11T11:13:58.415Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: release-changelog-gen
+        title: Auto-generate changelog in release body
+        description: >
+          Use git log --oneline between the previous tag and HEAD to build a markdown changelog and pass it as the
+          release body.
+        status: done
+        completion: 100
+        difficulty: trivial
+        priority: medium
+        depends_on:
+          - release-workflow-yaml
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-11T11:13:58.526Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: release-version-sync
+        title: Verify package.json version matches tag
+        description: >
+          Add a step that checks the git tag matches the version field in package.json and fails the workflow if they
+          diverge.
+        status: done
+        completion: 100
+        difficulty: trivial
+        priority: medium
+        depends_on:
+          - release-workflow-yaml
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-11T11:13:58.632Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: self-upgrade
+    title: wombo upgrade command
+    description: >
+      Add a `wombo upgrade` command that pulls the latest version of wombo-combo from GitHub and reinstalls it globally
+      via bun. Should show the current version, check for a newer version, and prompt before upgrading. Must also
+      support `--force` to skip the prompt and `--version vX.Y.Z` to pin to a specific release.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT3H
+    started_at: 2026-03-11T11:14:11.510Z
+    ended_at: 2026-03-11T11:15:50.325Z
+    constraints:
+      - Must work on Linux and macOS where bun is available.
+      - Must display current version (from package.json) and latest remote version before prompting.
+      - Must gracefully handle network failures and missing GitHub tags.
+      - The upgrade itself must use `bun install -g github:fulgidus/wombo` (or
+    forbidden:
+      - Do not shell out to npm or yarn.
+      - Do not download and replace files manually — use bun's package manager.
+    references:
+      - https://bun.sh/docs/cli/add
+      - https://docs.github.com/en/rest/repos/repos#list-repository-tags
+    notes:
+      - "2026-03-11: Feature created. Current install path is `bun install -g github:fulgidus/wombo`."
+    subtasks:
+      - id: upgrade-version-check
+        title: Fetch latest version from GitHub
+        description: >
+          Query GitHub API (or git ls-remote) to find the latest v* tag and compare it with the local package.json
+          version. Display both to the user.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT1H
+        started_at: null
+        ended_at: 2026-03-11T11:15:50.024Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: upgrade-prompt-and-install
+        title: Prompt and run bun install -g
+        description: >
+          Show version diff, ask for confirmation (unless --force), then exec `bun install -g
+          github:fulgidus/wombo#<tag>`.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on:
+          - upgrade-version-check
+        effort: PT1H
+        started_at: null
+        ended_at: 2026-03-11T11:15:50.123Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: upgrade-cli-wiring
+        title: Wire upgrade command into CLI router
+        description: |
+          Add the `upgrade` case to index.ts parseArgs and command switch, with --force and --version flags.
+        status: done
+        completion: 100
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-11T11:15:50.226Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: agent-ready-cli
+    title: Make wombo agent-ready
+    description: >
+      Retrofit the wombo CLI to be first-class usable by AI coding agents, following the principles in Justin Poehnelt's
+      "You Need to Rewrite Your CLI for AI Agents". This means: machine-readable JSON output on every command, input
+      validation/hardening against hallucinations, schema introspection (--describe/--help --json), dry-run support on
+      all mutating commands, field masks or compact output modes to protect agent context windows, and shipping
+      CONTEXT.md/AGENTS.md files that encode invariants agents cannot intuit from --help alone.
+    status: done
+    completion: 100
+    difficulty: hard
+    priority: critical
+    depends_on: []
+    effort: P2D
+    started_at: 2026-03-11T11:16:05.906Z
+    ended_at: 2026-03-11T11:37:34.110Z
+    constraints:
+      - Human-friendly output must remain the default on TTY; JSON is used when --output json is passed or stdout is not
+        a TTY.
+      - All existing commands must keep working — this is additive, not a rewrite.
+      - Input validation must reject control characters, path traversals, embedded query params in IDs, and
+        double-encoded strings.
+    forbidden:
+      - Do not remove or break any existing human-facing CLI flags or output.
+      - Do not add a dependency on an external validation library — keep validation self-contained.
+    references:
+      - https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/
+      - https://modelcontextprotocol.io/
+    notes:
+      - "2026-03-11: Feature created from article reference. Prioritized as critical because dogfooding with wombo
+        agents requires agent-friendly output."
+    subtasks:
+      - id: agent-json-output
+        title: Add --output json to every command
+        description: >
+          Introduce a global --output flag (json | text, default text). When json is selected, every command must emit
+          structured JSON to stdout instead of human-formatted text. Also auto-detect: if stdout is not a TTY, default
+          to json.
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: critical
+        depends_on: []
+        effort: PT4H
+        started_at: 2026-03-11T11:20:57.464Z
+        ended_at: 2026-03-11T11:21:01.752Z
+        constraints:
+          - JSON output must be valid, parseable JSON on a single line (or NDJSON for streaming).
+          - 'Errors must also be JSON when --output json is active, e.g. {"error": "message"}.'
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-input-validation
+        title: Input hardening against hallucinations
+        description: >
+          Add validation to all user/agent-supplied inputs: feature IDs, file paths, branch names, config values. Reject
+          control characters (below ASCII 0x20), path traversals (../), embedded query params (?/#) in IDs, and
+          percent-encoded strings that would be double-encoded.
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: high
+        depends_on: []
+        effort: PT3H
+        started_at: null
+        ended_at: 2026-03-11T11:22:31.151Z
+        constraints:
+          - Validation must happen at the CLI boundary (parseArgs or command entry), not deep in library code.
+          - Error messages must clearly state what was rejected and why.
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-schema-introspection
+        title: Schema introspection (--describe / --help --json)
+        description: >
+          Add a --describe flag to each command (or a top-level `wombo describe <command>`) that emits a JSON schema of
+          accepted arguments, flags, types, defaults, and descriptions. Agents can introspect what the CLI accepts at
+          runtime without pre-stuffed docs.
+        status: done
+        completion: 100
+        difficulty: medium
+        priority: high
+        depends_on:
+          - agent-json-output
+        effort: PT4H
+        started_at: 2026-03-11T11:32:35.941Z
+        ended_at: 2026-03-11T11:32:39.924Z
+        constraints:
+          - Schema must be generated from the actual parseArgs definitions, not hand-maintained.
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-dry-run-everywhere
+        title: Extend --dry-run to all mutating commands
+        description: >
+          Currently only launch supports --dry-run. Extend it to all commands that mutate state: features add, features
+          set-status, features archive, merge, retry, cleanup, init. Dry-run should print what would happen (in JSON
+          when --output json) without performing the action.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on:
+          - agent-json-output
+        effort: PT3H
+        started_at: 2026-03-11T11:35:12.376Z
+        ended_at: 2026-03-11T11:35:12.479Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-context-files
+        title: Ship AGENTS.md and CONTEXT.md
+        description: >
+          Create AGENTS.md (for AI agents operating ON wombo's codebase) and CONTEXT.md (for agents USING wombo as a
+          tool). Encode invariants, safety rules, preferred patterns, and anti-patterns that agents cannot intuit from
+          --help. AGENTS.md must include the hard constraint that all development on wombo uses `bun dev` (see
+          dogfood-dev feature).
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: 2026-03-11T11:23:16.383Z
+        constraints:
+          - AGENTS.md is for agents developing wombo itself.
+          - CONTEXT.md is for agents using wombo as an orchestration tool in other projects.
+        forbidden: []
+        references:
+          - https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/
+        notes: []
+        subtasks: []
+      - id: agent-compact-output
+        title: Context-window-friendly output modes
+        description: >
+          Add --compact or --fields flags that let agents request minimal output. For example, `wombo features list
+          --fields id,status,priority` returns only those columns. Reduces token consumption when agents query wombo for
+          state.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: medium
+        depends_on:
+          - agent-json-output
+        effort: PT2H
+        started_at: 2026-03-11T11:37:09.441Z
+        ended_at: 2026-03-11T11:37:09.550Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: dogfood-dev
+    title: Dogfood wombo for its own development
+    description: >
+      Make all future wombo development happen through wombo itself. Add a `bun dev` script alias that runs the local
+      source directly (`bun src/index.ts`), so agents and developers use `bun dev <command>` instead of the globally
+      installed binary. Document this as a hard constraint in AGENTS.md so any AI agent working on the wombo codebase
+      uses the local dev build, never the installed version.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: critical
+    depends_on: []
+    effort: PT1H30M
+    started_at: null
+    ended_at: 2026-03-11T11:13:17.376Z
+    constraints:
+      - The `bun dev` alias must forward all arguments to src/index.ts.
+      - AGENTS.md must state this as a hard, non-negotiable constraint.
+      - CI/CD must also use the local source, not a globally installed binary.
+    forbidden:
+      - Do not use the globally installed wombo binary during development — always use `bun dev`.
+    references: []
+    notes:
+      - '2026-03-11: Feature created. package.json already has "start": "bun src/index.ts" but agents need a dev alias
+        and a documented constraint.'
+    subtasks:
+      - id: dogfood-dev-script
+        title: Add bun dev script to package.json
+        description: >
+          Add a "dev" script to package.json that runs `bun src/index.ts --` so `bun dev launch --all-ready` works. The
+          trailing `--` ensures bun forwards all subsequent args.
+        status: done
+        completion: 100
+        difficulty: trivial
+        priority: critical
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: 2026-03-11T11:13:12.744Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dogfood-agents-md
+        title: Document dev workflow constraint in AGENTS.md
+        description: >
+          Create or update AGENTS.md with a prominent section stating that all development and testing of wombo must use
+          `bun dev <command>`, never the globally installed `wombo` binary. Include examples and rationale.
+        status: done
+        completion: 100
+        difficulty: trivial
+        priority: critical
+        depends_on:
+          - dogfood-dev-script
+        effort: PT30M
+        started_at: null
+        ended_at: 2026-03-11T11:13:17.149Z
+        constraints:
+          - Must be marked as a HARD CONSTRAINT, not a suggestion.
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dogfood-verify-local
+        title: Add dev-mode guard to prevent global binary during development
+        description: >
+          Optionally detect when running inside the wombo repo itself and warn if the global binary is being used
+          instead of `bun dev`. This could check if cwd contains wombo's own package.json with name wombo-combo.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: medium
+        depends_on:
+          - dogfood-dev-script
+        effort: PT45M
+        started_at: null
+        ended_at: 2026-03-11T11:13:17.259Z
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: cli-bugs
+    title: Fix bugs found during test drive
+    description: Fix crashes, validation gaps, and error handling issues discovered during comprehensive CLI testing.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT3H
+    started_at: null
+    ended_at: 2026-03-12T22:13:11.306Z
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: bug-enum-validation
+        title: Validate priority/difficulty enums on features add
+        description: >
+          --priority and --difficulty flags on `features add` accept any string without validation. Should reject values
+          not in the allowed enums (critical/high/medium/low/wishlist for priority, trivial/easy/medium/hard/very_hard
+          for difficulty).
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes:
+          - "Test: bun dev features add x Title --priority invalid → should error"
+        subtasks: []
+      - id: bug-yaml-schema-crash
+        title: Graceful error on invalid YAML schema
+        description: >
+          When .features.yml has valid YAML but invalid schema (e.g. `features: not-an-array`), wombo crashes with
+          "Attempted to assign to readonly property" instead of a helpful error. Should catch this in loadFeatures() and
+          emit a clear message.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes:
+          - "Test: echo 'features: not-an-array' > .features.yml && bun dev features list"
+        subtasks: []
+      - id: bug-yaml-parse-error
+        title: Wrap YAML parse errors with user-friendly message
+        description: >
+          When .features.yml is corrupted YAML, the raw yaml library error is shown. Wrap it with "Failed to parse
+          .features.yml: <reason>" for better UX.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: low
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: bug-archive-error-json
+        title: Fix features archive to use outputError() for JSON errors
+        description: >
+          `features archive nonexistent --output json` outputs plain text instead of JSON error. The error path needs to
+          use outputError() from output.ts.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: bug-dev-mode-guard
+        title: Fix dev-mode guard checking wrong package name
+        description: >
+          src/index.ts:54 checks `pkgName !== "wombo"` but package.json has `"name": "wombo-combo"`. The guard that
+          warns users against running the global binary inside the development repo never triggers because the
+          comparison always fails.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must match the actual package name "wombo-combo" in package.json
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-stale-schema-version
+        title: Fix hardcoded stale version in schema output
+        description: >
+          src/lib/schema.ts:452 hardcodes `version: "0.0.2"` while package.json is at "0.0.9". Agents consuming `wombo
+          describe` see the wrong version. Should read version from package.json dynamically instead of hardcoding.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must read version dynamically from package.json, not hardcode
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-version-flag-collision
+        title: Replace --version flag with dedicated `woco version` / `woco -v` command
+        description: >
+          --version is documented as "print version and exit" but the arg parser at src/index.ts:219 consumes the next
+          arg as a version string (for the upgrade command). Running `wombo launch --version` silently eats the next
+          argument. Fix: remove --version as a flag entirely, add a `version` subcommand and `-v` shorthand that prints
+          the version and exits. The upgrade command should use `--tag` or `--release` for version pinning instead.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - "`woco version` and `woco -v` must print version and exit"
+          - Upgrade command must use a different flag name for version pinning (e.g. --tag)
+        forbidden:
+          - Do not use --version as a flag that consumes a value argument
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit. User suggested 'woco version' / 'woco -v' as the fix."
+        subtasks: []
+      - id: bug-trailing-flag-crash
+        title: Fix args[++i] crash when flag is last argument
+        description: >
+          Flags like --priority, --model, --only that use `args[++i]` at src/index.ts:167-251 return undefined when no
+          value follows. Flags that call .split(",") on the result (e.g. --only) throw "Cannot read properties of
+          undefined". Must validate that args[i+1] exists before consuming it.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT45M
+        started_at: null
+        ended_at: null
+        constraints:
+          - All flag-consuming cases in parseArgs must check bounds before args[++i]
+          - Should emit a clear error like "Flag --X requires a value"
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-status-marks-dead-completed
+        title: Fix status command marking dead agents as completed without checking changes
+        description: >
+          src/commands/status.ts:28-34 marks any agent whose process is no longer running as "completed" without
+          checking branchHasChanges. Unlike the monitor in launch.ts which distinguishes between agents that made
+          commits and those that crashed, status unconditionally marks dead=completed. This leads to empty merges of
+          agents that crashed without writing code.
+        status: done
+        completion: 100
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must check branchHasChanges before marking completed (consistent with launch.ts monitor logic)
+          - Agents that died without commits should be marked "failed" not "completed"
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+      - id: bug-dryrun-cleanup-matching
+        title: Fix dry-run cleanup path using same naive worktree matching
+        description: >
+          src/commands/cleanup.ts:55 dry-run path uses `line.includes(prefix)` to filter worktrees, which is the same
+          bug that caused the main repo to be matched in the real cleanup. The dry-run would show misleading output
+          suggesting the main repo worktree would be removed. Should use the same safe basename-based filtering as
+          listWomboWorktrees.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Must use listWomboWorktrees() for consistency, not manual filtering
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit. Same root cause as the cleanup-destroys-project bug."
+        subtasks: []
+      - id: bug-duration-parser-mismatch
+        title: Fix ISO duration validator/parser mismatch
+        description: >
+          src/lib/validate.ts:34 accepts duration formats like P1Y, P2M (years/months) but src/lib/features.ts:120
+          parser can't handle them and returns Infinity, silently corrupting sort order. Either the validator should
+          reject year/month durations, or the parser must support them.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: medium
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints:
+          - Validator and parser must agree on what formats are accepted
+          - If year/month support is added, use reasonable approximations (1Y=365D, 1M=30D)
+        forbidden: []
+        references: []
+        notes:
+          - "2026-03-12: Found during codebase audit."
+        subtasks: []
+  - id: cli-ux-polish
+    title: "UX polish: --version flag, better error messages"
+    description: Add missing standard CLI conventions (--version/-V) and improve misleading error messages found during testing.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: 2026-03-12T21:44:54.154Z
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: ux-version-flag
+        title: Add --version / -V flag
+        description: >
+          `wombo --version` shows "Unknown command" + full help dump. Should print the version from package.json and
+          exit. Standard CLI convention.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: ux-launch-no-features-msg
+        title: Fix misleading launch --all-ready message
+        description: >
+          `launch --all-ready` with no launchable features says "Use --all-ready to see all available" which contradicts
+          the flag already being passed. Should say "No launchable features found (all features are done/cancelled)" or
+          similar context-aware message.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: medium
+        depends_on: []
+        effort: PT15M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: agent-template-lifecycle
+    title: Auto-install and maintain wave-worker agent template
+    description: Wombo should ship a wave-worker agent template in src/templates/, install it into the project agent/
+      directory during 'wombo init', and verify it exists on 'wombo launch' (reinstalling if absent). This prevents the
+      failure mode where agents launch without their agent definition.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: critical
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: 2026-03-12T21:42:42.840Z
+    constraints: []
+    forbidden: []
+    references: []
+    notes: []
+    subtasks:
+      - id: agent-template-file
+        title: Ship wave-worker.md as a bundled template in src/templates/
+        description: >
+          Move/copy the current agent/wave-worker.md content into src/templates/wave-worker.md so wombo always has a
+          canonical agent definition to install. The template should use placeholders (e.g. {{project}}) where
+          appropriate so it can be customized per-project.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-init-install
+        title: Install agent template into project during 'wombo init'
+        description: >
+          During 'wombo init', create the agent/ directory and write the wave-worker.md template into it. Also ensure
+          agent/ is added to the configFiles array in the generated wombo.json. If agent/wave-worker.md already exists,
+          prompt the user before overwriting.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on:
+          - agent-template-file
+        effort: PT1H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-launch-guard
+        title: Check agent definition exists on launch, reinstall if absent
+        description: >
+          At the start of 'wombo launch', verify that the agent definition file exists at the expected path
+          (agent/<agentName>.md based on config). If missing, reinstall from the bundled template and warn the user.
+          This prevents the failure mode where agents spawn without their agent definition file and fall back to
+          defaults.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on:
+          - agent-template-file
+        effort: PT1H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: agent-worktree-verify
+        title: Verify agent config files are copied into worktrees
+        description: >
+          Add a post-worktree-creation check that confirms all configFiles (especially agent/) were successfully copied.
+          Log a warning if any are missing. This is a safety net on top of the existing cpSync logic in worktree.ts.
+        status: backlog
+        completion: 0
+        difficulty: trivial
+        priority: high
+        depends_on:
+          - agent-launch-guard
+        effort: PT30M
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: unit-test-suite
+    title: Add unit test suite with bun test
+    description: >
+      Add a comprehensive test suite using Bun's built-in test runner for core modules. Priority targets: features
+      parsing, state management, worktree filtering (the basename bug that rm -rf'd the project), duration parsing,
+      dependency resolution, and YAML schema validation. This is critical — we shipped a bug that destroyed the project
+      root.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: critical
+    depends_on: []
+    effort: P1D
+    started_at: null
+    ended_at: 2026-03-12T21:46:14.574Z
+    constraints:
+      - Use Bun's built-in test runner (`bun test`), no external test frameworks
+      - Must cover worktree filtering edge cases (basename vs full-path matching)
+      - Must cover arg parsing edge cases (trailing flags, missing values)
+      - Must cover features YAML parsing (null, empty, invalid schema)
+    forbidden:
+      - Do not add jest, vitest, or any external test runner dependency
+    references: []
+    notes:
+      - "2026-03-12: Created after cleanup bug destroyed the project root. Tests would have caught the .includes() vs
+        .startsWith() issue."
+    subtasks:
+      - id: test-worktree-filtering
+        title: Test worktree listing and filtering
+        description: >
+          Unit tests for listWomboWorktrees, removeWorktree safety guard, and cleanupAllWorktrees. Must include the case
+          where project dir name contains the worktree prefix (e.g. "wombo-combo" with prefix "wombo-").
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: critical
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-features-parsing
+        title: Test features YAML parsing and validation
+        description: >
+          Tests for loadFeatures with various edge cases: null features, empty arrays, invalid schema, corrupted YAML,
+          duration parsing, dependency resolution.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-arg-parsing
+        title: Test CLI arg parsing edge cases
+        description: >
+          Tests for parseArgs with trailing flags, missing values, flag collisions, and various command/subcommand
+          combinations.
+        status: backlog
+        completion: 0
+        difficulty: easy
+        priority: high
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: test-state-management
+        title: Test wave state persistence and concurrent mutations
+        description: >
+          Tests for saveState/loadState atomicity, updateAgent with concurrent callbacks, and state file corruption
+          recovery.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: medium
+        depends_on: []
+        effort: PT2H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: wombo-logs-command
+    title: wombo logs <feature-id> command
+    description: >
+      Add a `wombo logs <feature-id>` command that pretty-prints agent logs from .wombo-logs/<feature-id>.log with
+      activity annotations, timestamps, and optional filtering. Currently debugging failed waves requires manually
+      reading log files.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: 2026-03-12T21:45:25.134Z
+    constraints:
+      - Must support --output json for agent consumption
+      - Must support --tail N to show last N lines
+      - Must support --follow to stream new output (like tail -f)
+      - Must show a helpful error if the log file doesn't exist
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: wombo-abort-command
+    title: wombo abort <feature-id> — kill single agent
+    description: >
+      Add a `wombo abort <feature-id>` command that kills a single running agent without nuking the entire wave. Should
+      kill the tmux session, mark the agent as failed (or optionally return it to queued for retry), and update wave
+      state. Currently the only options are `cleanup` (kills everything) or manual `kill` of the PID.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: 2026-03-12T21:41:10.293Z
+    constraints:
+      - Must kill the tmux session cleanly
+      - Must update wave state to reflect the abort
+      - Must support --requeue flag to return the feature to queued instead of failed
+      - Must support --output json
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: status-json-output
+    title: JSON output for status command
+    description: >
+      Add --output json support to the `wombo status` command so other agents can programmatically check wave status.
+      Should emit structured JSON with wave metadata, agent states, timing info, and summary statistics.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: 2026-03-12T22:11:39.114Z
+    constraints:
+      - JSON schema must include wave_id, base_branch, agents array with full state, and summary counts
+      - Must be parseable by other woco instances or agents
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit. Partially overlaps with json-output-complete but focused on status
+        specifically."
+    subtasks: []
+  - id: features-set-priority
+    title: features set-priority and set-difficulty commands
+    description: >
+      Add `wombo features set-priority <id> <priority>` and `wombo features set-difficulty <id> <difficulty>` commands.
+      Currently changing priority or difficulty requires manually editing the YAML file. We have set-status but no way
+      to reprioritize programmatically.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: medium
+    depends_on: []
+    effort: PT2H
+    started_at: null
+    ended_at: 2026-03-12T21:45:28.451Z
+    constraints:
+      - Must validate enum values (same enums as features add)
+      - Must support --output json and --dry-run
+      - Must work on both top-level features and subtasks
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: features-file-backup
+    title: Auto-backup .features.yml before writes
+    description: >
+      Before every saveFeatures() call, create a backup copy of the current .features.yml as .features.yml.bak (or
+      timestamped .features.yml.YYYY-MM-DDTHH-MM-SS.bak). A single YAML serialization bug could destroy the entire
+      feature backlog. Also make saveFeatures atomic (write-to-tmp-then-rename) like saveState already does.
+    status: done
+    completion: 100
+    difficulty: easy
+    priority: high
+    depends_on: []
+    effort: PT1H30M
+    started_at: null
+    ended_at: 2026-03-12T21:40:35.412Z
+    constraints:
+      - Keep only the last N backups (configurable, default 5) to avoid disk bloat
+      - Backups should be gitignored
+      - Must use atomic write (tmp + rename) like saveState
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: wave-history-export
+    title: Wave history and summary export
+    description: >
+      After a wave completes (or on demand), export wave results to a structured file (.wombo-history/<wave-id>.json)
+      with: which features succeeded/failed, how long each took, retry counts, merge conflicts encountered, and
+      resolution details. Currently wave state is lost after cleanup. This enables retrospective analysis and
+      improvement planning.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: medium
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: 2026-03-12T21:50:07.039Z
+    constraints:
+      - Must auto-export on wave completion (not just manual)
+      - Must survive cleanup (stored separately from .wombo-state.json)
+      - Must support `wombo history` command to list/view past waves
+      - Must support --output json
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: base-branch-validation
+    title: Validate base branch exists before launch
+    description: >
+      At the start of `wombo launch`, verify that the configured baseBranch exists as a local branch before creating
+      wave state and worktrees. Currently if baseBranch doesn't exist, `git branch "feature/xxx" "nonexistent-branch"`
+      fails only after the wave state is already created, leaving a broken state file.
+    status: done
+    completion: 100
+    difficulty: trivial
+    priority: high
+    depends_on: []
+    effort: PT30M
+    started_at: null
+    ended_at: 2026-03-12T21:41:01.440Z
+    constraints:
+      - Must check before any state file is created
+      - Must emit a clear error message with the missing branch name
+      - Must support --output json error format
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: Created during codebase audit."
+    subtasks: []
+  - id: dependency-aware-sequencing
+    title: Dependency-aware sequential agent scheduling
+    description: >
+      When launching a wave with inter-dependent features, wombo must handle dependencies programmatically: dependent
+      features should be queued and only started once their blocking features are verified/merged. Within the same
+      dependency chain, agents should work sequentially in the same worktree, maintaining validation at each step.
+      Cross-wave and cross-stream dependencies (where a feature must wait for 2+ features from different waves/streams
+      to complete) must also be supported. All dependency resolution happens programmatically with no LLM intermediary —
+      LLM decisions happen in the planning phase that produces the .features.yml, not during execution.
+    status: done
+    completion: 100
+    difficulty: hard
+    priority: critical
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: 2026-03-12T21:52:21.214Z
+    constraints:
+      - Dependency resolution must be fully programmatic, no LLM calls during execution
+      - Must handle diamond dependencies (feature C depends on both A and B)
+      - Must detect circular dependencies and error before launching
+      - Sequential features in the same chain should reuse the same worktree
+      - Build verification must pass at each dependency boundary before the next feature starts
+      - Must handle the case where a dependency fails (cancel downstream or re-queue)
+    forbidden:
+      - Do not invoke LLM/agent for dependency decisions — this is pure graph scheduling
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Waves (parallel) of streams (sequential) can merge downstream. This is
+        topological-sort-based scheduling."
+    subtasks:
+      - id: dep-graph-builder
+        title: Build dependency graph and detect cycles
+        description: >
+          Parse depends_on fields across all features and subtasks to build a DAG. Detect circular dependencies and
+          report them before launch. Compute topological ordering for sequential scheduling.
+        status: backlog
+        completion: 0
+        difficulty: medium
+        priority: critical
+        depends_on: []
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dep-sequential-scheduler
+        title: Sequential scheduling within dependency chains
+        description: >
+          When features A -> B -> C form a chain, schedule them sequentially in the same worktree. After A completes and
+          is verified, start B in the same worktree. Validate at each boundary.
+        status: backlog
+        completion: 0
+        difficulty: hard
+        priority: critical
+        depends_on:
+          - dep-graph-builder
+        effort: PT6H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+      - id: dep-diamond-merge-gates
+        title: Diamond dependency merge gates
+        description: >
+          When feature C depends on both A and B (different streams), C must wait until both A and B are verified/merged
+          before starting. Implement merge gates that track multi-dependency readiness.
+        status: backlog
+        completion: 0
+        difficulty: hard
+        priority: high
+        depends_on:
+          - dep-sequential-scheduler
+        effort: PT4H
+        started_at: null
+        ended_at: null
+        constraints: []
+        forbidden: []
+        references: []
+        notes: []
+        subtasks: []
+  - id: portless-integration
+    title: Use portless for localhost server testing
+    description: >
+      When agents start localhost servers for testing, they must always use "portless" to avoid localhost:PORT
+      collisions between concurrent agents in different worktrees. Integrate portless as a required tool for any
+      build/test step that starts a server, and configure it automatically in agent worktrees.
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: high
+    depends_on: []
+    effort: PT4H
+    started_at: null
+    ended_at: 2026-03-12T21:46:35.486Z
+    constraints:
+      - Must prevent port collisions between concurrent agents
+      - Must be transparent to agents (they don't need to know about portless)
+      - Must work with any server framework the target project uses
+    forbidden:
+      - Do not hardcode port numbers or use manual port allocation
+    references: []
+    notes:
+      - "2026-03-12: User requirement. Critical for parallel agent execution where multiple agents may start dev
+        servers."
+    subtasks: []
+  - id: dmux-migration
+    title: Switch from tmux to dmux (Rust-based terminal multiplexer)
+    description: >
+      Replace tmux with dmux, a faster Rust-based terminal multiplexer, for agent session management. This should be a
+      drop-in replacement in the launcher module, with all tmux-specific commands translated to their dmux equivalents.
+      Must maintain backward compatibility for systems that only have tmux installed (detect and use whichever is
+      available, preferring dmux).
+    status: done
+    completion: 100
+    difficulty: medium
+    priority: medium
+    depends_on: []
+    effort: PT6H
+    started_at: null
+    ended_at: 2026-03-12T21:57:35.225Z
+    constraints:
+      - Must detect available multiplexer (dmux preferred, tmux fallback)
+      - Must maintain all existing session management functionality
+      - Must be configurable via wombo.json (multiplexer preference)
+    forbidden:
+      - Do not remove tmux support entirely — it must remain as a fallback
+    references: []
+    notes:
+      - "2026-03-12: User requirement. dmux is faster and more resource-efficient than tmux."
+    subtasks: []
+  - id: agent-browser-integration
+    title: Agent Browser for real browser testing
+    description: >
+      Integrate "Agent Browser" to give agents real browser capabilities for testing web applications. When a feature
+      involves UI/frontend work, the agent should be able to interact with a real browser instance for verification,
+      visual regression testing, and end-to-end testing. This goes beyond headless testing — agents should have actual
+      browser behavior available.
+    status: done
+    completion: 100
+    difficulty: hard
+    priority: medium
+    depends_on: []
+    effort: P2D
+    started_at: null
+    ended_at: 2026-03-12T21:56:16.398Z
+    constraints:
+      - Must support browser-based verification as part of the build/verify pipeline
+      - Must isolate browser instances per agent (no shared state between concurrent agents)
+      - Must support headless operation for CI environments
+    forbidden: []
+    references: []
+    notes:
+      - "2026-03-12: User requirement. For real browser behavior in agent testing workflows."
+    subtasks: []

@@ -5,15 +5,15 @@ description: >
   structure, prompt style, and capabilities. The canonical template lives at src/templates/generalist-agent.md and is
   installed into .opencode/agents/ via init. The converter must produce markdown files compatible with the
   ensureAgentDefinition() / renderAgentTemplate() pipeline in src/lib/templates.ts.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - agent-registry-client
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T21:07:22.453Z
 constraints: []
 forbidden: []
 references: []

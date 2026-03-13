@@ -21,97 +21,138 @@ import {
   detectMultiplexer,
   muxListSessions,
 } from "../lib/multiplexer.js";
+import { output, outputMessage, type OutputFormat } from "../lib/output.js";
 
 export interface CleanupOptions {
   projectRoot: string;
   config: WomboConfig;
   dryRun?: boolean;
+  outputFmt?: OutputFormat;
 }
 
 export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   // Dry-run: show what would be cleaned up without doing it
   if (opts.dryRun) {
-    console.log("\n[dry-run] Would perform the following cleanup:\n");
-
     // List multiplexer sessions that would be killed
     const muxName = getMultiplexerName(config);
+    let matchingSessions: string[] = [];
     try {
       const mux = detectMultiplexer(config.agent.multiplexer);
       const sessions = muxListSessions(mux);
       const prefix = config.agent.tmuxPrefix;
-      const matching = sessions.filter((s) => s.startsWith(prefix));
-      console.log(`  ${muxName} sessions to kill: ${matching.length}`);
-      for (const s of matching) {
-        console.log(`    ${s}`);
-      }
+      matchingSessions = sessions.filter((s) => s.startsWith(prefix));
     } catch {
-      console.log(`  ${muxName} sessions to kill: 0 (no ${muxName} server running)`);
+      // no mux server running
     }
 
     // List worktrees that would be removed (using safe filtering)
+    let matchingWorktrees: { path: string }[] = [];
     try {
-      const matching = listWomboWorktrees(projectRoot, config);
-      console.log(`  worktrees to remove: ${matching.length}`);
-      for (const wt of matching) {
-        console.log(`    ${wt.path}`);
-      }
+      matchingWorktrees = listWomboWorktrees(projectRoot, config);
     } catch {
-      console.log("  worktrees to remove: 0");
+      // no worktrees
     }
 
     const statePath = resolve(projectRoot, WOMBO_DIR, "state.json");
     const logDir = resolve(projectRoot, WOMBO_DIR, "logs");
-    if (existsSync(statePath)) console.log("  Would remove: .wombo-combo/state.json");
-    if (existsSync(logDir)) console.log("  Would remove: .wombo-combo/logs/");
+    const filesToRemove: string[] = [];
+    if (existsSync(statePath)) filesToRemove.push(".wombo-combo/state.json");
+    if (existsSync(logDir)) filesToRemove.push(".wombo-combo/logs/");
+
+    const dryRunResult = {
+      dry_run: true,
+      mux_sessions: matchingSessions,
+      mux_sessions_count: matchingSessions.length,
+      worktrees: matchingWorktrees.map((wt) => wt.path),
+      worktrees_count: matchingWorktrees.length,
+      files_to_remove: filesToRemove,
+    };
+
+    output(fmt, dryRunResult, () => {
+      console.log("\n[dry-run] Would perform the following cleanup:\n");
+      console.log(`  ${muxName} sessions to kill: ${matchingSessions.length}`);
+      for (const s of matchingSessions) {
+        console.log(`    ${s}`);
+      }
+      console.log(`  worktrees to remove: ${matchingWorktrees.length}`);
+      for (const wt of matchingWorktrees) {
+        console.log(`    ${wt.path}`);
+      }
+      for (const f of filesToRemove) {
+        console.log(`  Would remove: ${f}`);
+      }
+    });
 
     return;
   }
 
-  console.log("\n--- wombo-combo: Cleanup ---\n");
-
   // Kill multiplexer sessions
   const muxName = getMultiplexerName(config);
   const killed = killAllMuxSessions(config);
-  console.log(`Killed ${killed} ${muxName} session(s)`);
 
   // Remove worktrees
   const removed = cleanupAllWorktrees(projectRoot, config);
-  console.log(`Removed ${removed} worktree(s)`);
 
   // List remaining feature branches
+  let remainingBranches: string[] = [];
   try {
     const branchPattern = `"${config.git.branchPrefix}*"`;
-    const branches = execSync(`git branch --list ${branchPattern}`, {
+    const branchesRaw = execSync(`git branch --list ${branchPattern}`, {
       cwd: projectRoot,
       encoding: "utf-8",
     }).trim();
-    if (branches) {
-      console.log(`\nRemaining feature branches:\n${branches}`);
-      console.log('Use "git branch -D <branch>" to remove manually.');
+    if (branchesRaw) {
+      remainingBranches = branchesRaw.split("\n").map((b) => b.trim());
     }
   } catch {}
 
   // Remove state file
   const statePath = resolve(projectRoot, WOMBO_DIR, "state.json");
-  if (existsSync(statePath)) {
+  const stateRemoved = existsSync(statePath);
+  if (stateRemoved) {
     unlinkSync(statePath);
-    console.log("Removed .wombo-combo/state.json");
   }
 
   // Remove log directory
   const logDir = resolve(projectRoot, WOMBO_DIR, "logs");
-  if (existsSync(logDir)) {
+  const logsRemoved = existsSync(logDir);
+  if (logsRemoved) {
     rmSync(logDir, { recursive: true, force: true });
-    console.log("Removed .wombo-combo/logs/");
   }
 
-  console.log("\nCleanup complete.");
-
-  // Inform the user that history is preserved
+  // Check if history is preserved
   const historyDir = resolve(projectRoot, WOMBO_DIR, "history");
-  if (existsSync(historyDir)) {
-    console.log("Note: .wombo-combo/history/ is preserved. Use 'woco history' to view past waves.");
-  }
+  const historyPreserved = existsSync(historyDir);
+
+  const result = {
+    mux_sessions_killed: killed,
+    worktrees_removed: removed,
+    state_removed: stateRemoved,
+    logs_removed: logsRemoved,
+    remaining_branches: remainingBranches,
+    history_preserved: historyPreserved,
+  };
+
+  output(fmt, result, () => {
+    console.log("\n--- wombo-combo: Cleanup ---\n");
+    console.log(`Killed ${killed} ${muxName} session(s)`);
+    console.log(`Removed ${removed} worktree(s)`);
+
+    if (remainingBranches.length > 0) {
+      console.log(`\nRemaining feature branches:\n${remainingBranches.map((b) => `  ${b}`).join("\n")}`);
+      console.log('Use "git branch -D <branch>" to remove manually.');
+    }
+
+    if (stateRemoved) console.log("Removed .wombo-combo/state.json");
+    if (logsRemoved) console.log("Removed .wombo-combo/logs/");
+
+    console.log("\nCleanup complete.");
+
+    if (historyPreserved) {
+      console.log("Note: .wombo-combo/history/ is preserved. Use 'woco history' to view past waves.");
+    }
+  });
 }

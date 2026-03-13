@@ -5,14 +5,14 @@ description: >
   Needs full retrofit: import OutputFormat and helpers from src/lib/output.ts, add outputFmt option to
   TasksCheckOptions, resolve format from --output flag, and emit JSON with {ok: bool, issues: [...], items_checked: N}
   structure. See src/commands/tasks/archive.ts for the pattern to follow. File: src/commands/tasks/check.ts.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: trivial
 priority: high
 depends_on: []
 effort: PT30M
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T20:23:37.712Z
 constraints: []
 forbidden: []
 references: []

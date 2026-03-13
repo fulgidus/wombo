@@ -721,6 +721,7 @@ async function main(): Promise<void> {
         autoPush: args.autoPush,
         baseBranch: args.baseBranch,
         maxRetries: args.maxRetries,
+        outputFmt: args.outputFmt,
       });
       break;
 
@@ -738,6 +739,7 @@ async function main(): Promise<void> {
         browserVerify: args.browser,
         skipTests: args.skipTests,
         strictTdd: args.strictTdd,
+        outputFmt: args.outputFmt,
       });
       break;
 
@@ -749,6 +751,7 @@ async function main(): Promise<void> {
         autoPush: args.autoPush,
         dryRun: args.dryRun,
         model: args.model,
+        outputFmt: args.outputFmt,
       });
       break;
 
@@ -765,12 +768,13 @@ async function main(): Promise<void> {
         model: args.model,
         interactive: args.interactive,
         dryRun: args.dryRun,
+        outputFmt: args.outputFmt,
       });
       break;
     }
 
     case "cleanup":
-      await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun });
+      await cmdCleanup({ projectRoot: PROJECT_ROOT, config, dryRun: args.dryRun, outputFmt: args.outputFmt });
       break;
 
     case "history":
