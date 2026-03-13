@@ -346,7 +346,6 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     console.log(`\nRe-launching ${toLaunchNow.length} agent(s)...\n`);
     printDashboard(state);
   }
-
   const model = opts.model ?? state.model ?? undefined;
 
   if (opts.interactive) {
@@ -398,9 +397,11 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       })
     );
 
-    printDashboard(state);
-    const mux = detectMultiplexer(config.agent.multiplexer);
-    console.log(`\nResume complete. Use '${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<id>`)}' to check sessions.`);
+    if (fmt === "text") {
+      printDashboard(state);
+      const mux = detectMultiplexer(config.agent.multiplexer);
+      console.log(`\nResume complete. Use '${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<id>`)}' to check sessions.`);
+    }
   } else {
     // Headless resume — re-enter monitoring loop
     const monitor = new ProcessMonitor(projectRoot, {
@@ -476,7 +477,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       }
       monitor.killAll();
       saveState(projectRoot, state);
-      console.log("\nState saved. Use 'woco resume' to continue.");
+      if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
       process.exit(0);
     });
 
@@ -504,13 +505,13 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           }
           monitor.killAll();
           saveState(projectRoot, state);
-          console.log("State saved. Use 'woco resume' to continue.");
+          if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
           process.exit(0);
         },
       });
       tuiRef.current.start();
     } else {
-      console.log("(--no-tui mode, dashboard prints every 15s)\n");
+      if (fmt === "text") console.log("(--no-tui mode, dashboard prints every 15s)\n");
       printDashboard(state);
     }
 
@@ -602,17 +603,19 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       await tuiRef.current.waitForQuit();
     }
 
-    printDashboard(state);
+    if (fmt === "text") {
+      printDashboard(state);
 
-    // Dump full logs for failed agents (post-mortem)
-    dumpFailedAgentLogs(projectRoot, state);
+      // Dump full logs for failed agents (post-mortem)
+      dumpFailedAgentLogs(projectRoot, state);
+    }
 
     // Auto-export wave history
     try {
       const historyPath = exportWaveHistory(projectRoot, state);
-      console.log(`Wave history exported to ${historyPath}`);
+      if (fmt === "text") console.log(`Wave history exported to ${historyPath}`);
     } catch (err: any) {
-      console.error(`Warning: failed to export wave history: ${err.message}`);
+      if (fmt === "text") console.error(`Warning: failed to export wave history: ${err.message}`);
     }
 
     // Auto-push base branch if requested
@@ -620,6 +623,6 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       await pushBaseBranch(projectRoot, state.base_branch, config);
     }
 
-    console.log("Wave complete.");
+    if (fmt === "text") console.log("Wave complete.");
   }
 }

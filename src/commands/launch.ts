@@ -78,7 +78,7 @@ import {
   type SchedulePlan,
 } from "../lib/dependency-graph.js";
 import { ensureProxyRunning, isPortlessAvailable, portlessUrl } from "../lib/portless.js";
-import { outputError, type OutputFormat } from "../lib/output.js";
+import { output, outputError, outputMessage, type OutputFormat } from "../lib/output.js";
 import {
   detectMultiplexer,
   muxAttachCommand,
@@ -1228,8 +1228,9 @@ async function launchWaveInteractive(
 
 export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
-  console.log("\n--- wombo-combo: Launch ---\n");
+  if (fmt === "text") console.log("\n--- wombo-combo: Launch ---\n");
 
   // Ensure agent definition exists — reinstall from template if missing
   ensureAgentDefinition(projectRoot, config);
@@ -1238,12 +1239,12 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   if (config.portless.enabled) {
     if (isPortlessAvailable(config)) {
       const proxyOk = ensureProxyRunning(config);
-      if (!proxyOk) {
+      if (!proxyOk && fmt === "text") {
         console.warn(
           "\x1b[33m[portless]\x1b[0m proxy could not be started — agents may encounter port collisions"
         );
       }
-    } else {
+    } else if (fmt === "text") {
       console.warn(
         "\x1b[33m[portless]\x1b[0m enabled but not installed. Install with: npm install -g portless"
       );
@@ -1257,7 +1258,6 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   // Validate that the configured baseBranch exists as a local branch
   // -------------------------------------------------------------------------
   if (!branchExists(projectRoot, opts.baseBranch)) {
-    const fmt = opts.outputFmt ?? "text";
     const msg = `Base branch "${opts.baseBranch}" does not exist as a local branch. ` +
       `Create it first (e.g. "git checkout -b ${opts.baseBranch}") or specify ` +
       `a different branch with --base-branch.`;
@@ -1279,20 +1279,22 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     const hasWork = merged.length > 0 || verified.length > 0 || completed.length > 0 || running.length > 0;
 
     if (hasWork) {
-      console.log(`Existing wave found: ${existingState.wave_id}`);
-      console.log(`  ${merged.length} merged, ${verified.length} verified, ${completed.length} completed, ${running.length} running, ${queued.length} queued, ${failed.length} failed`);
+      if (fmt === "text") {
+        console.log(`Existing wave found: ${existingState.wave_id}`);
+        console.log(`  ${merged.length} merged, ${verified.length} verified, ${completed.length} completed, ${running.length} running, ${queued.length} queued, ${failed.length} failed`);
+      }
 
       // Finalize any merged agents by marking their features as done
       if (merged.length > 0) {
-        console.log("\nFinalizing merged tasks in tasks file...");
+        if (fmt === "text") console.log("\nFinalizing merged tasks in tasks file...");
         for (const agent of merged) {
           markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch);
           // Clean up worktree and branch (already merged, safe to delete)
           try {
             removeWorktree(projectRoot, agent.worktree, true);
-            console.log(`  ${agent.feature_id}: marked done, worktree removed`);
+            if (fmt === "text") console.log(`  ${agent.feature_id}: marked done, worktree removed`);
           } catch {
-            console.log(`  ${agent.feature_id}: marked done (worktree already cleaned)`);
+            if (fmt === "text") console.log(`  ${agent.feature_id}: marked done (worktree already cleaned)`);
           }
         }
       }
@@ -1301,20 +1303,17 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       // Leave them for 'woco resume' to attempt the merge.
       if (verified.length > 0) {
         for (const agent of verified) {
-          console.log(`  ${agent.feature_id}: verified (not yet merged) — use 'woco resume' to merge`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: verified (not yet merged) — use 'woco resume' to merge`);
         }
       }
 
       const activeCount = running.length + completed.length + queued.length;
       if (activeCount > 0) {
-        console.error(`\nWave ${existingState.wave_id} has ${activeCount} unfinished agent(s).`);
-      console.error("Use 'woco resume' to continue the existing wave,");
-      console.error("or 'woco cleanup' to clear it before starting a new one.");
-        process.exit(1);
+        outputError(fmt, `Wave ${existingState.wave_id} has ${activeCount} unfinished agent(s). Use 'woco resume' to continue the existing wave, or 'woco cleanup' to clear it before starting a new one.`);
       }
 
       // All agents are in terminal states (merged/verified/failed) — safe to start fresh
-      console.log("\nAll agents in previous wave are finished. Starting fresh wave.\n");
+      if (fmt === "text") console.log("\nAll agents in previous wave are finished. Starting fresh wave.\n");
     }
   }
 
@@ -1343,39 +1342,30 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     if (opts.difficulty) activeFilters.push(`--difficulty ${opts.difficulty}`);
     if (opts.features?.length) activeFilters.push(`--tasks ${opts.features.join(",")}`);
 
+    let msg: string;
     if (opts.allReady && activeFilters.length === 1) {
-      // Only --all-ready was passed, no additional filters
-      console.error(
-        "No launchable tasks found (all tasks are done, cancelled, or have unmet dependencies).\n" +
-        "Run 'woco tasks list' to review task statuses."
-      );
+      msg = "No launchable tasks found (all tasks are done, cancelled, or have unmet dependencies).";
     } else if (activeFilters.length > 0) {
-      // Specific filter flags were passed (with or without --all-ready)
-      console.error(
-        `No tasks matched the current filters: ${activeFilters.join(", ")}.\n` +
-        "Try broadening your criteria or run 'woco tasks list --ready' to see available tasks."
-      );
+      msg = `No tasks matched the current filters: ${activeFilters.join(", ")}.`;
     } else {
-      // No selection flags at all — default selection found nothing
-      console.error(
-        "No launchable tasks found.\n" +
-        "Use --all-ready to select all tasks whose dependencies are met,\n" +
-        "or run 'woco tasks list --ready' to see available tasks."
-      );
+      msg = "No launchable tasks found.";
     }
-    process.exit(1);
+
+    outputError(fmt, msg);
   }
 
   // Show selection
-  printFeatureSelection(
-    selected.map((f) => ({
-      id: f.id,
-      title: f.title,
-      priority: f.priority,
-      difficulty: f.difficulty,
-      effort: f.effort,
-    }))
-  );
+  if (fmt === "text") {
+    printFeatureSelection(
+      selected.map((f) => ({
+        id: f.id,
+        title: f.title,
+        priority: f.priority,
+        difficulty: f.difficulty,
+        effort: f.effort,
+      }))
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Dependency graph analysis
@@ -1393,18 +1383,41 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     try {
       validateDepGraph(depGraph);
     } catch (err: any) {
-      console.error(`\n${err.message}`);
-      console.error("\nFix dependency issues before launching.");
-      process.exit(1);
+      outputError(fmt, `${err.message}\nFix dependency issues before launching.`);
     }
 
     // Build scheduling plan
     schedulePlan = buildSchedulePlan(depGraph);
-    console.log(`\n${formatSchedulePlan(schedulePlan)}\n`);
+    if (fmt === "text") console.log(`\n${formatSchedulePlan(schedulePlan)}\n`);
   }
 
   if (opts.dryRun) {
-    console.log("Dry run — not launching agents.");
+    const dryRunResult = {
+      dry_run: true,
+      base_branch: opts.baseBranch,
+      max_concurrent: opts.maxConcurrent,
+      model: opts.model ?? null,
+      interactive: opts.interactive,
+      selected: selected.map((f) => ({
+        id: f.id,
+        title: f.title,
+        priority: f.priority,
+        difficulty: f.difficulty,
+        effort: f.effort,
+      })),
+      schedule_plan: schedulePlan ? {
+        streams: schedulePlan.streams.map((s) => s.featureIds),
+        merge_gates: schedulePlan.mergeGates.map((g) => ({
+          feature_id: g.featureId,
+          wait_for: g.waitFor,
+        })),
+        topological_order: schedulePlan.topologicalOrder,
+      } : null,
+    };
+
+    output(fmt, dryRunResult, () => {
+      console.log("Dry run — not launching agents.");
+    });
     return;
   }
 
@@ -1416,15 +1429,17 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   if (config.agentRegistry.mode !== "disabled") {
     const tasksWithAgentType = selected.filter((t) => t.agent_type);
     if (tasksWithAgentType.length > 0) {
-      console.log(`\nResolving ${tasksWithAgentType.length} specialized agent(s) from registry...`);
+      if (fmt === "text") console.log(`\nResolving ${tasksWithAgentType.length} specialized agent(s) from registry...`);
       agentResolutions = await prepareAgentDefinitions(selected, config, projectRoot);
 
       const specialized = [...agentResolutions.values()].filter(isSpecializedAgent);
       const cached = specialized.filter((r) => r.fromCache);
-      console.log(
-        `  ${specialized.length} specialized (${cached.length} cached, ${specialized.length - cached.length} fetched), ` +
-        `${selected.length - specialized.length} generalist`
-      );
+      if (fmt === "text") {
+        console.log(
+          `  ${specialized.length} specialized (${cached.length} cached, ${specialized.length - cached.length} fetched), ` +
+          `${selected.length - specialized.length} generalist`
+        );
+      }
     }
   }
 
@@ -1438,7 +1453,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       : await consolePreflightConfirm(selected, agentResolutions, config);
 
     if (!preflight.proceed) {
-      console.log("Launch cancelled.\n");
+      outputMessage(fmt, "Launch cancelled.");
       return;
     }
 
@@ -1518,7 +1533,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   }
 
   saveState(projectRoot, state);
-  console.log(`Wave ${state.wave_id} created with ${selected.length} agents.`);
+  if (fmt === "text") console.log(`Wave ${state.wave_id} created with ${selected.length} agents.`);
 
   // Launch agents up to max_concurrent
   if (opts.interactive) {
