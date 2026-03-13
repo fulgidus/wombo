@@ -123,7 +123,9 @@ function loadMeta(dir: string): TasksMeta {
       version: parsed?.version ?? "1.0",
       meta: parsed?.meta ?? defaultMeta().meta,
     };
-  } catch {
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to parse ${basename(metaPath)}: ${reason}`);
     return defaultMeta();
   }
 }
@@ -183,7 +185,9 @@ function loadTaskFile(filePath: string): Task | null {
     }
 
     return parsed as Task;
-  } catch {
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to parse ${basename(filePath)}: ${reason}`);
     return null;
   }
 }
@@ -624,7 +628,9 @@ function migrateArchiveIfNeeded(
   let parsed: any;
   try {
     parsed = parseYaml(raw);
-  } catch {
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    console.error(`Failed to parse ${basename(legacyPath)}: ${reason}`);
     return false;
   }
 
