@@ -101,6 +101,8 @@ export interface WomboConfig {
   browser: BrowserConfig;
   /** Agent registry configuration for specialized agent downloads */
   agentRegistry: AgentRegistryConfig;
+  /** Test-Driven Development configuration */
+  tdd: TddConfig;
 }
 
 /** Configuration for browser-based verification and testing */
@@ -137,6 +139,14 @@ export interface AgentRegistryConfig {
   source: string;
   /** Cache directory name (relative to .wombo-combo/) */
   cacheDir: string;
+}
+
+/** Configuration for Test-Driven Development workflow */
+export interface TddConfig {
+  /** Enable TDD red-green-refactor instructions in agent prompts */
+  enabled: boolean;
+  /** Test command to run (default: "bun test") */
+  testCommand: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +208,10 @@ export const DEFAULT_CONFIG: WomboConfig = {
     mode: "auto",
     source: "msitarzewski/agency-agents",
     cacheDir: "agents-cache",
+  },
+  tdd: {
+    enabled: false,
+    testCommand: "bun test",
   },
 };
 
@@ -325,6 +339,9 @@ export function validateConfig(config: WomboConfig): void {
   }
   if (!config.agentRegistry.cacheDir) {
     throw new Error("config.agentRegistry.cacheDir must be a non-empty string");
+  }
+  if (config.tdd.enabled && !config.tdd.testCommand) {
+    throw new Error("config.tdd.testCommand must be a non-empty string when TDD is enabled");
   }
 }
 
