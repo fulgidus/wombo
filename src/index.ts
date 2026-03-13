@@ -108,6 +108,7 @@ import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import { resolveOutputFormat, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
 import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
+import { buildToonSpec, renderToonLegend } from "./lib/toon-spec.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -558,6 +559,37 @@ async function main(): Promise<void> {
 
   if (args.command === "describe") {
     // Schema introspection: `woco describe [command]`
+    if (args.outputFmt === "toon") {
+      // Emit TOON format legend — self-describing, cacheable by agents
+      const pkgPath = resolve(import.meta.dir, "..", "package.json");
+      let version = "unknown";
+      try {
+        const pkg = await Bun.file(pkgPath).json();
+        version = pkg.version ?? "unknown";
+      } catch {}
+
+      if (!args.featureId) {
+        // Full TOON spec (legend + all commands)
+        console.log(renderToonLegend(version));
+      } else {
+        // JSON structure for the full spec (--output toon with a specific command
+        // still emits JSON since TOON is a line-oriented data format, not a schema format)
+        const spec = buildToonSpec(version);
+        const cmdName = args.title
+          ? `${args.featureId} ${args.title}`
+          : args.featureId;
+        const cmdSpec = spec.commands.find((c) => c.command === cmdName);
+        if (!cmdSpec) {
+          console.error(`Unknown command: "${cmdName}"`);
+          console.error("Run 'woco describe --output toon' to see the full TOON spec.");
+          process.exit(1);
+          return;
+        }
+        console.log(JSON.stringify(cmdSpec, null, 2));
+      }
+      return;
+    }
+
     if (!args.featureId) {
       // No command specified — list all commands
       console.log(JSON.stringify(allCommandSchemas(), null, 2));
