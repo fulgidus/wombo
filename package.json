@@ -1,6 +1,6 @@
 {
     "name": "wombo-combo",
-    "version": "0.0.12",
+    "version": "0.0.13",
     "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
     "type": "module",
     "bin": {
@@ -8,8 +8,8 @@
     },
     "files": [
         "src/**/*.ts",
-        "src/templates/tasks.yml",
-        "src/templates/wave-worker.md"
+        "src/templates/**",
+        "schemas/**"
     ],
     "scripts": {
         "dev": "bun src/index.ts",
