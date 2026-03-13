@@ -167,7 +167,7 @@ export async function cmdTasksCheck(opts: TasksCheckOptions): Promise<void> {
   const result = checkTasks(data);
 
   const allItems = collectAllItems(data);
-  console.log(`\nChecking ${config.tasksFile} (${allItems.length} items)...\n`);
+  console.log(`\nChecking ${config.tasksDir}/ (${allItems.length} items)...\n`);
 
   if (result.errors.length === 0 && result.warnings.length === 0) {
     console.log("  All checks passed. No issues found.");

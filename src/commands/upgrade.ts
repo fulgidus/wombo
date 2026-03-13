@@ -26,7 +26,7 @@ export interface UpgradeOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-const REPO = "fulgidus/wombo";
+const REPO = "fulgidus/wombo-combo";
 
 /**
  * Get the locally installed version from package.json.

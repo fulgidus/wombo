@@ -24,10 +24,14 @@ export const WOMBO_DIR = ".wombo-combo";
 export type AgentRegistryMode = "auto" | "monitored" | "disabled";
 
 export interface WomboConfig {
-  /** Path to the tasks YAML file relative to .wombo-combo/ */
-  tasksFile: string;
-  /** Path to the archive YAML file relative to .wombo-combo/ */
-  archiveFile: string;
+  /** Directory name for task files relative to .wombo-combo/ (folder-based storage) */
+  tasksDir: string;
+  /** Directory name for archived task files relative to .wombo-combo/ */
+  archiveDir: string;
+  /** @deprecated Use tasksDir. Legacy single-file path relative to .wombo-combo/ */
+  tasksFile?: string;
+  /** @deprecated Use archiveDir. Legacy single-file path relative to .wombo-combo/ */
+  archiveFile?: string;
   /** Base branch to create feature branches from */
   baseBranch: string;
   /** Build configuration */
@@ -140,8 +144,8 @@ export interface AgentRegistryConfig {
 // ---------------------------------------------------------------------------
 
 export const DEFAULT_CONFIG: WomboConfig = {
-  tasksFile: "tasks.yml",
-  archiveFile: "archive.yml",
+  tasksDir: "tasks",
+  archiveDir: "archive",
   baseBranch: "develop",
   build: {
     command: "bun run build",
@@ -161,7 +165,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
   agent: {
     bin: null,
     name: "generalist-agent",
-    configFiles: [".opencode/", "opencode.json", "AGENTS.md", "agent/"],
+    configFiles: [".opencode/", "opencode.json", "AGENTS.md"],
     tmuxPrefix: "wombo",
     multiplexer: "auto",
   },
@@ -246,6 +250,20 @@ export function loadConfig(projectRoot: string): WomboConfig {
   try {
     const raw = readFileSync(configPath, "utf-8");
     const partial = JSON.parse(raw) as Partial<WomboConfig>;
+
+    // Migrate legacy single-file config keys to folder-based
+    if ((partial as any).tasksFile && !partial.tasksDir) {
+      // Legacy "tasks.yml" → strip extension for dir name, or use as-is
+      const legacy = (partial as any).tasksFile as string;
+      partial.tasksDir = legacy.replace(/\.ya?ml$/i, "") || "tasks";
+      delete (partial as any).tasksFile;
+    }
+    if ((partial as any).archiveFile && !partial.archiveDir) {
+      const legacy = (partial as any).archiveFile as string;
+      partial.archiveDir = legacy.replace(/\.ya?ml$/i, "") || "archive";
+      delete (partial as any).archiveFile;
+    }
+
     return deepMerge(DEFAULT_CONFIG, partial);
   } catch (err: any) {
     throw new Error(`Failed to load ${CONFIG_FILE}: ${err.message}`);
@@ -268,11 +286,11 @@ export function resolveAgentBin(config: WomboConfig): string {
  * Validate the config for obvious issues. Throws on error.
  */
 export function validateConfig(config: WomboConfig): void {
-  if (!config.tasksFile) {
-    throw new Error("config.tasksFile must be a non-empty string");
+  if (!config.tasksDir) {
+    throw new Error("config.tasksDir must be a non-empty string");
   }
-  if (!config.archiveFile) {
-    throw new Error("config.archiveFile must be a non-empty string");
+  if (!config.archiveDir) {
+    throw new Error("config.archiveDir must be a non-empty string");
   }
   if (!config.baseBranch) {
     throw new Error("config.baseBranch must be a non-empty string");

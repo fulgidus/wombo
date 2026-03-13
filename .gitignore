@@ -4,11 +4,3 @@ dist/
 .wombo-combo/
 *.tmp
 *.log
-# Legacy paths (pre-refactor)
-.wombo-state.json
-.wombo-logs/
-.wombo-history/
-.features.yml
-.features.yml.bak
-.features.yml.*.bak
-wombo.json

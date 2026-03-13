@@ -6,7 +6,7 @@
  *   1. Task has `agent_type: "engineering/engineering-frontend-developer"`
  *   2. resolveAgentForTask() checks cache, fetches if missing, returns raw md
  *   3. At launch time, raw md is patched via patchImportedAgent() and written
- *      into the worktree's agent/ directory
+ *      into the worktree's .opencode/agents/ directory
  *
  * Cache layout:
  *   .wombo-combo/agents-cache/engineering/engineering-frontend-developer.md
@@ -267,7 +267,7 @@ export function writeAgentToWorktree(
   agentName: string,
   patchedContent: string
 ): void {
-  const agentDir = resolve(worktreePath, "agent");
+  const agentDir = resolve(worktreePath, ".opencode", "agents");
   mkdirSync(agentDir, { recursive: true });
   const agentPath = resolve(agentDir, `${agentName}.md`);
   writeFileSync(agentPath, patchedContent, "utf-8");

@@ -22,7 +22,6 @@ import { execSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { stringify as stringifyYaml } from "yaml";
 import { CONFIG_FILE, DEFAULT_CONFIG, WOMBO_DIR, type WomboConfig, type AgentRegistryMode } from "../config.js";
-import { FEATURES_TEMPLATE_PATH } from "../lib/tasks.js";
 import { renderAgentTemplate } from "../lib/templates.js";
 
 export interface InitOptions {
@@ -259,7 +258,7 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
 
     // -- General ----------------------------------------------------------
     section("General");
-    cfg.tasksFile = await p.string("Tasks YAML file", cfg.tasksFile);
+    cfg.tasksDir = await p.string("Tasks directory", cfg.tasksDir);
     cfg.baseBranch = await p.string("Base branch", cfg.baseBranch);
 
     // -- Build ------------------------------------------------------------
@@ -418,30 +417,15 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     writeFileSync(configPath, json, "utf-8");
     console.log(`\nCreated ${CONFIG_FILE}`);
 
-    // 2. tasks.yml from template
+    // 2. tasks/ folder store
     const now = new Date().toISOString();
     const projectName = opts.projectRoot.split("/").pop() ?? "project";
-    const featuresPath = resolve(womboDir, cfg.tasksFile);
-    if (existsSync(featuresPath) && !opts.force) {
-      console.log(`${cfg.tasksFile} already exists, skipping.`);
+    const tasksDirPath = resolve(womboDir, cfg.tasksDir);
+    if (existsSync(tasksDirPath) && !opts.force) {
+      console.log(`${cfg.tasksDir}/ already exists, skipping.`);
     } else {
-      const template = readFileSync(FEATURES_TEMPLATE_PATH, "utf-8");
-      const content = template
-        .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
-        .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`)
-        .replace(/project:\s*".*?"/, `project: "${projectName}"`)
-        .replace(/generator:\s*".*?"/, `generator: "wombo-combo"`)
-        .replace(/maintainer:\s*".*?"/, `maintainer: "user"`);
-      writeFileSync(featuresPath, content, "utf-8");
-      console.log(`Created ${WOMBO_DIR}/${cfg.tasksFile} from template.`);
-    }
-
-    // 3. archive.yml
-    const archivePath = resolve(womboDir, cfg.archiveFile);
-    if (existsSync(archivePath) && !opts.force) {
-      console.log(`${cfg.archiveFile} already exists, skipping.`);
-    } else {
-      const archiveContent = stringifyYaml({
+      mkdirSync(tasksDirPath, { recursive: true });
+      const metaContent = stringifyYaml({
         version: "1.0",
         meta: {
           created_at: now,
@@ -450,10 +434,29 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
           generator: "wombo-combo",
           maintainer: "user",
         },
-        tasks: [],
       }, { lineWidth: 120 });
-      writeFileSync(archivePath, archiveContent, "utf-8");
-      console.log(`Created ${WOMBO_DIR}/${cfg.archiveFile}.`);
+      writeFileSync(resolve(tasksDirPath, "_meta.yml"), metaContent, "utf-8");
+      console.log(`Created ${WOMBO_DIR}/${cfg.tasksDir}/ with _meta.yml.`);
+    }
+
+    // 3. archive/ folder store
+    const archiveDirPath = resolve(womboDir, cfg.archiveDir);
+    if (existsSync(archiveDirPath) && !opts.force) {
+      console.log(`${cfg.archiveDir}/ already exists, skipping.`);
+    } else {
+      mkdirSync(archiveDirPath, { recursive: true });
+      const archiveMeta = stringifyYaml({
+        version: "1.0",
+        meta: {
+          created_at: now,
+          updated_at: now,
+          project: projectName,
+          generator: "wombo-combo",
+          maintainer: "user",
+        },
+      }, { lineWidth: 120 });
+      writeFileSync(resolve(archiveDirPath, "_meta.yml"), archiveMeta, "utf-8");
+      console.log(`Created ${WOMBO_DIR}/${cfg.archiveDir}/.`);
     }
 
     // 4. logs/ directory
@@ -471,13 +474,13 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     }
 
     // -- Install agent definition template --------------------------------
-    const agentDir = resolve(opts.projectRoot, "agent");
+    const agentDir = resolve(opts.projectRoot, ".opencode", "agents");
     const agentDefPath = resolve(agentDir, `${cfg.agent.name}.md`);
 
     let installAgent = true;
     if (existsSync(agentDefPath) && !opts.force) {
       installAgent = await p.yesNo(
-        `agent/${cfg.agent.name}.md already exists. Overwrite?`,
+        `.opencode/agents/${cfg.agent.name}.md already exists. Overwrite?`,
         false
       );
     }
@@ -486,18 +489,18 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       mkdirSync(agentDir, { recursive: true });
       const agentTemplate = renderAgentTemplate(cfg, opts.projectRoot);
       writeFileSync(agentDefPath, agentTemplate, "utf-8");
-      console.log(`Created agent/${cfg.agent.name}.md from template.`);
+      console.log(`Created .opencode/agents/${cfg.agent.name}.md from template.`);
     } else {
-      console.log(`agent/${cfg.agent.name}.md already exists, skipping.`);
+      console.log(`.opencode/agents/${cfg.agent.name}.md already exists, skipping.`);
     }
 
-    // Ensure agent/ is in configFiles
-    if (!cfg.agent.configFiles.includes("agent/")) {
-      cfg.agent.configFiles.push("agent/");
-      // Re-write config with updated configFiles
+    // Migrate: remove legacy agent/ from configFiles if present
+    const legacyIdx = cfg.agent.configFiles.indexOf("agent/");
+    if (legacyIdx !== -1) {
+      cfg.agent.configFiles.splice(legacyIdx, 1);
       const updatedJson = JSON.stringify(cfg, null, 2) + "\n";
       writeFileSync(configPath, updatedJson, "utf-8");
-      console.log(`Added agent/ to configFiles in ${CONFIG_FILE}.`);
+      console.log(`Removed legacy agent/ from configFiles (agents now live in .opencode/agents/).`);
     }
 
     // -- Deferred dependency warnings -------------------------------------
