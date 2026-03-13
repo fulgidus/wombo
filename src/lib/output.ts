@@ -17,7 +17,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type OutputFormat = "text" | "json";
+export type OutputFormat = "text" | "json" | "toon";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -36,10 +36,12 @@ export type OutputFormat = "text" | "json";
  */
 export function resolveOutputFormat(explicit?: string): OutputFormat {
   if (explicit === "json") return "json";
+  if (explicit === "toon") return "toon";
   if (explicit === "text") return "text";
   // Check env var for agent pipelines
   const env = process.env.WOMBO_OUTPUT;
   if (env === "json") return "json";
+  if (env === "toon") return "toon";
   return "text";
 }
 
