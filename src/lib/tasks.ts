@@ -62,6 +62,13 @@ export interface Task {
   references: string[];
   notes: string[];
   subtasks: Task[];
+  /**
+   * Optional agent type from an external registry (e.g. agency-agents).
+   * Format: "category/agent-name" (e.g. "engineering/engineering-frontend-developer").
+   * When set, wombo downloads and patches the specified agent definition
+   * instead of using the default generalist agent.
+   */
+  agent_type?: string;
 }
 
 /**
@@ -541,6 +548,10 @@ function normalizeTask(t: Task): void {
   t.references = t.references ?? [];
   t.notes = t.notes ?? [];
   t.subtasks = t.subtasks ?? [];
+  // agent_type is optional — normalize undefined/null to undefined
+  if (t.agent_type === null || t.agent_type === "") {
+    t.agent_type = undefined;
+  }
   for (const s of t.subtasks) {
     normalizeTask(s);
   }

@@ -10,7 +10,7 @@
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { CONFIG_FILE, DEFAULT_CONFIG, WOMBO_DIR, type WomboConfig } from "../config.js";
+import { CONFIG_FILE, DEFAULT_CONFIG, WOMBO_DIR, type WomboConfig, type AgentRegistryMode } from "../config.js";
 import { FEATURES_TEMPLATE_PATH } from "../lib/tasks.js";
 import { renderAgentTemplate } from "../lib/templates.js";
 
@@ -156,6 +156,27 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     } else {
       console.log(`  Invalid multiplexer "${muxPref}", using "auto".`);
       cfg.agent.multiplexer = "auto";
+    }
+
+    // -- Agent Registry ---------------------------------------------------
+    section("Agent Registry (specialized agent downloads)");
+    console.log("  Pull specialized agent definitions from an external registry at launch time.\n");
+    const modePref = await p.string(
+      "Mode (auto/monitored/disabled)",
+      cfg.agentRegistry.mode
+    );
+    const validModes: AgentRegistryMode[] = ["auto", "monitored", "disabled"];
+    if (validModes.includes(modePref as AgentRegistryMode)) {
+      cfg.agentRegistry.mode = modePref as AgentRegistryMode;
+    } else {
+      console.log(`  Invalid mode "${modePref}", using "auto".`);
+      cfg.agentRegistry.mode = "auto";
+    }
+    if (cfg.agentRegistry.mode !== "disabled") {
+      cfg.agentRegistry.source = await p.string(
+        "Source repo (owner/repo)",
+        cfg.agentRegistry.source
+      );
     }
 
     // -- Portless ---------------------------------------------------------
