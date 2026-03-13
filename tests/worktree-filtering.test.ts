@@ -97,6 +97,11 @@ function makeConfig(
       mode: "auto",
       source: "msitarzewski/agency-agents",
       cacheDir: "agents-cache",
+      cacheTTL: 24 * 60 * 60 * 1000,
+    },
+    tdd: {
+      enabled: false,
+      testCommand: "bun test",
     },
   };
 }
