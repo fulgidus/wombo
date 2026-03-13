@@ -2,7 +2,7 @@
  * tasks/set-difficulty.ts — Change a task's difficulty.
  *
  * Usage:
- *   wombo tasks set-difficulty <task-id> <difficulty>
+ *   woco tasks set-difficulty <task-id> <difficulty>
  *
  * Valid difficulties: trivial, easy, medium, hard, very_hard
  *
@@ -49,7 +49,7 @@ export async function cmdTasksSetDifficulty(opts: TasksSetDifficultyOptions): Pr
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newDifficulty) {
-    outputError(fmt, `Usage: wombo tasks set-difficulty <task-id> <difficulty>\nValid difficulties: ${VALID_DIFFICULTIES.join(", ")}`);
+    outputError(fmt, `Usage: woco tasks set-difficulty <task-id> <difficulty>\nValid difficulties: ${VALID_DIFFICULTIES.join(", ")}`);
     return;
   }
 

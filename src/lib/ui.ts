@@ -102,7 +102,7 @@ export function renderDashboard(state: WaveState): string {
   // Header
   lines.push("");
   lines.push(
-    `${BOLD}Wombo${RESET} ${DIM}${state.wave_id}${RESET}`
+    `${BOLD}wombo-combo${RESET} ${DIM}${state.wave_id}${RESET}`
   );
   lines.push(
     `${DIM}Base: ${state.base_branch} | Concurrency: ${state.max_concurrent} | Mode: ${state.interactive ? "interactive" : "headless"}${RESET}`

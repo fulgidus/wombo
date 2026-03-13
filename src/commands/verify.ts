@@ -1,7 +1,7 @@
 /**
  * verify.ts — Run build verification on completed agents.
  *
- * Usage: wombo verify [feature-id] [--browser]
+ * Usage: woco verify [feature-id] [--browser]
  *
  * Runs the build command in each completed agent's worktree. If a specific
  * feature-id is given, verifies only that agent. Otherwise verifies all

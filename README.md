@@ -5,11 +5,15 @@ AI agent orchestration for parallel feature development.
 ## Install
 
 ```sh
+# bun
+bun a -g wombo-combo
 # npm
-npm install -g wombo-combo
+npm i -g wombo-combo
 
 # bun (from GitHub)
-bun add -g github:fulgidus/wombo-combo
+bun a -g github:fulgidus/wombo-combo
+# npm (from GitHub)
+npm i -g github:fulgidus/wombo-combo
 ```
 
 ## Quick start
@@ -29,22 +33,22 @@ woco merge
 
 ## Commands
 
-| Command | Description |
-|---------|-------------|
-| `woco init` | Generate config in the current project |
-| `woco launch` | Launch a wave of agents |
-| `woco resume` | Resume a stopped wave |
-| `woco status` | Show wave status |
-| `woco verify` | Run build verification |
-| `woco merge` | Merge verified branches |
-| `woco retry <id>` | Retry a failed agent |
-| `woco cleanup` | Remove worktrees and sessions |
-| `woco tasks list` | List tasks |
-| `woco tasks add` | Add a task |
-| `woco tasks set-status <id> <status>` | Update task status |
-| `woco tasks check` | Validate tasks file |
-| `woco tasks show <id>` | Show task details |
-| `woco upgrade` | Check for updates and upgrade |
+| Command                               | Description                            |
+| ------------------------------------- | -------------------------------------- |
+| `woco init`                           | Generate config in the current project |
+| `woco launch`                         | Launch a wave of agents                |
+| `woco resume`                         | Resume a stopped wave                  |
+| `woco status`                         | Show wave status                       |
+| `woco verify`                         | Run build verification                 |
+| `woco merge`                          | Merge verified branches                |
+| `woco retry <id>`                     | Retry a failed agent                   |
+| `woco cleanup`                        | Remove worktrees and sessions          |
+| `woco tasks list`                     | List tasks                             |
+| `woco tasks add`                      | Add a task                             |
+| `woco tasks set-status <id> <status>` | Update task status                     |
+| `woco tasks check`                    | Validate tasks file                    |
+| `woco tasks show <id>`                | Show task details                      |
+| `woco upgrade`                        | Check for updates and upgrade          |
 
 ## Launch options
 

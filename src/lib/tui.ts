@@ -1,5 +1,5 @@
 /**
- * tui.ts — Blessed-based TUI dashboard for Wombo.
+ * tui.ts — Blessed-based TUI dashboard for wombo-combo.
  *
  * Layout:
  *   ┌─────────────────────────────────────────────┐
@@ -165,7 +165,7 @@ export class WomboTUI {
     // Create screen
     this.screen = blessed.screen({
       smartCSR: true,
-      title: `Wombo — ${opts.state.wave_id}`,
+      title: `wombo-combo — ${opts.state.wave_id}`,
       fullUnicode: true,
     });
 
@@ -452,7 +452,7 @@ export class WomboTUI {
     const total = s.agents.length;
     const done = counts.verified + counts.merged;
 
-    let line1 = ` {bold}Wombo{/bold} {gray-fg}${s.wave_id}{/gray-fg}`;
+    let line1 = ` {bold}wombo-combo{/bold} {gray-fg}${s.wave_id}{/gray-fg}`;
     if (this.waveComplete) {
       line1 += `  {gray-fg}│{/gray-fg}  {bold}{green-fg}WAVE COMPLETE{/green-fg}{/bold}`;
     }
@@ -789,7 +789,7 @@ export class WomboTUI {
     // Re-create screen
     this.screen = blessed.screen({
       smartCSR: true,
-      title: `Wombo — ${this.state.wave_id}`,
+      title: `wombo-combo — ${this.state.wave_id}`,
       fullUnicode: true,
     });
 

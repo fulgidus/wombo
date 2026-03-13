@@ -2,10 +2,10 @@
  * logs.ts — Pretty-print agent logs from .wombo-combo/logs/<feature-id>.log.
  *
  * Usage:
- *   wombo logs <feature-id>
- *   wombo logs <feature-id> --tail 50
- *   wombo logs <feature-id> --follow
- *   wombo logs <feature-id> --output json
+ *   woco logs <feature-id>
+ *   woco logs <feature-id> --tail 50
+ *   woco logs <feature-id> --follow
+ *   woco logs <feature-id> --output json
  *
  * Reads the log file written by ProcessMonitor during headless agent runs
  * and displays it with timestamps and activity annotations. Supports
@@ -268,7 +268,7 @@ export async function cmdLogs(opts: LogsCommandOptions): Promise<void> {
       `Log file not found: ${logPath}\n` +
         `No logs exist for feature "${featureId}". ` +
         `Logs are created when agents run in headless mode.\n` +
-        `Hint: Check .wombo-combo/logs/ for available log files, or run 'wombo launch' first.`
+        `Hint: Check .wombo-combo/logs/ for available log files, or run 'woco launch' first.`
     );
   }
 

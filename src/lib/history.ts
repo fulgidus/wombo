@@ -8,7 +8,7 @@
  *   - List all saved history records
  *   - Export wave state to history on completion
  *
- * History records survive `wombo cleanup` because they are stored
+ * History records survive `woco cleanup` because they are stored
  * separately from .wombo-combo/state.json. The .wombo-combo/history/
  * directory is gitignored.
  */

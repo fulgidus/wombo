@@ -1,7 +1,7 @@
 /**
  * resume.ts — Resume a previously stopped wave.
  *
- * Usage: wombo resume [options]
+ * Usage: woco resume [options]
  *
  * Restores from .wombo-combo/state.json:
  *   - Agents in "running"/"installing" whose PID is dead → re-check or re-launch
@@ -84,12 +84,12 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
   const state = loadState(projectRoot);
   if (!state) {
-    console.error("No wave state found. Use 'wombo launch' to start a new wave.");
+    console.error("No wave state found. Use 'woco launch' to start a new wave.");
     process.exit(1);
     return; // unreachable — helps TypeScript narrow
   }
 
-  console.log(`\n--- Wombo: Resume ${state.wave_id} ---\n`);
+  console.log(`\n--- wombo-combo: Resume ${state.wave_id} ---\n`);
 
   // Load feature data for prompt generation
   const data = loadFeatures(projectRoot, config);
@@ -193,7 +193,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           });
           toRelaunch.push(agent);
         } else {
-          console.log(`  ${agent.feature_id}: failed — max retries reached (use 'wombo retry' to reset)`);
+          console.log(`  ${agent.feature_id}: failed — max retries reached (use 'woco retry' to reset)`);
         }
         break;
     }
@@ -458,7 +458,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       }
       monitor.killAll();
       saveState(projectRoot, state);
-      console.log("\nState saved. Use 'wombo resume' to continue.");
+      console.log("\nState saved. Use 'woco resume' to continue.");
       process.exit(0);
     });
 
@@ -486,7 +486,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           }
           monitor.killAll();
           saveState(projectRoot, state);
-          console.log("State saved. Use 'wombo resume' to continue.");
+          console.log("State saved. Use 'woco resume' to continue.");
           process.exit(0);
         },
       });

@@ -1,7 +1,7 @@
 /**
  * abort.ts — Kill a single running agent without nuking the entire wave.
  *
- * Usage: wombo abort <feature-id> [--requeue] [--output json]
+ * Usage: woco abort <feature-id> [--requeue] [--output json]
  *
  * Kills the multiplexer session (if any) and the agent process, then updates
  * wave state to mark the agent as "failed" (default) or "queued"
@@ -53,7 +53,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
   if (!agent) {
     outputError(
       outputFmt,
-      `Agent not found for feature: ${featureId}. Use 'wombo status' to see active agents.`
+      `Agent not found for feature: ${featureId}. Use 'woco status' to see active agents.`
     );
   }
 

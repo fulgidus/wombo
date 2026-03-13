@@ -1,11 +1,10 @@
 {
     "name": "wombo-combo",
-    "version": "0.0.10",
+    "version": "0.0.11",
     "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
     "type": "module",
     "bin": {
-        "woco": "./src/index.ts",
-        "wombo": "./src/index.ts"
+        "woco": "./src/index.ts"
     },
     "files": [
         "src/**/*.ts",
@@ -14,7 +13,7 @@
     ],
     "scripts": {
         "dev": "bun src/index.ts",
-        "wombo": "bun src/index.ts",
+        "woco": "bun src/index.ts",
         "start": "bun src/index.ts",
         "build": "bun build src/index.ts --outdir dist --target node",
         "typecheck": "tsc --noEmit"

@@ -264,7 +264,7 @@ export function renderAgentTemplate(
  * Ensure the agent definition file exists at the expected path.
  * If missing, reinstall from the bundled generalist template and warn.
  *
- * Called at the start of `wombo launch` to prevent the failure mode where
+ * Called at the start of `woco launch` to prevent the failure mode where
  * agents spawn without their agent definition file.
  *
  * @returns true if the file was reinstalled, false if it already existed.

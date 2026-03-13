@@ -2,9 +2,9 @@
  * tasks/archive.ts — Move done/cancelled tasks to the archive section.
  *
  * Usage:
- *   wombo tasks archive              # archive all done + cancelled
- *   wombo tasks archive <task-id>    # archive a specific task
- *   wombo tasks archive --dry-run    # show what would be archived
+ *   woco tasks archive              # archive all done + cancelled
+ *   woco tasks archive <task-id>    # archive a specific task
+ *   woco tasks archive --dry-run    # show what would be archived
  */
 
 import type { WomboConfig } from "../../config.js";

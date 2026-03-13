@@ -2,7 +2,7 @@
  * tasks/set-priority.ts — Change a task's priority.
  *
  * Usage:
- *   wombo tasks set-priority <task-id> <priority>
+ *   woco tasks set-priority <task-id> <priority>
  *
  * Valid priorities: critical, high, medium, low, wishlist
  *
@@ -49,7 +49,7 @@ export async function cmdTasksSetPriority(opts: TasksSetPriorityOptions): Promis
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newPriority) {
-    outputError(fmt, `Usage: wombo tasks set-priority <task-id> <priority>\nValid priorities: ${VALID_PRIORITIES.join(", ")}`);
+    outputError(fmt, `Usage: woco tasks set-priority <task-id> <priority>\nValid priorities: ${VALID_PRIORITIES.join(", ")}`);
     return;
   }
 

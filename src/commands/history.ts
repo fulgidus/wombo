@@ -2,12 +2,12 @@
  * history.ts — View wave history and summaries.
  *
  * Usage:
- *   wombo history                    List all past waves
- *   wombo history <wave-id>          Show details of a specific wave
- *   wombo history --output json      Output as JSON
+ *   woco history                    List all past waves
+ *   woco history <wave-id>          Show details of a specific wave
+ *   woco history --output json      Output as JSON
  *
  * Wave history is stored in .wombo-combo/history/<wave-id>.json and survives
- * `wombo cleanup`. Records are auto-exported when a wave completes.
+ * `woco cleanup`. Records are auto-exported when a wave completes.
  */
 
 import type { WomboConfig } from "../config.js";
@@ -147,7 +147,7 @@ function renderWaveList(records: WaveHistoryRecord[]): void {
   }
 
   console.log("");
-  console.log(`${DIM}Use 'wombo history <wave-id>' for details.${RESET}`);
+  console.log(`${DIM}Use 'woco history <wave-id>' for details.${RESET}`);
   console.log("");
 }
 
@@ -240,7 +240,7 @@ export async function cmdHistory(opts: HistoryCommandOptions): Promise<void> {
     if (!record) {
       outputError(
         outputFmt,
-        `Wave history not found: ${opts.waveId}. Use 'wombo history' to list available waves.`
+        `Wave history not found: ${opts.waveId}. Use 'woco history' to list available waves.`
       );
     }
 

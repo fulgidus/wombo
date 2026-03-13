@@ -2,7 +2,7 @@
  * tasks/show.ts — Show detailed information about a specific task.
  *
  * Usage:
- *   wombo tasks show <task-id>
+ *   woco tasks show <task-id>
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -81,7 +81,7 @@ export async function cmdTasksShow(opts: TasksShowOptions): Promise<void> {
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId) {
-    outputError(fmt, "Usage: wombo tasks show <task-id>");
+    outputError(fmt, "Usage: woco tasks show <task-id>");
     return;
   }
 

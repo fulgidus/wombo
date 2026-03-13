@@ -2,7 +2,7 @@
  * tasks/add.ts — Add a new task to the tasks file.
  *
  * Usage:
- *   wombo tasks add <id> --title "Task Title" [--description "..."]
+ *   woco tasks add <id> --title "Task Title" [--description "..."]
  *                   [--priority medium] [--difficulty easy] [--effort PT2H]
  *                   [--depends-on "task1,task2"]
  */
@@ -48,7 +48,7 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.id) {
-    outputError(fmt, "Usage: wombo tasks add <id> --title \"Task Title\"");
+    outputError(fmt, "Usage: woco tasks add <id> --title \"Task Title\"");
     return;
   }
 

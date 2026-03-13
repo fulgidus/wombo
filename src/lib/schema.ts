@@ -3,11 +3,11 @@
  *
  * Every command and flag is described in a single registry. This registry is
  * the source of truth for:
- *   1. `wombo describe <command>` — emits a JSON schema of accepted args
+ *   1. `woco describe <command>` — emits a JSON schema of accepted args
  *   2. Future help text generation
  *
  * The registry is NOT used for actual arg parsing (that's still the hand-rolled
- * switch in index.ts), but the two must stay in sync. If they drift, `wombo
+ * switch in index.ts), but the two must stay in sync. If they drift, `woco
  * tasks check` should eventually catch it.
  */
 
@@ -553,7 +553,7 @@ export function commandToSchema(cmd: CommandDef): Record<string, unknown> {
 }
 
 /**
- * Produce a listing of all commands (for `wombo describe` with no args).
+ * Produce a listing of all commands (for `woco describe` with no args).
  */
 export function allCommandSchemas(): Record<string, unknown> {
   const commands: Record<string, unknown>[] = [];
@@ -577,7 +577,7 @@ export function allCommandSchemas(): Record<string, unknown> {
   }
 
   return {
-    tool: "wombo",
+    tool: "wombo-combo",
     version: getVersion(),
     global_flags: GLOBAL_FLAGS.map((f) => ({
       name: f.name,

@@ -1,7 +1,7 @@
 /**
  * cleanup.ts — Remove all wave-related resources.
  *
- * Usage: wombo cleanup
+ * Usage: woco cleanup
  *
  * Kills multiplexer sessions (dmux/tmux), removes worktrees, removes state and log files.
  *
@@ -69,7 +69,7 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
     return;
   }
 
-  console.log("\n--- Wombo: Cleanup ---\n");
+  console.log("\n--- wombo-combo: Cleanup ---\n");
 
   // Kill multiplexer sessions
   const muxName = getMultiplexerName(config);
@@ -112,6 +112,6 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   // Inform the user that history is preserved
   const historyDir = resolve(projectRoot, WOMBO_DIR, "history");
   if (existsSync(historyDir)) {
-    console.log("Note: .wombo-combo/history/ is preserved. Use 'wombo history' to view past waves.");
+    console.log("Note: .wombo-combo/history/ is preserved. Use 'woco history' to view past waves.");
   }
 }
