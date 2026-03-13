@@ -54,8 +54,6 @@ export interface WomboConfig {
   git: {
     /** Branch name prefix for feature branches */
     branchPrefix: string;
-    /** Worktree directory name prefix */
-    worktreePrefix: string;
     /** Git remote name */
     remote: string;
     /** Merge strategy flag */
@@ -174,7 +172,6 @@ export const DEFAULT_CONFIG: WomboConfig = {
   },
   git: {
     branchPrefix: "feature/",
-    worktreePrefix: "wombo-",
     remote: "origin",
     mergeStrategy: "--no-ff",
   },
@@ -326,9 +323,6 @@ export function validateConfig(config: WomboConfig): void {
   }
   if (!config.git.branchPrefix) {
     throw new Error("config.git.branchPrefix must be a non-empty string");
-  }
-  if (!config.git.worktreePrefix) {
-    throw new Error("config.git.worktreePrefix must be a non-empty string");
   }
   if (config.defaults.maxConcurrent < 1) {
     throw new Error("config.defaults.maxConcurrent must be >= 1");

@@ -275,7 +275,6 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     // -- Git --------------------------------------------------------------
     section("Git");
     cfg.git.branchPrefix = await p.string("Branch prefix", cfg.git.branchPrefix);
-    cfg.git.worktreePrefix = await p.string("Worktree prefix", cfg.git.worktreePrefix);
     cfg.git.remote = await p.string("Remote name", cfg.git.remote);
     cfg.git.mergeStrategy = await p.string("Merge strategy flag", cfg.git.mergeStrategy);
 

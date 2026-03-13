@@ -44,6 +44,7 @@ import {
   worktreePath,
   worktreeReady,
   branchHasChanges,
+  isWorktreesDirEmpty,
   branchExists,
   removeWorktree,
   log as wtLog,
@@ -1244,6 +1245,13 @@ async function launchWaveHeadless(
   // Auto-push base branch if requested
   if (opts.autoPush) {
     await pushBaseBranch(projectRoot, state.base_branch, config);
+  }
+
+  // Completion double-check: verify worktrees directory is empty
+  if (isWorktreesDirEmpty(projectRoot)) {
+    console.log("All worktrees cleaned up — worktrees directory is empty.");
+  } else {
+    console.log("\x1b[33mNote:\x1b[0m worktrees directory still has contents. Run 'woco cleanup' to clean up.");
   }
 
   console.log("Wave complete.");

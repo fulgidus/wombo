@@ -13,7 +13,7 @@
  */
 
 import { exec, execSync } from "node:child_process";
-import { existsSync, cpSync, statSync } from "node:fs";
+import { existsSync, cpSync, statSync, readdirSync, rmdirSync, mkdirSync } from "node:fs";
 import { resolve, dirname, basename } from "node:path";
 import type { WomboConfig } from "../config.js";
 
@@ -141,15 +141,47 @@ export function featureBranchName(
 }
 
 /**
- * Generate the worktree path for a feature (sibling directory to project root).
+ * Return the path to the worktrees directory: a sibling directory to
+ * the project root named `<project-basename>-worktrees/`.
+ *
+ * Example: /home/user/my-project → /home/user/my-project-worktrees/
+ */
+export function worktreesDir(projectRoot: string): string {
+  const parentDir = dirname(projectRoot);
+  const projectName = basename(projectRoot);
+  return resolve(parentDir, `${projectName}-worktrees`);
+}
+
+/**
+ * Generate the worktree path for a feature.
+ * All worktrees live inside a sibling `-worktrees` directory:
+ *   <parentDir>/<projectName>-worktrees/<featureId>
+ *
+ * The `config` parameter is kept for API compatibility but is no longer
+ * used (the old worktreePrefix config value has been removed).
  */
 export function worktreePath(
   projectRoot: string,
   featureId: string,
-  config: WomboConfig
+  _config: WomboConfig
 ): string {
-  const parentDir = dirname(projectRoot);
-  return resolve(parentDir, `${config.git.worktreePrefix}${featureId}`);
+  return resolve(worktreesDir(projectRoot), featureId);
+}
+
+/**
+ * Check whether the worktrees directory is empty (no remaining worktrees).
+ * Returns true if the directory doesn't exist or is empty — useful as a
+ * completion double-check after all agents finish.
+ */
+export function isWorktreesDirEmpty(projectRoot: string): boolean {
+  const dir = worktreesDir(projectRoot);
+  if (!existsSync(dir)) return true;
+  try {
+    const entries = readdirSync(dir);
+    return entries.length === 0;
+  } catch {
+    return true;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,6 +233,11 @@ export async function createWorktree(
 
   // Create the worktree
   log(featureId, "creating worktree...");
+  // Ensure the -worktrees parent directory exists
+  const wtParentDir = worktreesDir(projectRoot);
+  if (!existsSync(wtParentDir)) {
+    mkdirSync(wtParentDir, { recursive: true });
+  }
   await runAsync(`git worktree add "${wtPath}" "${branch}"`, {
     cwd: projectRoot,
   });
@@ -372,27 +409,27 @@ export function listWorktrees(projectRoot: string): WorktreeInfo[] {
 /**
  * List only wombo-related worktrees.
  *
- * SAFETY: Filters by checking that the *basename* of the worktree path
- * starts with the worktreePrefix. A naive `.includes()` on the full path
- * would match the main repo itself if its directory name contained the
- * prefix (e.g. "wombo-combo" contains "wombo-"), causing cleanup to
- * destroy the project root.
+ * SAFETY: Filters by checking that the worktree path lives inside the
+ * dedicated `<project>-worktrees/` directory. The main repo worktree
+ * (projectRoot) is always excluded as a defensive guard.
  *
- * Additionally, the main repo worktree (projectRoot) is always excluded
- * as a defensive guard.
+ * Also matches worktrees whose branch starts with the branch prefix,
+ * to catch orphans that may have been created by older versions or
+ * under different layouts.
  */
 export function listWomboWorktrees(
   projectRoot: string,
   config: WomboConfig
 ): WorktreeInfo[] {
   const resolvedRoot = resolve(projectRoot);
+  const wtDir = resolve(worktreesDir(projectRoot));
   return listWorktrees(projectRoot).filter((wt) => {
     // Never include the main project root
     if (resolve(wt.path) === resolvedRoot) return false;
-    // Match worktrees whose directory name starts with the worktree prefix
-    if (basename(wt.path).startsWith(config.git.worktreePrefix)) return true;
+    // Match worktrees whose path is inside the -worktrees directory
+    if (resolve(wt.path).startsWith(wtDir + "/")) return true;
     // Also match worktrees whose branch starts with the branch prefix —
-    // catches orphans from old waves that used a different worktree prefix
+    // catches orphans from old waves or legacy worktree layouts
     if (wt.branch && wt.branch.startsWith(config.git.branchPrefix)) return true;
     return false;
   });
@@ -463,6 +500,7 @@ export function branchHasChanges(
 
 /**
  * Remove all wombo-related worktrees and prune.
+ * After removal, if the `-worktrees` directory is empty, removes it too.
  */
 export function cleanupAllWorktrees(
   projectRoot: string,
@@ -483,5 +521,19 @@ export function cleanupAllWorktrees(
   } catch {
     // Prune is best-effort — may fail if repo state is already clean
   }
+
+  // Clean up the -worktrees directory if it's now empty
+  const wtDir = worktreesDir(projectRoot);
+  if (existsSync(wtDir)) {
+    try {
+      const entries = readdirSync(wtDir);
+      if (entries.length === 0) {
+        rmdirSync(wtDir);
+      }
+    } catch {
+      // Best-effort — directory may not exist or may have lingering files
+    }
+  }
+
   return removed;
 }

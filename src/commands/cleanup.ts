@@ -16,7 +16,7 @@ import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
 import { WOMBO_DIR } from "../config.js";
 import { killAllMuxSessions, getMultiplexerName } from "../lib/launcher.js";
-import { cleanupAllWorktrees, listWomboWorktrees } from "../lib/worktree.js";
+import { cleanupAllWorktrees, listWomboWorktrees, worktreesDir, isWorktreesDirEmpty } from "../lib/worktree.js";
 import {
   detectMultiplexer,
   muxListSessions,
@@ -69,6 +69,7 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
       mux_sessions_count: matchingSessions.length,
       worktrees: matchingWorktrees.map((wt) => wt.path),
       worktrees_count: matchingWorktrees.length,
+      worktrees_dir: worktreesDir(projectRoot),
       files_to_remove: filesToRemove,
     };
 
@@ -82,6 +83,7 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
       for (const wt of matchingWorktrees) {
         console.log(`    ${wt.path}`);
       }
+      console.log(`  worktrees dir: ${worktreesDir(projectRoot)}`);
       for (const f of filesToRemove) {
         console.log(`  Would remove: ${f}`);
       }
@@ -130,9 +132,15 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
   const historyDir = resolve(projectRoot, WOMBO_DIR, "history");
   const historyPreserved = existsSync(historyDir);
 
+  // Check if the worktrees directory is now empty (completion double-check)
+  const wtDirEmpty = isWorktreesDirEmpty(projectRoot);
+  const wtDirPath = worktreesDir(projectRoot);
+
   const result = {
     mux_sessions_killed: killed,
     worktrees_removed: removed,
+    worktrees_dir: wtDirPath,
+    worktrees_dir_empty: wtDirEmpty,
     state_removed: stateRemoved,
     logs_removed: logsRemoved,
     remaining_branches: remainingBranches,
@@ -143,6 +151,12 @@ export async function cmdCleanup(opts: CleanupOptions): Promise<void> {
     console.log("\n--- wombo-combo: Cleanup ---\n");
     console.log(`Killed ${killed} ${muxName} session(s)`);
     console.log(`Removed ${removed} worktree(s)`);
+
+    if (wtDirEmpty) {
+      console.log(`Worktrees directory is clean: ${wtDirPath}`);
+    } else {
+      console.log(`\x1b[33mWorktrees directory still has contents:\x1b[0m ${wtDirPath}`);
+    }
 
     if (remainingBranches.length > 0) {
       console.log(`\nRemaining feature branches:\n${remainingBranches.map((b) => `  ${b}`).join("\n")}`);
