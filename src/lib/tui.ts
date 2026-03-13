@@ -636,9 +636,9 @@ export class WomboTUI {
 
     let line1: string;
     if (this.waveComplete) {
-      line1 = ` {bold}{green-fg}Wave complete.{/green-fg}{/bold}  ${enterHint}  {gray-fg}r{/gray-fg} retry  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {bold}{yellow-fg}q{/yellow-fg} exit{/bold}`;
+      line1 = ` {bold}{green-fg}Wave complete.{/green-fg}{/bold}  ${enterHint}  {gray-fg}R{/gray-fg} retry  {gray-fg}B{/gray-fg} build log  {gray-fg}P{/gray-fg} ${scrollStatus}  {bold}{yellow-fg}Q{/yellow-fg} exit{/bold}`;
     } else {
-      line1 = ` {bold}Keys:{/bold} {gray-fg}↑↓{/gray-fg} navigate  ${enterHint}  {gray-fg}r{/gray-fg} retry  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {gray-fg}q{/gray-fg} quit`;
+      line1 = ` {bold}Keys:{/bold} {gray-fg}↑↓{/gray-fg} navigate  ${enterHint}  {gray-fg}R{/gray-fg} retry  {gray-fg}B{/gray-fg} build log  {gray-fg}P{/gray-fg} ${scrollStatus}  {gray-fg}Q{/gray-fg} quit`;
     }
     const line2 = ` ${agentInfo}`;
 

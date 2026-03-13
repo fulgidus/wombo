@@ -33,7 +33,8 @@
  *   woco tasks show <task-id>                         (alias: t sh)
  *   woco tasks graph [--ascii] [--mermaid]            (alias: t g)
  *   woco completion <bash|zsh|fish>                   (alias: comp)
- *   woco help
+ *   woco tui                                          (default when no args)
+ *   woco help                                         (alias: -h, --help)
  *   woco version
  *   woco -v
  */
@@ -102,6 +103,7 @@ import { cmdTasksCheck } from "./commands/tasks/check.js";
 import { cmdTasksArchive } from "./commands/tasks/archive.js";
 import { cmdTasksShow } from "./commands/tasks/show.js";
 import { cmdTasksGraph } from "./commands/tasks/graph.js";
+import { cmdTui } from "./commands/tui.js";
 
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
@@ -191,6 +193,7 @@ export const COMMAND_ALIASES: Record<string, string> = {
   u: "upgrade",
   d: "describe",
   comp: "completion",
+  tui: "tui",
 };
 
 /** Map of short aliases → canonical tasks subcommand names. */
@@ -214,7 +217,7 @@ export const SUBCOMMAND_ALIASES: Record<string, string> = {
 export function parseArgs(argv: string[]): CLIArgs {
   const args = argv.slice(2); // skip 'bun' and script path
   const result: CLIArgs = {
-    command: args[0] || "help",
+    command: args[0] || "tui",
     interactive: false,
     dryRun: false,
     noTui: false,
@@ -421,6 +424,7 @@ Commands:                        (alias)
   cleanup                        (c)     Remove all wave worktrees and multiplexer sessions
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
+  tui                                    Interactive TUI: browse tasks, select, launch, monitor
   upgrade                        (u)     Check for updates and upgrade wombo-combo
   describe                       (d)     Emit JSON schema of a command (for AI agents)
   completion                     (comp)  Generate shell completions (bash, zsh, fish)
@@ -686,7 +690,7 @@ async function main(): Promise<void> {
   validateConfig(config);
 
   // Commands that operate on the tasks file — ensure it exists first
-  const needsTasksFile = new Set(["launch", "resume", "verify", "retry", "tasks"]);
+  const needsTasksFile = new Set(["launch", "resume", "verify", "retry", "tasks", "tui"]);
   if (needsTasksFile.has(args.command)) {
     await ensureTasksFile(PROJECT_ROOT, config);
   }
@@ -813,6 +817,21 @@ async function main(): Promise<void> {
 
     case "tasks":
       await handleTasksSubcommand(args, PROJECT_ROOT, config);
+      break;
+
+    case "tui":
+      await cmdTui({
+        projectRoot: PROJECT_ROOT,
+        config,
+        maxConcurrent: args.maxConcurrent,
+        model: args.model,
+        baseBranch: args.baseBranch,
+        maxRetries: args.maxRetries,
+        autoPush: args.autoPush,
+        skipTests: args.skipTests,
+        strictTdd: args.strictTdd,
+        agent: args.agent,
+      });
       break;
 
     default:
