@@ -28,6 +28,7 @@ import {
   VALID_PRIORITIES,
   VALID_DIFFICULTIES,
 } from "../../lib/task-schema.js";
+import { output, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +37,7 @@ import {
 export interface TasksCheckOptions {
   projectRoot: string;
   config: WomboConfig;
+  outputFmt?: OutputFormat;
 }
 
 interface CheckResult {
@@ -156,33 +158,50 @@ function checkTasks(data: FeaturesFile): CheckResult {
 
 export async function cmdTasksCheck(opts: TasksCheckOptions): Promise<void> {
   const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
 
   const data = loadFeatures(projectRoot, config);
   const result = checkTasks(data);
 
   const allItems = collectAllItems(data);
-  console.log(`\nChecking ${config.tasksDir}/ (${allItems.length} items)...\n`);
+  const issues = [
+    ...result.errors.map((msg) => ({ level: "error" as const, message: msg })),
+    ...result.warnings.map((msg) => ({ level: "warning" as const, message: msg })),
+  ];
+  const ok = result.errors.length === 0;
 
-  if (result.errors.length === 0 && result.warnings.length === 0) {
-    console.log("  All checks passed. No issues found.");
-    return;
-  }
+  output(
+    fmt,
+    {
+      ok,
+      issues,
+      items_checked: allItems.length,
+    },
+    () => {
+      console.log(`\nChecking ${config.tasksDir}/ (${allItems.length} items)...\n`);
 
-  if (result.errors.length > 0) {
-    console.log(`  ERRORS (${result.errors.length}):`);
-    for (const e of result.errors) {
-      console.log(`    \x1b[31m✗\x1b[0m ${e}`);
+      if (result.errors.length === 0 && result.warnings.length === 0) {
+        console.log("  All checks passed. No issues found.");
+        return;
+      }
+
+      if (result.errors.length > 0) {
+        console.log(`  ERRORS (${result.errors.length}):`);
+        for (const e of result.errors) {
+          console.log(`    \x1b[31m✗\x1b[0m ${e}`);
+        }
+        console.log("");
+      }
+
+      if (result.warnings.length > 0) {
+        console.log(`  WARNINGS (${result.warnings.length}):`);
+        for (const w of result.warnings) {
+          console.log(`    \x1b[33m⚠\x1b[0m ${w}`);
+        }
+        console.log("");
+      }
     }
-    console.log("");
-  }
-
-  if (result.warnings.length > 0) {
-    console.log(`  WARNINGS (${result.warnings.length}):`);
-    for (const w of result.warnings) {
-      console.log(`    \x1b[33m⚠\x1b[0m ${w}`);
-    }
-    console.log("");
-  }
+  );
 
   if (result.errors.length > 0) {
     process.exit(1);

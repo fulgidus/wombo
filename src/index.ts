@@ -888,7 +888,7 @@ async function handleTasksSubcommand(
     }
 
     case "check":
-      await cmdTasksCheck({ projectRoot, config });
+      await cmdTasksCheck({ projectRoot, config, outputFmt: args.outputFmt });
       break;
 
     case "archive":

@@ -397,7 +397,9 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         name: "tasks check",
         summary: "Validate tasks file (schema, deps, duplicates, cycles)",
         positionals: [],
-        flags: [],
+        flags: [
+          { name: "--output", description: "Output format: text (default) or json", type: "string", default: "text" },
+        ],
         mutating: false,
         supportsDryRun: false,
       },
