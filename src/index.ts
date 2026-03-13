@@ -422,7 +422,7 @@ Commands:                        (alias)
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
   upgrade                        (u)     Check for updates and upgrade wombo-combo
-  describe                       (d)     Emit JSON schema of a command (for AI agents)
+  describe                       (d)     Emit JSON schema or TOON legend (--output toon)
   completion                     (comp)  Generate shell completions (bash, zsh, fish)
   version                                Print version and exit
   help                                   Show this help
@@ -462,7 +462,7 @@ Launch Options:
 
 General:
   --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
-  --output <fmt>           Output format: text (default on TTY) or json (default when piped)
+  --output <fmt>           Output format: text (default on TTY), json (default when piped), or toon (WOMBO_OUTPUT=toon)
   -o <fmt>                 Alias for --output
   --dry-run                Show what would happen without performing the action
   --fields <list>          Comma-separated fields to include (e.g., id,status,priority)
@@ -518,6 +518,7 @@ Examples:
   woco describe                           # list all commands as JSON
   woco describe launch                    # describe a specific command
   woco describe tasks add                 # describe a subcommand
+  woco describe --output toon             # emit TOON format legend/spec
 `);
 }
 
