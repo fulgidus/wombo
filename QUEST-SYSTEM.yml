@@ -1,0 +1,520 @@
+# Quest System — Design & Implementation Tracker
+# This file tracks the full Quest system implementation for wombo-combo.
+# It lives in the repo root as a development artifact (gitignored via .wombo-combo/).
+#
+# Hierarchy:
+#   Genesis (project inception) → Quests (scoped missions) → Tasks (atomic work)
+#
+# Updated: 2026-03-14
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DESIGN DECISIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+design:
+  naming:
+    inception: genesis       # project-level decomposition into quests
+    mission: quest           # scoped unit of work containing tasks
+    work_unit: task          # atomic implementable unit
+
+  branching:
+    quest_prefix: "quest/"   # quest/auth-overhaul
+    task_prefix: "task/"     # task/auth-jwt-tokens (changed from feature/)
+    # Quest branch forks from baseBranch.
+    # Task branches fork from their quest branch.
+    # Completed tasks merge into quest branch.
+    # Completed quest merges into baseBranch.
+
+  hitl:
+    modes: [yolo, cautious, supervised]
+    # yolo: query_human tool returns "proceed autonomously", no interruption
+    # cautious: real-time piping — agent blocks on query_human, TUI shows
+    #           popup with the question, user types answer, piped back to
+    #           the agent's stdin/session. Agent never restarts.
+    # supervised: same pipe mechanism but prompt injection encourages
+    #             asking before any major architectural decision.
+    #
+    # Multiple raised hands: the TUI maintains a question queue. Each entry
+    # has the agent's feature_id, the question text, and a response channel.
+    # The monitor view shows a badge count. User can cycle through pending
+    # questions with a dedicated key and answer each one.
+    #
+    # Implementation: the query_human MCP tool writes to a named pipe or
+    # IPC channel (not a file). The monitor process reads from it and
+    # displays the popup. The answer is written back through the same
+    # channel. The agent process blocks on the read until the answer arrives.
+
+  merge_conflicts:
+    strategy: programmatic_first
+    # 1. Try git merge --no-ff (cheap, fast)
+    # 2. If conflict, try git merge --strategy-option theirs for trivial cases
+    # 3. If still conflicted, spawn a merge-resolution agent with:
+    #    - Only the conflicting files as context
+    #    - The task description + quest constraints
+    #    - A specialized "merge-resolver" agent definition
+    #    - Skills: conflict resolution, code understanding
+    # 4. The merge agent resolves conflicts and commits
+    # This keeps LLM cost near zero for clean merges.
+
+  planning:
+    tiers:
+      genesis:
+        # Broad project-level decomposition.
+        # Input: project description, tech stack, codebase index, goals
+        # Output: quests with high-level descriptions and ordering
+        # Agent: genesis-planner (multi-step, explores codebase)
+        # Higher LLM budget — runs once per project
+        scope: project
+        agent: genesis-planner
+
+      quest:
+        # Narrow quest-level decomposition.
+        # Input: quest goal + constraints, relevant file subset, existing tasks
+        # Output: atomic tasks with deps, agent suggestions, effort estimates
+        # Agent: quest-planner (multi-step but tightly scoped)
+        # Lower LLM budget — focused on one feature area
+        scope: quest
+        agent: quest-planner
+
+  context_reduction:
+    # Strategies to minimize LLM token usage:
+    strategies:
+      - name: "Indexed codebase summaries"
+        description: >
+          Use jcodemunch-style file outlines (function signatures + one-line
+          summaries) instead of full source. Agents get a map, not the territory.
+          Full source only for files they actually need to modify.
+
+      - name: "Scoped file manifests"
+        description: >
+          The planner predicts which files each task will touch. The executing
+          agent receives ONLY those files as initial context, plus the quest
+          constraints. No global codebase dump.
+
+      - name: "Specialist subagents with narrow tools"
+        description: >
+          Instead of one fat agent that searches everything, use small focused
+          subagents:
+            - scout: reads file tree + outlines, returns relevant paths (no source)
+            - reader: given specific paths, returns source for those files only
+            - validator: checks a proposed change against constraints/tests
+          Each subagent has a tiny context window. The orchestrator stitches
+          their outputs together.
+
+      - name: "Prompt compression"
+        description: >
+          Strip comments, collapse whitespace, use abbreviated constraint
+          format in prompts. Task descriptions are terse by design.
+          Quest constraints use structured YAML, not prose.
+
+      - name: "Incremental context"
+        description: >
+          On retry, inject only the error message + the specific failing file,
+          not the entire original prompt. The agent's session already has the
+          prior context.
+
+      - name: "Shared knowledge cache"
+        description: >
+          Agents in the same quest share a read-only knowledge file
+          (.wombo-combo/quests/<id>/knowledge.md) that the planner seeds
+          with architectural decisions, API contracts, and type definitions.
+          This replaces each agent independently discovering the same info.
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# IMPLEMENTATION PHASES
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Phase 0: Foundation (prerequisites and refactoring)
+# Phase 1: Quest core (schema, storage, branching, CLI)
+# Phase 2: Quest TUI (browser integration, quest-scoped views)
+# Phase 3: HITL system (query_human, real-time piping, question queue)
+# Phase 4: Merge resolution agent
+# Phase 5: Quest planner agent
+# Phase 6: Genesis planner
+# Phase 7: Context reduction & subagents
+
+phases:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-0
+    title: "Foundation — prerequisites and refactoring"
+    status: pending
+    tasks:
+
+      - id: p0-branch-prefix-rename
+        title: "Rename branch prefix from feature/ to task/"
+        description: >
+          Update config default branchPrefix from "feature/" to "task/".
+          Update all references in templates, agent prompts, and docs.
+          Existing "feature/" branches should still be recognized (backward compat).
+        status: pending
+        effort: PT2H
+        files:
+          - src/config.ts
+          - src/templates/*.md
+          - src/lib/worktree.ts
+          - AGENTS.md
+
+      - id: p0-quest-schema
+        title: "Define Quest TypeScript types and YAML schema"
+        description: >
+          Create QuestFile interface, QuestStatus type, QuestConstraints type.
+          Define the layered constraint merge/override model.
+          Add quest template YAML.
+        status: pending
+        effort: PT3H
+        files:
+          - src/lib/quest.ts (new)
+          - src/templates/quest.yml (new)
+
+      - id: p0-quest-storage
+        title: "Quest file I/O — load, save, list quests"
+        description: >
+          Store quests in .wombo-combo/quests/<quest-id>.yml.
+          Functions: loadQuest, saveQuest, listQuests, deleteQuest.
+          Include quest-scoped knowledge file support.
+        status: pending
+        effort: PT3H
+        depends_on: [p0-quest-schema]
+        files:
+          - src/lib/quest.ts
+          - src/lib/quest-store.ts (new)
+
+      - id: p0-layered-config
+        title: "Implement layered constraint resolution"
+        description: >
+          Given a quest's constraints (add/ban/override), merge them with
+          the project-level WomboConfig to produce an effective config for
+          tasks in that quest. The merge logic:
+            - constraints.add: appended to task.constraints
+            - constraints.ban: appended to task.forbidden
+            - constraints.override: deep-merge replaces specific config fields
+        status: pending
+        effort: PT4H
+        depends_on: [p0-quest-schema]
+        files:
+          - src/lib/quest.ts
+          - src/config.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-1
+    title: "Quest core — branching, CLI commands"
+    status: pending
+    tasks:
+
+      - id: p1-quest-branching
+        title: "Quest branch lifecycle — create, switch, merge"
+        description: >
+          Create quest branch from baseBranch. Task branches fork from quest
+          branch. Completed tasks merge into quest branch (not baseBranch).
+          Quest completion merges quest branch into baseBranch.
+          Modify worktreePath/createWorktree to be quest-aware.
+        status: pending
+        effort: PT6H
+        depends_on: [p0-quest-storage]
+        files:
+          - src/lib/worktree.ts
+          - src/lib/quest.ts
+
+      - id: p1-quest-cli
+        title: "CLI commands: quest create/list/show/activate/pause/complete"
+        description: >
+          woco quest create <id> — interactive or with --goal flag
+          woco quest list — show all quests with status
+          woco quest show <id> — full quest details
+          woco quest activate <id> — set as active quest
+          woco quest pause <id> — pause quest (agents can be stopped)
+          woco quest complete <id> — merge quest branch, archive tasks
+          woco quest abandon <id> — cancel without merging
+        status: pending
+        effort: PT8H
+        depends_on: [p1-quest-branching]
+        files:
+          - src/commands/quest.ts (new)
+          - src/index.ts
+
+      - id: p1-launch-quest-aware
+        title: "Make launch/resume quest-aware"
+        description: >
+          When a quest is active, launch uses the quest branch as base,
+          applies layered constraints, injects quest context into prompts.
+          Task branches use task/ prefix instead of feature/.
+        status: pending
+        effort: PT6H
+        depends_on: [p1-quest-cli, p0-layered-config]
+        files:
+          - src/commands/launch.ts
+          - src/commands/resume.ts
+          - src/lib/prompt.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-2
+    title: "Quest TUI — browser integration"
+    status: pending
+    tasks:
+
+      - id: p2-quest-selector
+        title: "Quest picker view in TUI"
+        description: >
+          Before the task browser, show a quest list (or 'all tasks' option).
+          Selecting a quest filters the browser to that quest's tasks only.
+          Show quest status, task count, completion percentage.
+        status: pending
+        effort: PT6H
+        depends_on: [p1-quest-cli]
+        files:
+          - src/lib/tui-browser.ts
+          - src/lib/tui-quest-picker.ts (new)
+          - src/commands/tui.ts
+
+      - id: p2-quest-create-tui
+        title: "Create quest from TUI"
+        description: >
+          Key binding in quest picker to create a new quest.
+          Inline text input for ID, title, goal (multi-line).
+          Constraint editor (add/ban/override).
+        status: pending
+        effort: PT8H
+        depends_on: [p2-quest-selector]
+        files:
+          - src/lib/tui-quest-picker.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-3
+    title: "HITL — real-time query_human system"
+    status: pending
+    tasks:
+
+      - id: p3-question-channel
+        title: "IPC channel for agent ↔ monitor communication"
+        description: >
+          Create a named pipe or Unix domain socket per agent session.
+          The agent writes a JSON question message, blocks on read.
+          The monitor reads the question, displays it, writes the answer back.
+          Protocol: { type: "question", task_id, text } → { type: "answer", text }
+          Must handle agent crash (broken pipe = treat as abandoned question).
+        status: pending
+        effort: PT8H
+        files:
+          - src/lib/hitl-channel.ts (new)
+          - src/lib/launcher.ts
+
+      - id: p3-query-human-tool
+        title: "query_human MCP tool definition"
+        description: >
+          Define the query_human tool that agents can call.
+          In yolo mode: returns canned "proceed autonomously" response.
+          In cautious/supervised mode: writes to IPC channel, blocks for answer.
+          Tool definition injected into agent prompts based on HITL mode.
+        status: pending
+        effort: PT6H
+        depends_on: [p3-question-channel]
+        files:
+          - src/lib/hitl-tool.ts (new)
+          - src/templates/hitl-cautious.md (new)
+          - src/templates/hitl-supervised.md (new)
+
+      - id: p3-tui-question-queue
+        title: "Question queue + popup in wave monitor"
+        description: >
+          Monitor maintains a queue of pending questions from all agents.
+          Badge count shown in status bar (e.g. "3 questions pending").
+          Dedicated key (?) to open question viewer.
+          Question viewer shows agent ID, question text, text input for answer.
+          Tab/arrows to cycle between multiple pending questions.
+          Answer submission writes to the agent's IPC channel.
+        status: pending
+        effort: PT10H
+        depends_on: [p3-query-human-tool]
+        files:
+          - src/lib/tui.ts
+          - src/lib/tui-question-popup.ts (new)
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-4
+    title: "Merge resolution agent"
+    status: pending
+    tasks:
+
+      - id: p4-merge-resolver-agent
+        title: "Specialized merge-conflict-resolution agent"
+        description: >
+          Agent definition that receives ONLY conflicting files + markers,
+          the task description, and quest constraints. Resolves conflicts
+          and commits. Runs as a single-shot agent with minimal context.
+          Triggered automatically when programmatic merge fails.
+        status: pending
+        effort: PT6H
+        files:
+          - src/templates/merge-resolver-agent.md (new)
+          - src/lib/merger.ts
+
+      - id: p4-tiered-merge
+        title: "Tiered merge strategy in merger.ts"
+        description: >
+          1. git merge --no-ff (fast, free)
+          2. If conflict + trivial (only whitespace/formatting): auto-resolve
+          3. If real conflict: spawn merge-resolver agent
+          4. If merge agent fails: mark task as needs_manual_merge, notify user
+          Integrate with quest branch merge flow.
+        status: pending
+        effort: PT8H
+        depends_on: [p4-merge-resolver-agent]
+        files:
+          - src/lib/merger.ts
+          - src/commands/merge.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-5
+    title: "Quest planner agent"
+    status: pending
+    tasks:
+
+      - id: p5-quest-planner-definition
+        title: "Quest planner agent definition"
+        description: >
+          Specialized agent that decomposes a quest goal into atomic tasks.
+          Receives: quest goal, constraints, codebase outline (not full source),
+          existing task graph, quest knowledge file.
+          Produces: structured YAML with tasks, deps, agent suggestions, effort.
+          Multi-step: can explore files via tools, but outputs only a plan.
+          Validates: DAG, no file overlap in streams, mergeability.
+        status: pending
+        effort: PT10H
+        files:
+          - src/templates/quest-planner-agent.md (new)
+
+      - id: p5-planner-execution
+        title: "Planner execution pipeline"
+        description: >
+          Launch planner as a special single-agent wave in a temp worktree.
+          Capture structured output (YAML task list).
+          Parse and validate: DAG check, file overlap detection, effort sanity.
+          Store proposed plan in quest file under a 'proposed_tasks' field.
+        status: pending
+        effort: PT8H
+        depends_on: [p5-quest-planner-definition]
+        files:
+          - src/lib/quest-planner.ts (new)
+          - src/commands/quest.ts
+
+      - id: p5-plan-review-tui
+        title: "Plan review + approval in TUI"
+        description: >
+          After planner produces tasks, show them in a review view.
+          User can: accept, reject, edit, reorder, change agents, adjust deps.
+          Approve = writes tasks to quest's task set and transitions to active.
+          Reject = discard plan, optionally re-run planner with feedback.
+        status: pending
+        effort: PT10H
+        depends_on: [p5-planner-execution, p2-quest-selector]
+        files:
+          - src/lib/tui-plan-review.ts (new)
+          - src/commands/tui.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-6
+    title: "Genesis — project-level inception"
+    status: pending
+    tasks:
+
+      - id: p6-genesis-planner-definition
+        title: "Genesis planner agent definition"
+        description: >
+          Higher-level planner that decomposes a project vision into quests.
+          Receives: project description, tech stack, full codebase index,
+          high-level goals, existing quests.
+          Produces: quest definitions with goals, ordering, dependencies.
+          Runs multi-step with broader exploration budget than quest planner.
+        status: pending
+        effort: PT12H
+        files:
+          - src/templates/genesis-planner-agent.md (new)
+
+      - id: p6-genesis-cli
+        title: "CLI + TUI for genesis"
+        description: >
+          woco genesis — start project inception flow.
+          Asks for project vision, constraints, tech stack.
+          Launches genesis planner agent.
+          Shows proposed quests in review TUI.
+          Approve = creates quests, each can then be planned individually.
+        status: pending
+        effort: PT10H
+        depends_on: [p6-genesis-planner-definition, p5-plan-review-tui]
+        files:
+          - src/commands/genesis.ts (new)
+          - src/index.ts
+
+  # ─────────────────────────────────────────────────────────────────────────
+  - id: phase-7
+    title: "Context reduction & specialist subagents"
+    status: pending
+    tasks:
+
+      - id: p7-scout-subagent
+        title: "Scout subagent — codebase exploration with minimal tokens"
+        description: >
+          A lightweight agent/tool that takes a natural language query and
+          returns relevant file paths + function signatures (no source code).
+          Uses jcodemunch-style indexing. Returns a manifest, not content.
+          Used by planners and executing agents to find relevant code cheaply.
+        status: pending
+        effort: PT8H
+        files:
+          - src/lib/subagents/scout.ts (new)
+
+      - id: p7-knowledge-cache
+        title: "Shared knowledge cache per quest"
+        description: >
+          .wombo-combo/quests/<id>/knowledge.md — seeded by planner with
+          architectural decisions, API contracts, shared types.
+          Read-only for executing agents. Injected into their context.
+          Prevents N agents from independently discovering the same info.
+        status: pending
+        effort: PT4H
+        depends_on: [p0-quest-storage]
+        files:
+          - src/lib/quest.ts
+          - src/lib/prompt.ts
+
+      - id: p7-scoped-file-manifest
+        title: "File manifest per task — minimal context injection"
+        description: >
+          Planner predicts which files each task touches. At launch, only
+          those files are injected into the agent's initial context.
+          Drastically reduces token usage vs dumping the whole codebase.
+        status: pending
+        effort: PT6H
+        depends_on: [p5-planner-execution]
+        files:
+          - src/lib/prompt.ts
+          - src/lib/launcher.ts
+
+      - id: p7-prompt-compression
+        title: "Prompt compression utilities"
+        description: >
+          Strip comments from injected source, collapse whitespace,
+          abbreviate constraint format. Measurably reduce token count
+          in agent prompts without losing semantic content.
+        status: pending
+        effort: PT4H
+        files:
+          - src/lib/prompt-compress.ts (new)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SUMMARY
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# 8 phases, 24 tasks
+# Estimated total effort: ~160 hours
+#
+# Critical path:
+#   p0-quest-schema → p0-quest-storage → p1-quest-branching → p1-quest-cli
+#   → p1-launch-quest-aware → p2-quest-selector → p5-plan-review-tui
+#   → p6-genesis-cli
+#
+# Independent streams:
+#   - HITL (phase 3) can proceed after phase 1
+#   - Merge resolver (phase 4) can proceed after phase 1
+#   - Context reduction (phase 7) can proceed after phases 0+5
