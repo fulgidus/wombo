@@ -87,6 +87,11 @@ function makeConfig(overrides?: Partial<WomboConfig>): WomboConfig {
       mode: "auto",
       source: "msitarzewski/agency-agents",
       cacheDir: "agents-cache",
+      cacheTTL: 24 * 60 * 60 * 1000,
+    },
+    tdd: {
+      enabled: false,
+      testCommand: "bun test",
     },
     ...overrides,
   };
@@ -356,7 +361,10 @@ tasks:
     expect(f.subtasks).toBeArray();
   });
 
-  test("handles nested subtasks normalization", () => {
+  test("handles nested subtasks normalization (flattened by migration)", () => {
+    // With folder-based storage, subtasks are flattened to top-level tasks
+    // during migration. The parent task gains a depends_on reference to its
+    // former subtask, and the subtask becomes a standalone top-level task.
     const yaml = `
 version: "1"
 meta:
@@ -390,20 +398,38 @@ tasks:
 `;
     writeTasksYaml(tmpDir, yaml);
     const data = loadFeatures(tmpDir, config);
-    const subtask = data.tasks[0].subtasks[0];
-    expect(subtask.id).toBe("sub-1");
+    // After migration, both feat-a and sub-1 are top-level tasks
+    const ids = data.tasks.map((t) => t.id).sort();
+    expect(ids).toContain("feat-a");
+    expect(ids).toContain("sub-1");
+    // The parent's subtasks array is empty (flattened)
+    const parent = data.tasks.find((t) => t.id === "feat-a")!;
+    expect(parent.subtasks).toBeArray();
+    expect(parent.subtasks).toHaveLength(0);
+    // The parent now depends on its former subtask
+    expect(parent.depends_on).toContain("sub-1");
+    // The former subtask is a top-level task with normalized arrays
+    const subtask = data.tasks.find((t) => t.id === "sub-1")!;
     expect(subtask.depends_on).toBeArray();
     expect(subtask.constraints).toBeArray();
     expect(subtask.subtasks).toBeArray();
   });
 
-  test("throws on corrupted YAML", () => {
+  test("returns empty tasks on corrupted YAML (graceful degradation)", () => {
+    // With folder-based storage, corrupted legacy YAML is caught during
+    // migration and the store returns an empty TasksFile instead of throwing.
     writeTasksYaml(tmpDir, "{{{{not valid yaml::::");
-    expect(() => loadFeatures(tmpDir, config)).toThrow();
+    const data = loadFeatures(tmpDir, config);
+    expect(data.tasks).toBeArray();
+    expect(data.tasks).toHaveLength(0);
   });
 
-  test("throws on missing file", () => {
-    expect(() => loadFeatures("/nonexistent/path", config)).toThrow();
+  test("returns empty tasks on missing path (graceful degradation)", () => {
+    // With folder-based storage, a missing path returns an empty TasksFile
+    // instead of throwing (the store creates default meta on demand).
+    const data = loadFeatures("/nonexistent/path", config);
+    expect(data.tasks).toBeArray();
+    expect(data.tasks).toHaveLength(0);
   });
 
   test("handles custom tasks file path", () => {
