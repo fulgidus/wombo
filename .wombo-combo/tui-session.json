@@ -6,6 +6,6 @@
   "sortBy": "stream",
   "sortOrder": "desc",
   "maxConcurrent": 8,
-  "lastView": "browser",
+  "lastView": "monitor",
   "collapsed": []
 }

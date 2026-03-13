@@ -3,6 +3,8 @@
  *
  * Responsibilities:
  *   - Merge a verified feature branch into the base branch
+ *   - Merge a task branch into a quest branch
+ *   - Merge a quest branch into the base branch
  *   - Handle merge conflicts gracefully
  *   - All git configuration comes from WomboConfig
  *
@@ -309,4 +311,38 @@ export async function pushBaseBranch(
     console.error(`Push failed: ${result.output}`);
   }
   return result.ok;
+}
+
+// ---------------------------------------------------------------------------
+// Quest Merge Operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Merge a task branch into its quest branch.
+ * Same as mergeBranch but semantically distinct — the "base" is the quest branch,
+ * not the project's baseBranch.
+ *
+ * This is used when a task within a quest completes: its work goes into the quest
+ * branch, not directly into baseBranch.
+ */
+export async function mergeTaskIntoQuest(
+  projectRoot: string,
+  taskBranch: string,
+  questBranch: string,
+  config: WomboConfig
+): Promise<MergeResult> {
+  return mergeBranch(projectRoot, taskBranch, questBranch, config);
+}
+
+/**
+ * Merge a quest branch into the project's base branch.
+ * Used when all tasks in a quest are complete and the quest is being finalized.
+ */
+export async function mergeQuestIntoBranch(
+  projectRoot: string,
+  questBranch: string,
+  baseBranch: string,
+  config: WomboConfig
+): Promise<MergeResult> {
+  return mergeBranch(projectRoot, questBranch, baseBranch, config);
 }

@@ -6,15 +6,15 @@ description: >
   json. This is the integration/QA task: verify all commands emit structured JSON when --output json is passed, with
   consistent error handling via outputError(). Run `woco <command> --output json` for every command and verify output is
   valid JSON.
-status: backlog
-completion: 80
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - json-operational-commands
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T23:48:40.369Z
 constraints: []
 forbidden: []
 references: []
