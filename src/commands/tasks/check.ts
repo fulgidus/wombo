@@ -29,6 +29,7 @@ import {
   VALID_DIFFICULTIES,
 } from "../../lib/task-schema.js";
 import { output, type OutputFormat } from "../../lib/output.js";
+import { renderTasksCheck } from "../../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,13 +171,15 @@ export async function cmdTasksCheck(opts: TasksCheckOptions): Promise<void> {
   ];
   const ok = result.errors.length === 0;
 
+  const checkData = {
+    ok,
+    issues,
+    items_checked: allItems.length,
+  };
+
   output(
     fmt,
-    {
-      ok,
-      issues,
-      items_checked: allItems.length,
-    },
+    checkData,
     () => {
       console.log(`\nChecking ${config.tasksDir}/ (${allItems.length} items)...\n`);
 
@@ -200,6 +203,10 @@ export async function cmdTasksCheck(opts: TasksCheckOptions): Promise<void> {
         }
         console.log("");
       }
+    },
+    () => {
+      // TOON renderer
+      console.log(renderTasksCheck(checkData));
     }
   );
 
