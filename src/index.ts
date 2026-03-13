@@ -539,6 +539,21 @@ async function main(): Promise<void> {
     }
   }
 
+  // Validate numeric args are not NaN
+  const numericArgs: [string, number | undefined][] = [
+    ["--top-priority", args.topPriority],
+    ["--quickest-wins", args.quickestWins],
+    ["--max-concurrent", args.maxConcurrent],
+    ["--max-retries", args.maxRetries],
+    ["--tail", args.tail],
+  ];
+  for (const [flag, value] of numericArgs) {
+    if (value !== undefined && isNaN(value)) {
+      console.error(`${flag} requires a numeric value.`);
+      process.exit(1);
+    }
+  }
+
   // Commands that don't need config loading
   if (args.command === "version" || args.command === "-v" || args.command === "-V") {
     const pkgPath = resolve(import.meta.dir, "..", "package.json");
@@ -827,95 +842,62 @@ async function handleTasksSubcommand(
     }
 
     case "set-status": {
-      if (!args.featureId || !args.title) {
-        // title holds the second positional arg (the status value)
-        // If not provided via positional, check --status flag
-        const newStatus = args.title || args.status;
-        if (!args.featureId || !newStatus) {
-          console.error("Usage: woco tasks set-status <task-id> <status>");
-          process.exit(1);
-          return;
-        }
-        await cmdTasksSetStatus({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newStatus,
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
-      } else {
-        await cmdTasksSetStatus({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newStatus: args.title, // second positional = new status
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
+      // The new status can come from the second positional (stored in args.title)
+      // or from the --status flag
+      const newStatus = args.title || args.status;
+      if (!args.featureId || !newStatus) {
+        console.error("Usage: woco tasks set-status <task-id> <status>");
+        process.exit(1);
+        return;
       }
+      await cmdTasksSetStatus({
+        projectRoot,
+        config,
+        featureId: args.featureId,
+        newStatus,
+        outputFmt: args.outputFmt,
+        dryRun: args.dryRun,
+      });
       break;
     }
 
     case "set-priority": {
-      if (!args.featureId || !args.title) {
-        // title holds the second positional arg (the priority value)
-        // If not provided via positional, check --priority flag
-        const newPriority = args.title || (args.priority as string | undefined);
-        if (!args.featureId || !newPriority) {
-          console.error("Usage: woco tasks set-priority <task-id> <priority>");
-          process.exit(1);
-          return;
-        }
-        await cmdTasksSetPriority({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newPriority,
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
-      } else {
-        await cmdTasksSetPriority({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newPriority: args.title, // second positional = new priority
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
+      // The new priority can come from the second positional (stored in args.title)
+      // or from the --priority flag
+      const newPriority = args.title || (args.priority as string | undefined);
+      if (!args.featureId || !newPriority) {
+        console.error("Usage: woco tasks set-priority <task-id> <priority>");
+        process.exit(1);
+        return;
       }
+      await cmdTasksSetPriority({
+        projectRoot,
+        config,
+        featureId: args.featureId,
+        newPriority,
+        outputFmt: args.outputFmt,
+        dryRun: args.dryRun,
+      });
       break;
     }
 
     case "set-difficulty": {
-      if (!args.featureId || !args.title) {
-        // title holds the second positional arg (the difficulty value)
-        // If not provided via positional, check --difficulty flag
-        const newDifficulty = args.title || (args.difficulty as string | undefined);
-        if (!args.featureId || !newDifficulty) {
-          console.error("Usage: woco tasks set-difficulty <task-id> <difficulty>");
-          process.exit(1);
-          return;
-        }
-        await cmdTasksSetDifficulty({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newDifficulty,
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
-      } else {
-        await cmdTasksSetDifficulty({
-          projectRoot,
-          config,
-          featureId: args.featureId,
-          newDifficulty: args.title, // second positional = new difficulty
-          outputFmt: args.outputFmt,
-          dryRun: args.dryRun,
-        });
+      // The new difficulty can come from the second positional (stored in args.title)
+      // or from the --difficulty flag
+      const newDifficulty = args.title || (args.difficulty as string | undefined);
+      if (!args.featureId || !newDifficulty) {
+        console.error("Usage: woco tasks set-difficulty <task-id> <difficulty>");
+        process.exit(1);
+        return;
       }
+      await cmdTasksSetDifficulty({
+        projectRoot,
+        config,
+        featureId: args.featureId,
+        newDifficulty,
+        outputFmt: args.outputFmt,
+        dryRun: args.dryRun,
+      });
       break;
     }
 

@@ -92,7 +92,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   const data = loadFeatures(projectRoot, config);
   const feature = data.tasks.find((f: Feature) => f.id === opts.featureId);
   if (!feature) {
-    console.error(`Feature ${opts.featureId} not found in ${config.tasksFile}`);
+    console.error(`Feature ${opts.featureId} not found in ${config.tasksDir}`);
     process.exit(1);
     return; // unreachable — helps TypeScript narrow
   }

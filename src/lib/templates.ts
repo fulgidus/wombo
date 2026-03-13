@@ -139,7 +139,7 @@ const DEFAULT_RUNTIME = "Bun (not Node). TypeScript, strict mode, ESM only.";
  * Replace {{placeholders}} in template content with config-derived values.
  *
  * Supported placeholders:
- *   - {{tasksFile}}      — tasks YAML filename (e.g. "tasks.yml")
+ *   - {{tasksDir}}       — tasks directory name (e.g. "tasks")
  *   - {{branchPrefix}}   — git branch prefix (e.g. "feature/")
  *   - {{buildCommand}}   — build command (e.g. "bun run build")
  *   - {{runtime}}        — project runtime description

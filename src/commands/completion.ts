@@ -92,9 +92,9 @@ _woco_completions() {
         --difficulty)
             COMPREPLY=($(compgen -W "trivial easy medium hard very_hard" -- "$cur")); return ;;
         --status)
-            COMPREPLY=($(compgen -W "ready in-progress done failed cancelled blocked" -- "$cur")); return ;;
+            COMPREPLY=($(compgen -W "backlog planned in_progress blocked in_review done cancelled" -- "$cur")); return ;;
         --output|-o)
-            COMPREPLY=($(compgen -W "text json" -- "$cur")); return ;;
+            COMPREPLY=($(compgen -W "text json toon" -- "$cur")); return ;;
         --model|-m|--top-priority|--quickest-wins|--max-concurrent|--max-retries|--tail|--base-branch|--tag|--release|--tasks|--features|--fields|--desc|--description|--effort|--depends-on|--title)
             return ;;  # free-form / numeric — no completions, let readline handle it
     esac
@@ -261,8 +261,8 @@ _woco() {
     case "\${words[CURRENT-1]}" in
         --priority)    compadd critical high medium low wishlist; return ;;
         --difficulty)  compadd trivial easy medium hard very_hard; return ;;
-        --status)      compadd ready in-progress done failed cancelled blocked; return ;;
-        --output|-o)   compadd text json; return ;;
+        --status)      compadd backlog planned in_progress blocked in_review done cancelled; return ;;
+        --output|-o)   compadd text json toon; return ;;
     esac
 
     # tasks → subcommands
@@ -480,8 +480,8 @@ for cmd in woco
     complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l max-retries     -d 'Max retries' -x
     complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l browser         -d 'Browser verification'
     complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l dry-run         -d 'Show without launching'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l output          -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -s o               -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l output          -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -s o               -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l force           -d 'Force'
 
     # --- Flags: resume ---
@@ -495,8 +495,8 @@ for cmd in woco
     complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l max-retries    -d 'Max retries' -x
 
     # --- Flags: status ---
-    complete -c $cmd -n '__fish_seen_subcommand_from status s' -l output -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__fish_seen_subcommand_from status s' -s o      -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__fish_seen_subcommand_from status s' -l output -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from status s' -s o      -d 'Output format' -xa 'text json toon'
 
     # --- Flags: verify ---
     complete -c $cmd -n '__fish_seen_subcommand_from verify v' -l model       -d 'Model to use' -x
@@ -518,22 +518,22 @@ for cmd in woco
 
     # --- Flags: abort ---
     complete -c $cmd -n '__fish_seen_subcommand_from abort a' -l requeue -d 'Return task to queue'
-    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -l output  -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -s o       -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -l output  -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -s o       -d 'Output format' -xa 'text json toon'
 
     # --- Flags: cleanup ---
     complete -c $cmd -n '__fish_seen_subcommand_from cleanup c' -l dry-run -d 'Show without cleaning'
 
     # --- Flags: history ---
-    complete -c $cmd -n '__fish_seen_subcommand_from history h' -l output -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__fish_seen_subcommand_from history h' -s o      -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__fish_seen_subcommand_from history h' -l output -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from history h' -s o      -d 'Output format' -xa 'text json toon'
 
     # --- Flags: logs ---
     complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l tail   -d 'Show last N lines' -x
     complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l follow -d 'Stream output'
     complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -s f      -d 'Stream output'
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l output -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -s o      -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l output -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -s o      -d 'Output format' -xa 'text json toon'
 
     # --- Flags: upgrade ---
     complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l check   -d 'Check only'
@@ -542,13 +542,13 @@ for cmd in woco
     complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l force   -d 'Skip prompts'
 
     # --- Flags: tasks subcommand-specific ---
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l status          -d 'Filter by status' -xa 'ready in-progress done failed cancelled blocked'
+    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l status          -d 'Filter by status' -xa 'backlog planned in_progress blocked in_review done cancelled'
     complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l priority        -d 'Filter by priority' -xa 'critical high medium low wishlist'
     complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l difficulty      -d 'Filter by difficulty' -xa 'trivial easy medium hard very_hard'
     complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l ready           -d 'Only ready tasks'
     complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l include-archive -d 'Include archived'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l output          -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -s o               -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l output          -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -s o               -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l fields          -d 'Fields to show' -x
 
     complete -c $cmd -n '__woco_tasks_subcmd add a'     -l desc            -d 'Description' -x
@@ -558,35 +558,35 @@ for cmd in woco
     complete -c $cmd -n '__woco_tasks_subcmd add a'     -l effort          -d 'Effort estimate' -x
     complete -c $cmd -n '__woco_tasks_subcmd add a'     -l depends-on      -d 'Dependencies' -x
     complete -c $cmd -n '__woco_tasks_subcmd add a'     -l dry-run         -d 'Dry run'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l output          -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -s o               -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l output          -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd add a'     -s o               -d 'Output format' -xa 'text json toon'
 
-    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -l output  -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -s o       -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -l output  -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -s o       -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -l dry-run -d 'Dry run'
 
-    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -l output  -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -s o       -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -l output  -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -s o       -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -l dry-run -d 'Dry run'
 
-    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -l output  -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -s o       -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -l output  -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -s o       -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -l dry-run -d 'Dry run'
 
     complete -c $cmd -n '__woco_tasks_subcmd archive ar' -l dry-run -d 'Dry run'
-    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -l output  -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -s o       -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -l output  -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -s o       -d 'Output format' -xa 'text json toon'
 
-    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -l output -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -s o      -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -l output -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -s o      -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__woco_tasks_subcmd show sh'    -l fields -d 'Fields to show' -x
 
     complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l ascii    -d 'ASCII output'
     complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l mermaid  -d 'Mermaid output'
     complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l subtasks -d 'Include subtasks'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l status   -d 'Filter by status' -xa 'ready in-progress done failed cancelled blocked'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l output   -d 'Output format' -xa 'text json'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -s o        -d 'Output format' -xa 'text json'
+    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l status   -d 'Filter by status' -xa 'backlog planned in_progress blocked in_review done cancelled'
+    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l output   -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -s o        -d 'Output format' -xa 'text json toon'
 end
 `;
 }
