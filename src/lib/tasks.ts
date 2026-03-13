@@ -11,12 +11,27 @@
  *   - Write-back capability for task management commands
  */
 
-import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, unlinkSync, renameSync, mkdirSync } from "node:fs";
-import { resolve, dirname, join, basename } from "node:path";
-import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { existsSync, mkdirSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import type { WomboConfig } from "../config.js";
 import { WOMBO_DIR } from "../config.js";
+import {
+  loadTasksFromStore,
+  loadArchiveFromStore,
+  saveAllTasksToStore,
+  saveAllArchiveToStore,
+  saveTaskToStore,
+  saveTaskToArchive,
+  removeTaskFromStore,
+  tasksStoreExists,
+  saveTasksMetaToStore,
+  saveArchiveMetaToStore,
+  getTasksDir,
+  getArchiveDir,
+  saveTaskFile,
+  deleteTaskFile,
+} from "./task-store.js";
 
 // ---------------------------------------------------------------------------
 // Template path (resolved relative to this source file)
@@ -199,26 +214,29 @@ function promptYesNo(question: string): Promise<boolean> {
 }
 
 /**
- * Ensure the tasks file exists before any command that needs it.
- * If the file is missing, prompt the user to generate one from the template.
+ * Ensure the tasks store exists before any command that needs it.
+ * If the folder is missing, prompt the user to generate one from scratch
+ * or auto-migrate from a legacy single-file tasks.yml.
  */
 export async function ensureTasksFile(
   projectRoot: string,
   config: WomboConfig
 ): Promise<void> {
-  const filePath = womboPath(projectRoot, config.tasksFile);
+  if (tasksStoreExists(projectRoot, config)) return;
 
-  if (existsSync(filePath)) return;
+  // Try loading — this triggers auto-migration from legacy files
+  const data = loadTasksFromStore(projectRoot, config);
+  if (data.tasks.length > 0 || tasksStoreExists(projectRoot, config)) return;
 
-  console.log(`\nTasks file not found: ${WOMBO_DIR}/${config.tasksFile}`);
+  console.log(`\nTasks store not found: ${WOMBO_DIR}/${config.tasksDir}/`);
 
   const generate = await promptYesNo(
-    "Generate a new tasks file from template? (y/N): "
+    "Generate a new tasks store from template? (y/N): "
   );
 
   if (!generate) {
     console.error(
-      `Cannot proceed without a tasks file. Create one manually or run again and accept the prompt.`
+      `Cannot proceed without a tasks store. Create one manually or run again and accept the prompt.`
     );
     process.exit(1);
   }
@@ -226,33 +244,31 @@ export async function ensureTasksFile(
   // Ensure .wombo-combo/ directory exists
   ensureWomboDir(projectRoot);
 
-  // Read template, update timestamps, write to .wombo-combo/
-  const template = readFileSync(TASKS_TEMPLATE_PATH, "utf-8");
   const now = new Date().toISOString();
-  const content = template
-    .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
-    .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`);
+  saveTasksMetaToStore(projectRoot, config, {
+    version: "1.0",
+    meta: {
+      created_at: now,
+      updated_at: now,
+      project: "unknown",
+      generator: "wombo-combo",
+      maintainer: "unknown",
+    },
+  });
+  console.log(`Created ${WOMBO_DIR}/${config.tasksDir}/ with empty task store.\n`);
 
-  writeFileSync(filePath, content, "utf-8");
-  console.log(`Created ${WOMBO_DIR}/${config.tasksFile} from template.\n`);
-
-  // Also create an empty archive file
-  const archivePath = womboPath(projectRoot, config.archiveFile);
-  if (!existsSync(archivePath)) {
-    const archiveContent = stringifyYaml({
-      version: "1.0",
-      meta: {
-        created_at: now,
-        updated_at: now,
-        project: "unknown",
-        generator: "wombo-combo",
-        maintainer: "unknown",
-      },
-      tasks: [],
-    }, { lineWidth: 120 });
-    writeFileSync(archivePath, archiveContent, "utf-8");
-    console.log(`Created ${WOMBO_DIR}/${config.archiveFile}.\n`);
-  }
+  // Also create empty archive store
+  saveArchiveMetaToStore(projectRoot, config, {
+    version: "1.0",
+    meta: {
+      created_at: now,
+      updated_at: now,
+      project: "unknown",
+      generator: "wombo-combo",
+      maintainer: "unknown",
+    },
+  });
+  console.log(`Created ${WOMBO_DIR}/${config.archiveDir}/.\n`);
 }
 
 // Backward-compat alias
@@ -263,118 +279,24 @@ export const ensureFeaturesFile = ensureTasksFile;
 // ---------------------------------------------------------------------------
 
 /**
- * Load and parse the tasks YAML file from .wombo-combo/.
+ * Load and parse tasks from the folder-based store.
  */
 export function loadTasks(
   projectRoot: string,
   config: WomboConfig
 ): TasksFile {
-  const filePath = womboPath(projectRoot, config.tasksFile);
-  const raw = readFileSync(filePath, "utf-8");
-
-  let parsed: any;
-  try {
-    parsed = parseYaml(raw);
-  } catch (err: any) {
-    const reason = err?.message ?? String(err);
-    throw new Error(
-      `Failed to parse ${WOMBO_DIR}/${config.tasksFile}: ${reason}`
-    );
-  }
-
-  // Validate basic schema
-  if (parsed === null || parsed === undefined || typeof parsed !== "object") {
-    throw new Error(
-      `Invalid ${WOMBO_DIR}/${config.tasksFile}: file must contain a YAML mapping with a "tasks" key, ` +
-      `but got ${parsed === null ? "null" : typeof parsed}.`
-    );
-  }
-
-  // Support both "tasks" and legacy "features" key
-  const tasks = parsed.tasks ?? parsed.features ?? null;
-
-  if (tasks !== null && tasks !== undefined && !Array.isArray(tasks)) {
-    throw new Error(
-      `Invalid ${WOMBO_DIR}/${config.tasksFile}: "tasks" must be a list (array), ` +
-      `but got ${typeof tasks}. Check the file structure.`
-    );
-  }
-
-  const result: TasksFile = {
-    version: parsed.version ?? "1.0",
-    meta: parsed.meta ?? {
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      project: "unknown",
-      generator: "wombo-combo",
-      maintainer: "unknown",
-    },
-    tasks: tasks ?? [],
-  };
-
-  for (const t of result.tasks) {
-    normalizeTask(t);
-  }
-
-  return result;
+  return loadTasksFromStore(projectRoot, config);
 }
 
 /**
- * Load the archive file from .wombo-combo/.
- * Returns an empty ArchiveFile if the file doesn't exist.
+ * Load archived tasks from the folder-based store.
+ * Returns an empty ArchiveFile if the store doesn't exist.
  */
 export function loadArchive(
   projectRoot: string,
   config: WomboConfig
 ): ArchiveFile {
-  const filePath = womboPath(projectRoot, config.archiveFile);
-
-  if (!existsSync(filePath)) {
-    return {
-      version: "1.0",
-      meta: {
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        project: "unknown",
-        generator: "wombo-combo",
-        maintainer: "unknown",
-      },
-      tasks: [],
-    };
-  }
-
-  const raw = readFileSync(filePath, "utf-8");
-
-  let parsed: any;
-  try {
-    parsed = parseYaml(raw);
-  } catch (err: any) {
-    const reason = err?.message ?? String(err);
-    throw new Error(
-      `Failed to parse ${WOMBO_DIR}/${config.archiveFile}: ${reason}`
-    );
-  }
-
-  if (parsed === null || parsed === undefined || typeof parsed !== "object") {
-    return {
-      version: "1.0",
-      meta: { created_at: "", updated_at: "", project: "", generator: "wombo-combo", maintainer: "" },
-      tasks: [],
-    };
-  }
-
-  const tasks = parsed.tasks ?? parsed.features ?? [];
-  const result: ArchiveFile = {
-    version: parsed.version ?? "1.0",
-    meta: parsed.meta ?? { created_at: "", updated_at: "", project: "", generator: "wombo-combo", maintainer: "" },
-    tasks: Array.isArray(tasks) ? tasks : [],
-  };
-
-  for (const t of result.tasks) {
-    normalizeTask(t);
-  }
-
-  return result;
+  return loadArchiveFromStore(projectRoot, config);
 }
 
 /**
@@ -400,62 +322,26 @@ export function loadFeatures(
 // ---------------------------------------------------------------------------
 
 /**
- * Save the tasks file back to disk.
- * Before writing:
- *   1. Creates a timestamped backup of the existing file
- *   2. Rotates old backups to keep only the last N (config.backup.maxBackups)
- *   3. Writes atomically via tmp file + rename
+ * Save all tasks to the folder-based store.
+ * Writes _meta.yml + one file per task.
  */
 export function saveTasks(
   projectRoot: string,
   config: WomboConfig,
   data: TasksFile
 ): void {
-  ensureWomboDir(projectRoot);
-  const filePath = womboPath(projectRoot, config.tasksFile);
-
-  // Backup existing file before overwriting
-  if (existsSync(filePath)) {
-    createTimestampedBackup(filePath, config.backup.maxBackups);
-  }
-
-  // Atomic write
-  data.meta.updated_at = new Date().toISOString();
-  const yaml = stringifyYaml(data, {
-    lineWidth: 120,
-    defaultKeyType: "PLAIN",
-    defaultStringType: "PLAIN",
-  });
-  const tmp = filePath + ".tmp";
-  writeFileSync(tmp, yaml, "utf-8");
-  renameSync(tmp, filePath);
+  saveAllTasksToStore(projectRoot, config, data);
 }
 
 /**
- * Save the archive file back to disk.
+ * Save all archived tasks to the folder-based store.
  */
 export function saveArchive(
   projectRoot: string,
   config: WomboConfig,
   data: ArchiveFile
 ): void {
-  ensureWomboDir(projectRoot);
-  const filePath = womboPath(projectRoot, config.archiveFile);
-
-  // Backup existing file before overwriting
-  if (existsSync(filePath)) {
-    createTimestampedBackup(filePath, config.backup.maxBackups);
-  }
-
-  data.meta.updated_at = new Date().toISOString();
-  const yaml = stringifyYaml(data, {
-    lineWidth: 120,
-    defaultKeyType: "PLAIN",
-    defaultStringType: "PLAIN",
-  });
-  const tmp = filePath + ".tmp";
-  writeFileSync(tmp, yaml, "utf-8");
-  renameSync(tmp, filePath);
+  saveAllArchiveToStore(projectRoot, config, data);
 }
 
 /**
@@ -484,78 +370,6 @@ export function saveFeatures(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Backup Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Create a timestamped backup and rotate old backups.
- * Backups are stored in .wombo-combo/backups/
- */
-function createTimestampedBackup(filePath: string, maxBackups: number): void {
-  const dir = dirname(filePath);
-  const backupDir = join(dir, "backups");
-  if (!existsSync(backupDir)) {
-    mkdirSync(backupDir, { recursive: true });
-  }
-
-  const base = basename(filePath);
-  const timestamp = new Date()
-    .toISOString()
-    .replace(/:/g, "-")
-    .replace(/\.\d{3}Z$/, "");
-  const backupName = `${base}.${timestamp}.bak`;
-  const backupPath = join(backupDir, backupName);
-
-  copyFileSync(filePath, backupPath);
-  rotateBackups(backupDir, base, maxBackups);
-}
-
-/**
- * Remove old backup files, keeping only the most recent `maxBackups`.
- */
-function rotateBackups(dir: string, baseName: string, maxBackups: number): void {
-  const pattern = new RegExp(
-    `^${escapeRegExp(baseName)}\\.\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}\\.bak$`
-  );
-
-  if (maxBackups <= 0) {
-    const entries = readdirSync(dir).filter((f) => pattern.test(f));
-    for (const entry of entries) {
-      unlinkSync(join(dir, entry));
-    }
-    return;
-  }
-
-  const backups = readdirSync(dir)
-    .filter((f) => pattern.test(f))
-    .sort();
-
-  while (backups.length > maxBackups) {
-    const oldest = backups.shift()!;
-    unlinkSync(join(dir, oldest));
-  }
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function normalizeTask(t: Task): void {
-  t.depends_on = t.depends_on ?? [];
-  t.constraints = t.constraints ?? [];
-  t.forbidden = t.forbidden ?? [];
-  t.references = t.references ?? [];
-  t.notes = t.notes ?? [];
-  t.subtasks = t.subtasks ?? [];
-  // agent_type is optional — normalize undefined/null to undefined
-  if (t.agent_type === null || t.agent_type === "") {
-    t.agent_type = undefined;
-  }
-  for (const s of t.subtasks) {
-    normalizeTask(s);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Dependency Resolution
@@ -843,3 +657,12 @@ export function allFeatureIds(data: FeaturesFile): string[] {
 
 // Re-export the old template path name for migration
 export const FEATURES_TEMPLATE_PATH = TASKS_TEMPLATE_PATH;
+
+// Re-export store functions for single-task operations
+export {
+  saveTaskToStore,
+  saveTaskToArchive,
+  removeTaskFromStore,
+  getTasksDir,
+  getArchiveDir,
+} from "./task-store.js";

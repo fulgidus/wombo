@@ -92,7 +92,7 @@ function applyPlaceholders(
 ): string {
   const projectName = projectRoot.split("/").pop() ?? "project";
   return content
-    .replace(/\{\{tasksFile\}\}/g, config.tasksFile)
+    .replace(/\{\{tasksDir\}\}/g, config.tasksDir)
     .replace(/\{\{branchPrefix\}\}/g, config.git.branchPrefix)
     .replace(/\{\{buildCommand\}\}/g, config.build.command)
     .replace(/\{\{runtime\}\}/g, DEFAULT_RUNTIME)
@@ -273,7 +273,7 @@ export function ensureAgentDefinition(
   projectRoot: string,
   config: WomboConfig
 ): boolean {
-  const agentDir = resolve(projectRoot, "agent");
+  const agentDir = resolve(projectRoot, ".opencode", "agents");
   const agentDefPath = resolve(agentDir, `${config.agent.name}.md`);
 
   if (existsSync(agentDefPath)) {
@@ -282,7 +282,7 @@ export function ensureAgentDefinition(
 
   // Agent definition missing — reinstall from bundled template
   console.warn(
-    `\x1b[33m[WARNING]\x1b[0m Agent definition not found: agent/${config.agent.name}.md`
+    `\x1b[33m[WARNING]\x1b[0m Agent definition not found: .opencode/agents/${config.agent.name}.md`
   );
   console.warn(`  Reinstalling from bundled generalist template...`);
 
@@ -290,7 +290,7 @@ export function ensureAgentDefinition(
     mkdirSync(agentDir, { recursive: true });
     const content = renderGeneralistAgent(config, projectRoot);
     writeFileSync(agentDefPath, content, "utf-8");
-    console.warn(`  Restored agent/${config.agent.name}.md\n`);
+    console.warn(`  Restored .opencode/agents/${config.agent.name}.md\n`);
     return true;
   } catch (err: any) {
     console.error(
