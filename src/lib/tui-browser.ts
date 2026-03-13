@@ -36,7 +36,7 @@ import blessed from "neo-blessed";
 import type { Widgets } from "neo-blessed";
 import type { Task, TasksFile, Priority } from "./tasks.js";
 import { loadTasks, loadArchive, parseDurationMinutes, formatDuration, areDependenciesMet, getDoneTaskIds } from "./tasks.js";
-import { saveTaskToStore } from "./task-store.js";
+import { saveTaskToStore, saveTaskToArchive, removeTaskFromStore } from "./task-store.js";
 import { PRIORITY_ORDER, DIFFICULTY_ORDER } from "./task-schema.js";
 import type { TUISession, SortField } from "./tui-session.js";
 import { saveTUISession } from "./tui-session.js";
@@ -540,6 +540,11 @@ export class TaskBrowser {
       this.screen.render();
     });
 
+    // x — archive done/cancelled tasks
+    this.screen.key(["x"], () => {
+      this.archiveDone();
+    });
+
     // c — change concurrency
     this.screen.key(["c"], () => {
       this.cycleConcurrency();
@@ -658,6 +663,35 @@ export class TaskBrowser {
     this.session.maxConcurrent = levels[(idx + 1) % levels.length];
     this.refreshStatusBar();
     this.screen.render();
+  }
+
+  /**
+   * Archive all done/cancelled tasks. If tasks are selected, only archive
+   * those that are done/cancelled. Otherwise archive ALL done/cancelled.
+   */
+  private archiveDone(): void {
+    const candidates =
+      this.selected.size > 0
+        ? this.allTasks.filter(
+            (t) => this.selected.has(t.id) && (t.status === "done" || t.status === "cancelled")
+          )
+        : this.allTasks.filter(
+            (t) => t.status === "done" || t.status === "cancelled"
+          );
+
+    if (candidates.length === 0) return;
+
+    for (const task of candidates) {
+      saveTaskToArchive(this.projectRoot, this.config, task);
+      removeTaskFromStore(this.projectRoot, this.config, task.id);
+      this.selected.delete(task.id);
+    }
+
+    // Reload from disk and rebuild the display
+    this.reloadTasks();
+    this.buildDisplay();
+    this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.displayNodes.length - 1));
+    this.refresh();
   }
 
   // -------------------------------------------------------------------------
@@ -876,6 +910,7 @@ export class TaskBrowser {
     line1 += `  {gray-fg}A{/gray-fg} all`;
     line1 += `  {gray-fg}+/-{/gray-fg} priority`;
     line1 += `  {gray-fg}D{/gray-fg} ${this.hideDone ? "show" : "hide"} done`;
+    line1 += `  {gray-fg}X{/gray-fg} archive done`;
     line1 += `  {gray-fg}C{/gray-fg} concurrency`;
     line1 += `  {gray-fg}F5{/gray-fg} sort`;
 
