@@ -17,6 +17,7 @@ import {
   type Subtask,
 } from "../../lib/tasks.js";
 import { output, outputError, filterFields, type OutputFormat } from "../../lib/output.js";
+import { renderTaskShow } from "../../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -111,6 +112,9 @@ export async function cmdTasksShow(opts: TasksShowOptions): Promise<void> {
         const display = Array.isArray(val) ? val.join(", ") : String(val ?? "");
         console.log(`${key}: ${display}`);
       }
+    }, () => {
+      // TOON: --fields ignored, emit full task in compact format
+      console.log(renderTaskShow(feature, depsMet));
     });
     return;
   }
@@ -187,6 +191,10 @@ export async function cmdTasksShow(opts: TasksShowOptions): Promise<void> {
       }
 
       console.log("");
+    },
+    () => {
+      // TOON renderer
+      console.log(renderTaskShow(feature, depsMet));
     }
   );
 }
