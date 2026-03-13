@@ -400,6 +400,14 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       cfg.portless.https = await p.yesNo("Enable HTTPS/HTTP2", cfg.portless.https);
     }
 
+    // -- TDD (Test-Driven Development) ------------------------------------
+    section("TDD (Test-Driven Development)");
+    console.log("  When enabled, agents follow the red-green-refactor TDD cycle.\n");
+    cfg.tdd.enabled = await p.yesNo("Enable TDD workflow for agents", cfg.tdd.enabled);
+    if (cfg.tdd.enabled) {
+      cfg.tdd.testCommand = await p.string("Test command", cfg.tdd.testCommand);
+    }
+
     // -- Defaults ---------------------------------------------------------
     section("Runtime Defaults");
     cfg.defaults.maxConcurrent = await p.number("Max concurrent agents", cfg.defaults.maxConcurrent);
