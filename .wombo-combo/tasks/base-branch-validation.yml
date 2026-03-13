@@ -1,0 +1,23 @@
+id: base-branch-validation
+title: Validate base branch exists before launch
+description: >
+  At the start of `wombo launch`, verify that the configured baseBranch exists as a local branch before creating wave
+  state and worktrees. Currently if baseBranch doesn't exist, `git branch "feature/xxx" "nonexistent-branch"` fails only
+  after the wave state is already created, leaving a broken state file.
+status: done
+completion: 100
+difficulty: trivial
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-12T21:41:01.440Z
+constraints:
+  - Must check before any state file is created
+  - Must emit a clear error message with the missing branch name
+  - Must support --output json error format
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

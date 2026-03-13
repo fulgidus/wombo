@@ -1,0 +1,18 @@
+id: release-changelog-gen
+title: Auto-generate changelog in release body
+description: |
+  Use git log --oneline between the previous tag and HEAD to build a markdown changelog and pass it as the release body.
+status: done
+completion: 100
+difficulty: trivial
+priority: medium
+depends_on:
+  - release-workflow-yaml
+effort: PT30M
+started_at: null
+ended_at: 2026-03-11T11:13:58.526Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

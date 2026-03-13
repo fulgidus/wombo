@@ -1,0 +1,23 @@
+id: tdd-test-detection
+title: Detect test files and coverage for new code
+description: >
+  Analyze git diff to identify new/modified source files and verify corresponding test files exist. Implementation: -
+  Parse `git diff --name-status HEAD~1` (or vs base branch) to find added/modified .ts files in src/ - For each source
+  file src/foo/bar.ts, check if tests/bar.test.ts or tests/foo/bar.test.ts exists - Use configurable test file patterns
+  (default: tests/**/*.test.ts, src/**/*.test.ts) - Report: list of source files missing tests, list of source files
+  with tests, coverage ratio - Output as structured data compatible with outputMessage() for --output json support -
+  Create as src/lib/test-detection.ts, exported for use by tdd-verification-step - Exclude non-testable files: *.d.ts,
+  index.ts (re-export barrels), types-only files
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT4H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

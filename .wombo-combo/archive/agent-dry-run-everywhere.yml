@@ -1,0 +1,20 @@
+id: agent-dry-run-everywhere
+title: Extend --dry-run to all mutating commands
+description: >
+  Currently only launch supports --dry-run. Extend it to all commands that mutate state: features add, features
+  set-status, features archive, merge, retry, cleanup, init. Dry-run should print what would happen (in JSON when
+  --output json) without performing the action.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on:
+  - agent-json-output
+effort: PT3H
+started_at: 2026-03-11T11:35:12.376Z
+ended_at: 2026-03-11T11:35:12.479Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

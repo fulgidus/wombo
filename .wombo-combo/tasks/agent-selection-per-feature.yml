@@ -1,0 +1,22 @@
+id: agent-selection-per-feature
+title: Per-feature agent type selection
+description: >
+  Add an `agent` field to the task YAML schema (in src/lib/task-schema.ts) and an --agent flag to the launch command.
+  When launching, use the specified agent type instead of the default generalist-agent. The agent field should be
+  optional — when omitted, the default generalist-agent.md template is used. When set, it should reference an agent
+  definition file name (without extension) from .opencode/agents/. Update renderAgentTemplate() in src/lib/templates.ts
+  to accept an agent name parameter.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on:
+  - agent-format-converter
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

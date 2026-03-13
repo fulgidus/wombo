@@ -1,0 +1,24 @@
+id: bug-version-flag-collision
+title: Replace --version flag with dedicated `woco version` / `woco -v` command
+description: >
+  --version is documented as "print version and exit" but the arg parser at src/index.ts:219 consumes the next arg as a
+  version string (for the upgrade command). Running `wombo launch --version` silently eats the next argument. Fix:
+  remove --version as a flag entirely, add a `version` subcommand and `-v` shorthand that prints the version and exits.
+  The upgrade command should use `--tag` or `--release` for version pinning instead.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T15:57:50.531Z
+constraints:
+  - "`woco version` and `woco -v` must print version and exit"
+  - Upgrade command must use a different flag name for version pinning (e.g. --tag)
+forbidden:
+  - Do not use --version as a flag that consumes a value argument
+references: []
+notes:
+  - "2026-03-12: Found during codebase audit. User suggested 'woco version' / 'woco -v' as the fix."
+subtasks: []

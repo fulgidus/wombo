@@ -1,6 +1,5 @@
 node_modules/
 dist/
 # wombo-combo user artifacts (generated per-project)
-.wombo-combo/
 *.tmp
-*.log
+*.bak

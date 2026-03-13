@@ -1,0 +1,29 @@
+id: toon-output-formatter
+title: Implement TOON output formatter module
+description: >
+  Create a TOON formatter module at src/lib/toon.ts that converts structured command results into TOON notation. Must
+  handle all data types: task lists, status dashboards, wave state, verification results.
+
+  Integration: Add OutputFormat = "text" | "json" | "toon" in src/lib/output.ts. Add a toon rendering path to the
+  output() function that calls the toon formatter. The formatter must implement per-command renderers: - tasks list:
+  id|STATUS_CODE|PRIORITY_CODE|difficulty|effort  (e.g. "cli-bugs|BL|H|easy|3h") - tasks show: key:value pairs, one per
+  line, abbreviated keys - status: wave_id|agent_count|active|completed|failed - verify: feature_id|pass/fail|duration
+
+  Status codes: BL=backlog, IP=in_progress, DN=done, CN=cancelled Priority codes: C=critical, H=high, M=medium, L=low,
+  W=wishlist Difficulty codes: T=trivial, E=easy, M=medium, H=hard
+
+  Must reduce token count by at least 60% vs JSON for equivalent data.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - toon-format-spec
+effort: PT3H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

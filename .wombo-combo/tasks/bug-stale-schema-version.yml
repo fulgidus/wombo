@@ -1,0 +1,20 @@
+id: bug-stale-schema-version
+title: Fix hardcoded stale version in schema output
+description: >
+  src/lib/schema.ts:452 hardcodes `version: "0.0.2"` while package.json is at "0.0.9". Agents consuming `wombo describe`
+  see the wrong version. Should read version from package.json dynamically instead of hardcoding.
+status: done
+completion: 100
+difficulty: trivial
+priority: high
+depends_on: []
+effort: PT15M
+started_at: null
+ended_at: 2026-03-13T15:57:49.777Z
+constraints:
+  - Must read version dynamically from package.json, not hardcode
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Found during codebase audit."
+subtasks: []

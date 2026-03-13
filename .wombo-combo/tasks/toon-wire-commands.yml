@@ -1,0 +1,19 @@
+id: toon-wire-commands
+title: Wire TOON output into all commands
+description: >
+  Add toon as a third option to --output flag resolution. Wire it into every command that already supports --output
+  json. Update schema introspection to advertise toon support.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on:
+  - toon-output-formatter
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

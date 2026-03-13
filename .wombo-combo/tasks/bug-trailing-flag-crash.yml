@@ -1,0 +1,22 @@
+id: bug-trailing-flag-crash
+title: Fix args[++i] crash when flag is last argument
+description: >
+  Flags like --priority, --model, --only that use `args[++i]` at src/index.ts:167-251 return undefined when no value
+  follows. Flags that call .split(",") on the result (e.g. --only) throw "Cannot read properties of undefined". Must
+  validate that args[i+1] exists before consuming it.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT45M
+started_at: null
+ended_at: 2026-03-13T15:57:49.929Z
+constraints:
+  - All flag-consuming cases in parseArgs must check bounds before args[++i]
+  - Should emit a clear error like "Flag --X requires a value"
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Found during codebase audit."
+subtasks: []

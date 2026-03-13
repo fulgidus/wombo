@@ -1,0 +1,28 @@
+id: dogfood-dev
+title: Dogfood wombo for its own development
+description: >
+  Make all future wombo development happen through wombo itself. Add a `bun dev` script alias that runs the local source
+  directly (`bun src/index.ts`), so agents and developers use `bun dev <command>` instead of the globally installed
+  binary. Document this as a hard constraint in AGENTS.md so any AI agent working on the wombo codebase uses the local
+  dev build, never the installed version.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on:
+  - dogfood-agents-md
+  - dogfood-verify-local
+effort: PT1H30M
+started_at: null
+ended_at: 2026-03-11T11:13:17.376Z
+constraints:
+  - The `bun dev` alias must forward all arguments to src/index.ts.
+  - AGENTS.md must state this as a hard, non-negotiable constraint.
+  - CI/CD must also use the local source, not a globally installed binary.
+forbidden:
+  - Do not use the globally installed wombo binary during development — always use `bun dev`.
+references: []
+notes:
+  - '2026-03-11: Feature created. package.json already has "start": "bun src/index.ts" but agents need a dev alias and a
+    documented constraint.'
+subtasks: []

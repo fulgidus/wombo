@@ -1,0 +1,18 @@
+id: dogfood-dev-script
+title: Add bun dev script to package.json
+description: >
+  Add a "dev" script to package.json that runs `bun src/index.ts --` so `bun dev launch --all-ready` works. The trailing
+  `--` ensures bun forwards all subsequent args.
+status: done
+completion: 100
+difficulty: trivial
+priority: critical
+depends_on: []
+effort: PT15M
+started_at: null
+ended_at: 2026-03-11T11:13:12.744Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

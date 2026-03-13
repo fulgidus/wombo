@@ -1,0 +1,17 @@
+id: release-workflow-yaml
+title: Create release.yml workflow file
+description: |
+  Write .github/workflows/release.yml with the trigger, build steps, and gh release create call.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT1H
+started_at: null
+ended_at: 2026-03-11T11:13:58.415Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

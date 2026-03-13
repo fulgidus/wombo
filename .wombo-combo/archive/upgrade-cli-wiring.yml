@@ -1,0 +1,17 @@
+id: upgrade-cli-wiring
+title: Wire upgrade command into CLI router
+description: |
+  Add the `upgrade` case to index.ts parseArgs and command switch, with --force and --version flags.
+status: done
+completion: 100
+difficulty: trivial
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-11T11:15:50.226Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

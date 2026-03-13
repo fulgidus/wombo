@@ -1,0 +1,23 @@
+id: tdd-verification-step
+title: Add TDD verification to build pipeline
+description: >
+  Add a test-running step to the build verification pipeline in src/lib/verifier.ts. Steps: 1. Run `bun test` and
+  capture exit code + output 2. Call test-detection (from tdd-test-detection) to check new files have tests 3. Report
+  results: tests passed/failed count, new files missing tests, overall pass/fail 4. Integration with existing verify
+  command (src/commands/verify.ts): add --skip-tests flag to opt out 5. In agent workflow: verification runs after agent
+  commits, before marking task done The verification should be non-blocking by default (warn on missing tests) with a
+  --strict-tdd flag to make it blocking. This allows gradual adoption.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - tdd-test-detection
+effort: PT4H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

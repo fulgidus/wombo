@@ -1,0 +1,18 @@
+id: upgrade-version-check
+title: Fetch latest version from GitHub
+description: >
+  Query GitHub API (or git ls-remote) to find the latest v* tag and compare it with the local package.json version.
+  Display both to the user.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT1H
+started_at: null
+ended_at: 2026-03-11T11:15:50.024Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

@@ -1,0 +1,23 @@
+id: test-features-parsing
+title: Test task YAML parsing and validation
+description: >
+  Unit tests (bun test) for task loading and validation. Test targets: - loadTasksFromStore() in src/lib/task-store.ts:
+  empty tasks dir, missing _meta.yml, corrupted YAML files,
+    files with missing required fields, files with invalid enum values (status/priority/difficulty)
+  - validateTask() / validateMeta() in src/lib/task-schema.ts: all enum validation, warn-and-normalize behavior -
+  loadFeatures() backward-compat wrapper in src/lib/tasks.ts: merge of tasks + archive into FeaturesFile - Duration
+  parsing: ISO 8601 durations (PT30M, P1DT4H, etc.) - Dependency resolution: valid deps, missing deps, circular deps
+  (should be caught by dep-graph) Place tests in tests/task-parsing.test.ts using bun's built-in test runner.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

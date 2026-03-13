@@ -1,0 +1,34 @@
+id: toon-output
+title: "TOON: Token-Optimized Output Notation for agent efficiency"
+description: >
+  Add a `--output toon` format across all commands that emits ultra-compact, token-minimized output designed
+  specifically for LLM agent consumption. Unlike JSON (verbose with repeated keys, quotes, braces) or text (designed for
+  human readability with padding, decorations, headers), TOON strips output to the absolute minimum tokens needed to
+  convey information. Uses short delimiters, abbreviated keys, no whitespace padding, no decorative elements. Example:
+  instead of `{"id":"cli-bugs","status":"backlog","priority":"high"}` emit `cli-bugs|BL|H`. Agents consuming woco output
+  burn fewer tokens on parsing context, leaving more budget for reasoning. The format should be self-describing via
+  `woco describe --output toon` which emits the key legend.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - toon-wire-commands
+effort: PT6H
+started_at: null
+ended_at: null
+constraints:
+  - Must be a third output format alongside text and json (--output toon)
+  - Must reduce token count by at least 60% compared to JSON output
+  - Key abbreviations must be consistent across all commands
+  - Must include a legend/schema command so agents can learn the format at session start
+  - Pipe-delimited fields, single-char status codes, abbreviated enums
+  - Must auto-detect when an agent is consuming output (heuristic or explicit flag)
+forbidden:
+  - Do not sacrifice parseability for compactness — agents must be able to split on delimiters reliably
+  - Do not use ambiguous abbreviations that could confuse LLMs
+references: []
+notes:
+  - "2026-03-12: User requirement. Token efficiency matters when agents call woco repeatedly — every saved token is more
+    reasoning budget."
+subtasks: []

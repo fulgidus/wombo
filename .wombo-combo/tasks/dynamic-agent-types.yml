@@ -1,0 +1,34 @@
+id: dynamic-agent-types
+title: Dynamic agent-worker types from agency-agents registry
+description: >
+  Support different agent types when launching tasks. Available agents are dynamically pulled from
+  https://github.com/msitarzewski/agency-agents and converted to woco-compatible agent definitions (markdown files in
+  .opencode/agents/). Users can specify which agent type to use per task via the `agent` YAML field or --agent flag on
+  launch. Agents can be pulled on-demand at launch time, or woco can suggest alternatives from the registry based on
+  task description/tags.
+
+  Fallback behavior: If the specified agent is not found in the local cache or registry, emit a warning and fall back to
+  generalist-agent.md. If the registry is unreachable (offline mode), use only locally cached agents. The cache location
+  should be .wombo-combo/agents-cache/ (separate from .opencode/agents/ which is the active install dir).
+status: backlog
+completion: 0
+difficulty: hard
+priority: high
+depends_on:
+  - agent-selection-per-feature
+effort: P2D
+started_at: null
+ended_at: null
+constraints:
+  - Must pull agent definitions from the agency-agents GitHub repo dynamically
+  - Must convert/adapt agency-agents format to woco's agent template format
+  - Must cache pulled agents locally to avoid repeated network calls
+  - Must support per-task agent type selection (via task YAML `agent` field or --agent flag)
+  - Must support offline mode with cached agents
+forbidden:
+  - Do not bundle all agents statically — they must be pulled from the registry
+references:
+  - https://github.com/msitarzewski/agency-agents
+notes:
+  - "2026-03-12: User requirement. Either pull on-demand or suggest alternatives from the registry."
+subtasks: []

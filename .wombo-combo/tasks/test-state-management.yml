@@ -1,0 +1,25 @@
+id: test-state-management
+title: Test wave state persistence and concurrent mutations
+description: >
+  Unit tests (bun test) for wave state persistence in src/lib/state.ts. Test scenarios: - saveState() / loadState():
+  round-trip serialization, atomic write (tmp file + rename), loading from missing file
+    returns null, loading from corrupted JSON returns null or throws gracefully
+  - updateAgent(): updates agent fields via Object.assign, returns updated state - createWaveState() /
+  createAgentState(): default field values, required fields present - Concurrent mutations: two rapid saveState() calls
+  don't corrupt the file (atomic write guarantees) - agentCounts() / activeAgents() / queuedAgents(): correct filtering
+  of agent states - isWaveComplete(): true when all agents are done/failed/cancelled - areAgentDepsReady() /
+  readyToLaunchAgents(): dependency-aware readiness checks - cancelDownstream(): cascading cancellation of dependent
+  agents Place tests in tests/state-management.test.ts. Use temp directories for state file I/O.
+status: backlog
+completion: 0
+difficulty: medium
+priority: medium
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

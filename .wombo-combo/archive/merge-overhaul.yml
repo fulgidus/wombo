@@ -1,0 +1,40 @@
+id: merge-overhaul
+title: Merge system overhaul — fix race conditions, silent failures, and conflict resolution
+description: >
+  Complete overhaul of the merge pipeline to fix six critical issues: (1) concurrent merge race condition where multiple
+  agents' attemptMerge fired simultaneously fighting over git checkout, (2) silent git pull failure where pull --ff-only
+  result was discarded leaving merges against stale state, (3) canMerge() pre-flight check was dead code never called,
+  (4) asymmetric failure states where different merge failure paths left agents in inconsistent statuses, (5) conflict
+  resolver was single-shot with no retry, (6) manual merge command bypassed pre-flight checks and conflict resolution
+  entirely.
+status: done
+completion: 100
+difficulty: hard
+priority: critical
+depends_on:
+  - merge-queue
+  - merge-pull-fix
+  - merge-preflight
+  - merge-symmetric-states
+  - merge-retry-resolver
+  - merge-manual-pipeline
+effort: PT4H
+started_at: 2026-03-12T23:00:00Z
+ended_at: 2026-03-13T01:00:00Z
+constraints:
+  - Must serialize all merge operations to prevent concurrent checkout races
+  - Must handle git pull failures gracefully with fetch+reset fallback
+  - Must use canMerge() pre-flight before attempting real merge
+  - Retryable failures keep agent as "verified", permanent failures set "failed"
+  - Must not add new AgentStatus values — use existing status union
+  - Manual merge command must get same pipeline as automatic merge
+forbidden:
+  - Do not add "merge_failed" to AgentStatus — keep retryable failures as "verified" with error field
+references: []
+notes:
+  - "2026-03-12: Six fixes implemented across merger.ts, launch.ts, merge.ts, and index.ts."
+  - "merger.ts: enqueueMerge() promise-based mutex, mergeBranch() fetch+reset fallback."
+  - "launch.ts: attemptMerge refactored into attemptMerge/handleMergeSuccess/handleMergeConflict.
+    launchResolverAndRetryMerge with retry loop up to maxRetries+1."
+  - "merge.ts: Rewritten to use attemptMerge() from launch.ts. Loads features for conflict resolution prompt."
+subtasks: []

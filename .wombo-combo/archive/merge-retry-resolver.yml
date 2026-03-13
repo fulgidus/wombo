@@ -1,0 +1,18 @@
+id: merge-retry-resolver
+title: Add retry loop to conflict resolver
+description: >
+  launchResolverAndRetryMerge() now loops up to maxRetries+1 attempts. Each attempt re-launches resolver, re-verifies
+  build, and retries merge. Re-merges base into feature between attempts to refresh conflict markers.
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT1H
+started_at: null
+ended_at: 2026-03-13T01:00:00Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

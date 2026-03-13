@@ -1,0 +1,26 @@
+id: features-graph-command
+title: features graph — dependency graph visualization
+description: >
+  Add `wombo features graph` command that builds a Mermaid flowchart from the features dependency graph and renders it
+  as a Unicode/ASCII box diagram in the terminal using mermaidtui. Shows dependency edges, status badges, orphan
+  detection, dangling dependency warnings, and cycle detection. Supports --ascii, --mermaid (raw source), --subtasks
+  (include subtask nodes), --status (filter), and --output json.
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT3H
+started_at: 2026-03-12T21:36:00Z
+ended_at: 2026-03-12T23:30:00Z
+constraints:
+  - Uses mermaidtui (TypeScript library, no external binary)
+  - Must support --output json for agent consumption
+  - Must include diagnostics (dangling deps, cycles, blocked-but-deps-done)
+  - Default view must show only the dependency tree (connected nodes), not orphans as full boxes
+forbidden: []
+references:
+  - https://github.com/tariqshams/mermaidtui
+notes:
+  - "2026-03-12: Implemented. buildMermaidSource filters to connected nodes only, orphans shown as compact summary."
+subtasks: []

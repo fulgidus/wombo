@@ -1,0 +1,21 @@
+id: agent-schema-introspection
+title: Schema introspection (--describe / --help --json)
+description: >
+  Add a --describe flag to each command (or a top-level `wombo describe <command>`) that emits a JSON schema of accepted
+  arguments, flags, types, defaults, and descriptions. Agents can introspect what the CLI accepts at runtime without
+  pre-stuffed docs.
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on:
+  - agent-json-output
+effort: PT4H
+started_at: 2026-03-11T11:32:35.941Z
+ended_at: 2026-03-11T11:32:39.924Z
+constraints:
+  - Schema must be generated from the actual parseArgs definitions, not hand-maintained.
+forbidden: []
+references: []
+notes: []
+subtasks: []

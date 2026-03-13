@@ -1,0 +1,23 @@
+id: features-file-backup
+title: Auto-backup .features.yml before writes
+description: >
+  Before every saveFeatures() call, create a backup copy of the current .features.yml as .features.yml.bak (or
+  timestamped .features.yml.YYYY-MM-DDTHH-MM-SS.bak). A single YAML serialization bug could destroy the entire feature
+  backlog. Also make saveFeatures atomic (write-to-tmp-then-rename) like saveState already does.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT1H30M
+started_at: null
+ended_at: 2026-03-12T21:40:35.412Z
+constraints:
+  - Keep only the last N backups (configurable, default 5) to avoid disk bloat
+  - Backups should be gitignored
+  - Must use atomic write (tmp + rename) like saveState
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

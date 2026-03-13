@@ -1,0 +1,31 @@
+id: unit-test-suite
+title: Add unit test suite with bun test
+description: >
+  Add a comprehensive test suite using Bun's built-in test runner for core modules. Priority targets: task YAML parsing
+  and validation, state management, worktree filtering (the basename bug that rm -rf'd the project), duration parsing,
+  dependency resolution, CLI arg parsing, and task schema validation. This is critical — we shipped a bug that destroyed
+  the project root. This umbrella task is complete when all 4 sub-tasks are done.
+status: backlog
+completion: 0
+difficulty: medium
+priority: critical
+depends_on:
+  - test-worktree-filtering
+  - test-features-parsing
+  - test-arg-parsing
+  - test-state-management
+effort: P1D
+started_at: null
+ended_at: null
+constraints:
+  - Use Bun's built-in test runner (`bun test`), no external test frameworks
+  - Must cover worktree filtering edge cases (basename vs full-path matching)
+  - Must cover arg parsing edge cases (trailing flags, missing values)
+  - Must cover task YAML parsing (null, empty, invalid schema, invalid enums)
+forbidden:
+  - Do not add jest, vitest, or any external test runner dependency
+references: []
+notes:
+  - "2026-03-12: Created after cleanup bug destroyed the project root. Tests would have caught the .includes() vs
+    .startsWith() issue."
+subtasks: []

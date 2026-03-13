@@ -1,0 +1,19 @@
+id: agent-compact-output
+title: Context-window-friendly output modes
+description: >
+  Add --compact or --fields flags that let agents request minimal output. For example, `wombo features list --fields
+  id,status,priority` returns only those columns. Reduces token consumption when agents query wombo for state.
+status: done
+completion: 100
+difficulty: easy
+priority: medium
+depends_on:
+  - agent-json-output
+effort: PT2H
+started_at: 2026-03-11T11:37:09.441Z
+ended_at: 2026-03-11T11:37:09.550Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

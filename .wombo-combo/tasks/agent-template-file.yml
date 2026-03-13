@@ -1,0 +1,19 @@
+id: agent-template-file
+title: Ship wave-worker.md as a bundled template in src/templates/
+description: >
+  Move/copy the current agent/wave-worker.md content into src/templates/wave-worker.md so wombo always has a canonical
+  agent definition to install. The template should use placeholders (e.g. {{project}}) where appropriate so it can be
+  customized per-project.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T15:57:50.829Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

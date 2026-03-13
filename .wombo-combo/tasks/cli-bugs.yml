@@ -1,0 +1,27 @@
+id: cli-bugs
+title: Fix bugs found during test drive
+description: Fix crashes, validation gaps, and error handling issues discovered during comprehensive CLI testing.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on:
+  - bug-enum-validation
+  - bug-yaml-schema-crash
+  - bug-yaml-parse-error
+  - bug-archive-error-json
+  - bug-dev-mode-guard
+  - bug-stale-schema-version
+  - bug-version-flag-collision
+  - bug-trailing-flag-crash
+  - bug-status-marks-dead-completed
+  - bug-dryrun-cleanup-matching
+  - bug-duration-parser-mismatch
+effort: PT3H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

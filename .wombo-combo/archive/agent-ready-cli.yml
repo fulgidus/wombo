@@ -1,0 +1,37 @@
+id: agent-ready-cli
+title: Make wombo agent-ready
+description: >
+  Retrofit the wombo CLI to be first-class usable by AI coding agents, following the principles in Justin Poehnelt's
+  "You Need to Rewrite Your CLI for AI Agents". This means: machine-readable JSON output on every command, input
+  validation/hardening against hallucinations, schema introspection (--describe/--help --json), dry-run support on all
+  mutating commands, field masks or compact output modes to protect agent context windows, and shipping
+  CONTEXT.md/AGENTS.md files that encode invariants agents cannot intuit from --help alone.
+status: done
+completion: 100
+difficulty: hard
+priority: critical
+depends_on:
+  - agent-input-validation
+  - agent-schema-introspection
+  - agent-dry-run-everywhere
+  - agent-context-files
+  - agent-compact-output
+effort: P2D
+started_at: 2026-03-11T11:16:05.906Z
+ended_at: 2026-03-11T11:37:34.110Z
+constraints:
+  - Human-friendly output must remain the default on TTY; JSON is used when --output json is passed or stdout is not a
+    TTY.
+  - All existing commands must keep working — this is additive, not a rewrite.
+  - Input validation must reject control characters, path traversals, embedded query params in IDs, and double-encoded
+    strings.
+forbidden:
+  - Do not remove or break any existing human-facing CLI flags or output.
+  - Do not add a dependency on an external validation library — keep validation self-contained.
+references:
+  - https://justin.poehnelt.com/posts/rewrite-your-cli-for-ai-agents/
+  - https://modelcontextprotocol.io/
+notes:
+  - "2026-03-11: Feature created from article reference. Prioritized as critical because dogfooding with wombo agents
+    requires agent-friendly output."
+subtasks: []

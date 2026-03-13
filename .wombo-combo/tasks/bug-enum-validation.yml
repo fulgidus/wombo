@@ -1,0 +1,19 @@
+id: bug-enum-validation
+title: Validate priority/difficulty enums on features add
+description: >
+  --priority and --difficulty flags on `features add` accept any string without validation. Should reject values not in
+  the allowed enums (critical/high/medium/low/wishlist for priority, trivial/easy/medium/hard/very_hard for difficulty).
+status: done
+completion: 100
+difficulty: trivial
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T15:57:50.083Z
+constraints: []
+forbidden: []
+references: []
+notes:
+  - "Test: bun dev features add x Title --priority invalid → should error"
+subtasks: []
