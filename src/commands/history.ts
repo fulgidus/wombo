@@ -17,6 +17,7 @@ import {
   type WaveHistoryRecord,
 } from "../lib/history.js";
 import { output, outputError, type OutputFormat } from "../lib/output.js";
+import { renderHistoryList, renderHistoryDetail } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -246,6 +247,9 @@ export async function cmdHistory(opts: HistoryCommandOptions): Promise<void> {
 
     output(outputFmt, record, () => {
       renderWaveDetails(record!);
+    }, () => {
+      // TOON renderer
+      console.log(renderHistoryDetail(record!));
     });
   } else {
     // List all waves
@@ -253,6 +257,9 @@ export async function cmdHistory(opts: HistoryCommandOptions): Promise<void> {
 
     output(outputFmt, records, () => {
       renderWaveList(records);
+    }, () => {
+      // TOON renderer
+      console.log(renderHistoryList(records));
     });
   }
 }
