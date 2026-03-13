@@ -2,16 +2,18 @@
  * output.ts — Shared output helpers for agent-ready CLI.
  *
  * Provides a centralized way for commands to emit structured data that
- * renders as human-readable text on TTY or as JSON when --output json
- * is specified (or when stdout is not a TTY).
+ * renders as human-readable text on TTY, as JSON when --output json
+ * is specified, or as compact TOON notation when --output toon is used.
  *
  * Usage in commands:
  *   import { output, OutputFormat } from "../lib/output.js";
  *
  *   // At the end of a command:
- *   output(format, data);           // emits JSON or human text
- *   outputError(format, message);   // emits error in the right format
+ *   output(format, data, textRenderer, toonRenderer);  // emits JSON, text, or TOON
+ *   outputError(format, message);                      // emits error in the right format
  */
+
+import { renderGeneric } from "./toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,16 +48,26 @@ export function resolveOutputFormat(explicit?: string): OutputFormat {
 }
 
 /**
- * Emit structured data. In JSON mode, outputs a single JSON line to stdout.
- * In text mode, calls the provided textRenderer callback.
+ * Emit structured data.
+ *   - JSON mode: outputs a single JSON line to stdout
+ *   - TOON mode: calls toonRenderer if provided, otherwise uses generic TOON formatter
+ *   - Text mode: calls textRenderer
  */
 export function output(
   format: OutputFormat,
   data: unknown,
-  textRenderer: () => void
+  textRenderer: () => void,
+  toonRenderer?: () => void
 ): void {
   if (format === "json") {
     console.log(JSON.stringify(data));
+  } else if (format === "toon") {
+    if (toonRenderer) {
+      toonRenderer();
+    } else {
+      // Generic fallback: convert structured data to TOON
+      console.log(renderGeneric(data));
+    }
   } else {
     textRenderer();
   }
@@ -63,11 +75,14 @@ export function output(
 
 /**
  * Emit an error. In JSON mode, outputs {"error": message} to stderr.
+ * In TOON mode, outputs "#ERROR message" to stderr.
  * In text mode, outputs the message to stderr normally.
  */
 export function outputError(format: OutputFormat, message: string, exitCode: number = 1): never {
   if (format === "json") {
     console.error(JSON.stringify({ error: message }));
+  } else if (format === "toon") {
+    console.error(`#ERROR ${message}`);
   } else {
     console.error(message);
   }
@@ -76,6 +91,7 @@ export function outputError(format: OutputFormat, message: string, exitCode: num
 
 /**
  * Emit a success/info message. In JSON mode, outputs {"message": msg, ...extra}.
+ * In TOON mode, outputs "#MSG message" to stdout.
  * In text mode, outputs the message to stdout normally.
  */
 export function outputMessage(
@@ -85,6 +101,8 @@ export function outputMessage(
 ): void {
   if (format === "json") {
     console.log(JSON.stringify({ message, ...extra }));
+  } else if (format === "toon") {
+    console.log(`#MSG ${message}`);
   } else {
     console.log(message);
   }

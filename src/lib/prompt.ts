@@ -190,7 +190,7 @@ export function generatePrompt(
   sections.push("- Commit after each logical unit of work (roughly per subtask)");
   sections.push("- Do NOT squash all changes into one commit");
   sections.push("- Do NOT push to remote -- the orchestrator handles that");
-  sections.push(`- Do NOT modify \`${config.tasksFile}\` -- the orchestrator handles that`);
+  sections.push(`- Do NOT modify \`${config.tasksDir}\` -- the orchestrator handles that`);
 
   // Final instruction
   sections.push(`\n## Execution\n`);
@@ -267,7 +267,7 @@ export function generateConflictResolutionPrompt(
   sections.push("- Do NOT abort the merge (`git merge --abort`)");
   sections.push("- Do NOT create new branches or rebase");
   sections.push("- Do NOT push to remote");
-  sections.push(`- Do NOT modify \`${config.tasksFile}\``);
+  sections.push(`- Do NOT modify \`${config.tasksDir}\``);
   sections.push("- Keep BOTH the feature's changes and the upstream changes where possible");
   sections.push("- If in doubt, prefer the feature's implementation but ensure upstream additions are not lost");
 

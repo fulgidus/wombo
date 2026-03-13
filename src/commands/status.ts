@@ -17,6 +17,7 @@ import { isProcessRunning } from "../lib/launcher.js";
 import { branchHasChanges } from "../lib/worktree.js";
 import { printDashboard } from "../lib/ui.js";
 import { output, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderStatus } from "../lib/toon.js";
 
 export interface StatusOptions {
   projectRoot: string;
@@ -170,5 +171,8 @@ export async function cmdStatus(opts: StatusOptions): Promise<void> {
 
   output(fmt, buildStatusJson(state), () => {
     printDashboard(state);
+  }, () => {
+    // TOON renderer
+    console.log(renderStatus(state));
   });
 }

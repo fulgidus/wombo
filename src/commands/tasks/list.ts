@@ -23,6 +23,7 @@ import {
   type FeaturesFile,
 } from "../../lib/tasks.js";
 import { output, filterFieldsArray, renderCompactTable, type OutputFormat } from "../../lib/output.js";
+import { renderTasksList } from "../../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -98,6 +99,9 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
   if (features.length === 0) {
     output(opts.outputFmt ?? "text", { features: [], total: 0, effort: "0m" }, () => {
       console.log("No tasks match the given filters.");
+    }, () => {
+      // TOON: emit empty result
+      console.log(renderTasksList([]));
     });
     return;
   }
@@ -141,6 +145,10 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
           featureData as Record<string, unknown>[],
           opts.fields!
         );
+      },
+      () => {
+        // TOON: --fields is ignored; emit all fields in compact format
+        console.log(renderTasksList(featureData));
       }
     );
     return;
@@ -183,6 +191,10 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
         }
         console.log("");
       }
+    },
+    () => {
+      // TOON renderer
+      console.log(renderTasksList(featureData));
     }
   );
 }
