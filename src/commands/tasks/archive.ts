@@ -77,7 +77,7 @@ export async function cmdTasksArchive(opts: TasksArchiveOptions): Promise<void> 
     outputMessage(fmt, `Would archive ${toArchive.length} task(s)`, {
       dry_run: true,
       count: toArchive.length,
-      features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
+      archived: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
     });
     if (fmt === "text") {
       console.log("");
@@ -97,7 +97,7 @@ export async function cmdTasksArchive(opts: TasksArchiveOptions): Promise<void> 
 
   outputMessage(fmt, `Archived ${toArchive.length} task(s)`, {
     count: toArchive.length,
-    features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
+    archived: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
   });
   if (fmt === "text") {
     for (const f of toArchive) {
