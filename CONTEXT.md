@@ -61,14 +61,14 @@ The project using wombo has a `.wombo-combo/config.json` file at its root. Key f
 Use `--output json` for machine-readable output:
 
 ```sh
-# List all features
-wombo features list --output json
+# List all tasks
+wombo tasks list --output json
 
-# Show a specific feature
-wombo features show <feature-id> --output json
+# Show a specific task
+wombo tasks show <task-id> --output json
 
-# Check feature file validity
-wombo features check --output json
+# Check task file validity
+wombo tasks check --output json
 ```
 
 Set `WOMBO_OUTPUT=json` to default all output to JSON without the flag.

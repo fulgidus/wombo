@@ -1,10 +1,10 @@
 /**
- * features/add.ts — Add a new feature to the features file.
+ * tasks/add.ts — Add a new task to the tasks file.
  *
  * Usage:
- *   wombo features add <id> --title "Feature Title" [--description "..."]
- *                      [--priority medium] [--difficulty easy] [--effort PT2H]
- *                      [--depends-on "feat1,feat2"]
+ *   wombo tasks add <id> --title "Task Title" [--description "..."]
+ *                   [--priority medium] [--difficulty easy] [--effort PT2H]
+ *                   [--depends-on "task1,task2"]
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -25,7 +25,7 @@ import { validateEnum } from "../../lib/validate.js";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesAddOptions {
+export interface TasksAddOptions {
   projectRoot: string;
   config: WomboConfig;
   id: string;
@@ -43,17 +43,17 @@ export interface FeaturesAddOptions {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
+export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.id) {
-    outputError(fmt, "Usage: wombo features add <id> --title \"Feature Title\"");
+    outputError(fmt, "Usage: wombo tasks add <id> --title \"Task Title\"");
     return;
   }
 
   if (!opts.title) {
-    outputError(fmt, "--title is required when adding a feature.");
+    outputError(fmt, "--title is required when adding a task.");
     return;
   }
 
@@ -82,7 +82,7 @@ export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
   // Check for duplicate ID
   const existingIds = allFeatureIds(data);
   if (existingIds.includes(opts.id)) {
-    outputError(fmt, `Feature ID "${opts.id}" already exists.`);
+    outputError(fmt, `Task ID "${opts.id}" already exists.`);
     return;
   }
 
@@ -90,7 +90,7 @@ export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
   if (opts.dependsOn?.length) {
     for (const dep of opts.dependsOn) {
       if (!existingIds.includes(dep)) {
-        outputError(fmt, `Dependency "${dep}" does not exist in the features file.`);
+        outputError(fmt, `Dependency "${dep}" does not exist in the tasks file.`);
         return;
       }
     }
@@ -110,7 +110,7 @@ export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
 
   // Dry-run: show what would be added without writing
   if (opts.dryRun) {
-    outputMessage(fmt, `[dry-run] Would add feature: ${opts.id} — ${opts.title}`, {
+    outputMessage(fmt, `[dry-run] Would add task: ${opts.id} — ${opts.title}`, {
       dry_run: true,
       id: feature.id,
       title: feature.title,
@@ -126,7 +126,7 @@ export async function cmdFeaturesAdd(opts: FeaturesAddOptions): Promise<void> {
   data.tasks.push(feature);
   saveFeatures(projectRoot, config, data);
 
-  outputMessage(fmt, `Added feature: ${opts.id} — ${opts.title}`, {
+  outputMessage(fmt, `Added task: ${opts.id} — ${opts.title}`, {
     id: feature.id,
     title: feature.title,
     priority: feature.priority,

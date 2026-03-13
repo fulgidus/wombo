@@ -81,7 +81,7 @@ export interface WomboConfig {
     /** Whether to use HTTPS mode */
     https: boolean;
   };
-  /** Backup configuration for features file */
+  /** Backup configuration for tasks file */
   backup: {
     /** Maximum number of timestamped backups to keep */
     maxBackups: number;

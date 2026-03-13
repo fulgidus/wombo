@@ -8,7 +8,7 @@
  *
  * The registry is NOT used for actual arg parsing (that's still the hand-rolled
  * switch in index.ts), but the two must stay in sync. If they drift, `wombo
- * features check` should eventually catch it.
+ * tasks check` should eventually catch it.
  */
 
 import { readFileSync } from "node:fs";
@@ -71,7 +71,7 @@ export interface CommandDef {
   mutating: boolean;
   /** Whether this command supports --dry-run */
   supportsDryRun: boolean;
-  /** Subcommands (for "features" parent) */
+  /** Subcommands (for "tasks" parent) */
   subcommands?: CommandDef[];
 }
 
@@ -140,7 +140,8 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       { name: "--quickest-wins", description: "Select N features with lowest effort", type: "number" },
       { name: "--priority", description: "Filter by priority level", type: "string", enum: ["critical", "high", "medium", "low", "wishlist"] },
       { name: "--difficulty", description: "Filter by difficulty level", type: "string", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
-      { name: "--features", description: "Select specific features by comma-separated IDs", type: "string" },
+      { name: "--features", description: "Select specific features by comma-separated IDs (alias for --tasks)", type: "string" },
+      { name: "--tasks", description: "Select specific tasks by comma-separated IDs", type: "string" },
       { name: "--all-ready", description: "Select all features whose dependencies are met", type: "boolean", default: false },
       { name: "--max-concurrent", description: "Max agents running in parallel", type: "number" },
       { name: "--model", alias: "-m", description: "Model to use (e.g., anthropic/claude-sonnet-4-20250514)", type: "string" },
@@ -310,9 +311,9 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: false,
   },
 
-  // --- features (parent with subcommands) ---------------------------------
+  // --- tasks (parent with subcommands) — also accepts "features" as alias ---
   {
-    name: "features",
+    name: "tasks",
     summary: "Manage tasks file",
     positionals: [],
     flags: [],
@@ -320,29 +321,29 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: false,
     subcommands: [
       {
-        name: "features list",
-        summary: "List features with optional filtering",
+        name: "tasks list",
+        summary: "List tasks with optional filtering",
         positionals: [],
         flags: [
           { name: "--status", description: "Filter by status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
           { name: "--priority", description: "Filter by priority", type: "string", enum: ["critical", "high", "medium", "low", "wishlist"] },
           { name: "--difficulty", description: "Filter by difficulty", type: "string", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
-          { name: "--ready", description: "Show only ready features (backlog + deps met)", type: "boolean", default: false },
-          { name: "--include-archive", description: "Include archived features", type: "boolean", default: false },
+          { name: "--ready", description: "Show only ready tasks (backlog + deps met)", type: "boolean", default: false },
+          { name: "--include-archive", description: "Include archived tasks", type: "boolean", default: false },
           { name: "--fields", description: "Comma-separated list of fields to include in output", type: "string" },
         ],
         mutating: false,
         supportsDryRun: false,
       },
       {
-        name: "features add",
-        summary: "Add a new feature",
+        name: "tasks add",
+        summary: "Add a new task",
         positionals: [
-          { name: "id", description: "Feature ID (kebab-case)", required: true },
-          { name: "title", description: "Feature title", required: true },
+          { name: "id", description: "Task ID (kebab-case)", required: true },
+          { name: "title", description: "Task title", required: true },
         ],
         flags: [
-          { name: "--description", alias: "--desc", description: "Feature description", type: "string" },
+          { name: "--description", alias: "--desc", description: "Task description", type: "string" },
           { name: "--priority", description: "Priority level", type: "string", default: "medium", enum: ["critical", "high", "medium", "low", "wishlist"] },
           { name: "--difficulty", description: "Difficulty level", type: "string", default: "medium", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
           { name: "--effort", description: "Effort estimate (ISO 8601 duration, e.g. PT2H)", type: "string", default: "PT1H" },
@@ -353,10 +354,10 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
-        name: "features set-status",
-        summary: "Change a feature's status",
+        name: "tasks set-status",
+        summary: "Change a task's status",
         positionals: [
-          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "task-id", description: "Task ID to update", required: true },
           { name: "status", description: "New status value", required: true },
         ],
         flags: [
@@ -366,10 +367,10 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
-        name: "features set-priority",
-        summary: "Change a feature's priority",
+        name: "tasks set-priority",
+        summary: "Change a task's priority",
         positionals: [
-          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "task-id", description: "Task ID to update", required: true },
           { name: "priority", description: "New priority value", required: true },
         ],
         flags: [
@@ -379,10 +380,10 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
-        name: "features set-difficulty",
-        summary: "Change a feature's difficulty",
+        name: "tasks set-difficulty",
+        summary: "Change a task's difficulty",
         positionals: [
-          { name: "feature-id", description: "Feature ID to update", required: true },
+          { name: "task-id", description: "Task ID to update", required: true },
           { name: "difficulty", description: "New difficulty value", required: true },
         ],
         flags: [
@@ -392,7 +393,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
-        name: "features check",
+        name: "tasks check",
         summary: "Validate tasks file (schema, deps, duplicates, cycles)",
         positionals: [],
         flags: [],
@@ -400,10 +401,10 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: false,
       },
       {
-        name: "features archive",
-        summary: "Move done/cancelled features to archive section",
+        name: "tasks archive",
+        summary: "Move done/cancelled tasks to archive section",
         positionals: [
-          { name: "feature-id", description: "Specific feature to archive (optional)", required: false },
+          { name: "task-id", description: "Specific task to archive (optional)", required: false },
         ],
         flags: [
           { name: "--dry-run", description: "Show what would be archived without moving", type: "boolean", default: false },
@@ -412,10 +413,10 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: true,
       },
       {
-        name: "features show",
-        summary: "Show detailed information about a specific feature",
+        name: "tasks show",
+        summary: "Show detailed information about a specific task",
         positionals: [
-          { name: "feature-id", description: "Feature ID to display", required: true },
+          { name: "task-id", description: "Task ID to display", required: true },
         ],
         flags: [
           { name: "--fields", description: "Comma-separated list of fields to include in output", type: "string" },
@@ -424,15 +425,15 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         supportsDryRun: false,
       },
       {
-        name: "features graph",
-        summary: "Visualize the feature dependency graph as a terminal diagram",
+        name: "tasks graph",
+        summary: "Visualize the task dependency graph as a terminal diagram",
         description:
-          "Builds a Mermaid flowchart from the features dependency graph and renders " +
+          "Builds a Mermaid flowchart from the tasks dependency graph and renders " +
           "it as a Unicode box diagram. Shows dependency edges, status badges, orphan " +
           "detection, dangling dependency warnings, and cycle detection.",
         positionals: [],
         flags: [
-          { name: "--status", description: "Filter graph to features with this status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
+          { name: "--status", description: "Filter graph to tasks with this status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
           { name: "--ascii", description: "Use ASCII-only rendering (no Unicode box chars)", type: "boolean", default: false },
           { name: "--mermaid", description: "Emit raw Mermaid source instead of rendered graph", type: "boolean", default: false },
           { name: "--subtasks", description: "Include subtask-level nodes in the graph", type: "boolean", default: false },
@@ -484,19 +485,23 @@ export const COMMAND_REGISTRY: CommandDef[] = [
 // ---------------------------------------------------------------------------
 
 /**
- * Find a command definition by name. Supports compound names like "features list".
+ * Find a command definition by name. Supports compound names like "tasks list".
+ * Also supports "features" as a backward-compat alias for "tasks".
  */
 export function findCommandDef(name: string): CommandDef | undefined {
+  // Normalize "features" -> "tasks" for backward compatibility
+  const normalized = name.replace(/^features(\s|$)/, "tasks$1");
+
   // Try direct match first
-  const direct = COMMAND_REGISTRY.find((c) => c.name === name);
+  const direct = COMMAND_REGISTRY.find((c) => c.name === normalized);
   if (direct) return direct;
 
-  // Try compound: "features list" -> look in features subcommands
-  const parts = name.split(/\s+/);
+  // Try compound: "tasks list" -> look in tasks subcommands
+  const parts = normalized.split(/\s+/);
   if (parts.length === 2) {
     const parent = COMMAND_REGISTRY.find((c) => c.name === parts[0]);
     if (parent?.subcommands) {
-      return parent.subcommands.find((sc) => sc.name === name || sc.name === parts[1]);
+      return parent.subcommands.find((sc) => sc.name === normalized || sc.name === parts[1]);
     }
   }
 

@@ -1,10 +1,10 @@
 /**
- * features/archive.ts — Move done/cancelled features to the archive section.
+ * tasks/archive.ts — Move done/cancelled tasks to the archive section.
  *
  * Usage:
- *   wombo features archive              # archive all done + cancelled
- *   wombo features archive <feature-id> # archive a specific feature
- *   wombo features archive --dry-run    # show what would be archived
+ *   wombo tasks archive              # archive all done + cancelled
+ *   wombo tasks archive <task-id>    # archive a specific task
+ *   wombo tasks archive --dry-run    # show what would be archived
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -20,7 +20,7 @@ import { outputError, outputMessage, type OutputFormat } from "../../lib/output.
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesArchiveOptions {
+export interface TasksArchiveOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId?: string;
@@ -32,7 +32,7 @@ export interface FeaturesArchiveOptions {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<void> {
+export async function cmdTasksArchive(opts: TasksArchiveOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
@@ -51,13 +51,13 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
     if (idx === -1) {
       // Check if already in archive
       if (data.archive.find((f) => f.id === opts.featureId)) {
-        outputMessage(fmt, `Feature "${opts.featureId}" is already in the archive.`, {
+        outputMessage(fmt, `Task "${opts.featureId}" is already in the archive.`, {
           already_archived: true,
           id: opts.featureId,
         });
         return;
       }
-      outputError(fmt, `Feature "${opts.featureId}" not found.`);
+      outputError(fmt, `Task "${opts.featureId}" not found.`);
       return;
     }
     toArchive = [data.tasks[idx]];
@@ -69,12 +69,12 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
   }
 
   if (toArchive.length === 0) {
-    outputMessage(fmt, "No features to archive.", { count: 0 });
+    outputMessage(fmt, "No tasks to archive.", { count: 0 });
     return;
   }
 
   if (opts.dryRun) {
-    outputMessage(fmt, `Would archive ${toArchive.length} feature(s)`, {
+    outputMessage(fmt, `Would archive ${toArchive.length} task(s)`, {
       dry_run: true,
       count: toArchive.length,
       features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
@@ -95,7 +95,7 @@ export async function cmdFeaturesArchive(opts: FeaturesArchiveOptions): Promise<
 
   saveFeatures(projectRoot, config, data);
 
-  outputMessage(fmt, `Archived ${toArchive.length} feature(s)`, {
+  outputMessage(fmt, `Archived ${toArchive.length} task(s)`, {
     count: toArchive.length,
     features: toArchive.map((f) => ({ id: f.id, title: f.title, status: f.status })),
   });

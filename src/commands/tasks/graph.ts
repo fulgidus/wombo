@@ -1,15 +1,15 @@
 /**
- * features/graph.ts — Visualize the feature dependency graph.
+ * tasks/graph.ts — Visualize the task dependency graph.
  *
  * Usage:
- *   wombo features graph                     # show full dependency graph
- *   wombo features graph --status backlog    # filter by status
- *   wombo features graph --ascii             # ASCII-only rendering
- *   wombo features graph --output json       # emit mermaid source as JSON
- *   wombo features graph --mermaid           # emit raw mermaid source text
- *   wombo features graph --subtasks          # include subtask-level nodes
+ *   wombo tasks graph                     # show full dependency graph
+ *   wombo tasks graph --status backlog    # filter by status
+ *   wombo tasks graph --ascii             # ASCII-only rendering
+ *   wombo tasks graph --output json       # emit mermaid source as JSON
+ *   wombo tasks graph --mermaid           # emit raw mermaid source text
+ *   wombo tasks graph --subtasks          # include subtask-level nodes
  *
- * Builds a Mermaid flowchart from the features dependency graph and renders
+ * Builds a Mermaid flowchart from the tasks dependency graph and renders
  * it as a Unicode box diagram in the terminal using mermaidtui.
  */
 
@@ -31,7 +31,7 @@ import { renderMermaidToTui } from "mermaidtui";
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesGraphOptions {
+export interface TasksGraphOptions {
   projectRoot: string;
   config: WomboConfig;
   status?: FeatureStatus;
@@ -424,7 +424,7 @@ function collectSubtaskItems(
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void> {
+export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const data = loadFeatures(projectRoot, config);
   const fmt = opts.outputFmt ?? "text";
@@ -435,8 +435,8 @@ export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void
   });
 
   if (nodeCount === 0 && orphanCount === 0) {
-    output(fmt, { graph: null, nodes: 0, edges: 0, message: "No features to graph" }, () => {
-      console.log("No features to graph.");
+    output(fmt, { graph: null, nodes: 0, edges: 0, message: "No tasks to graph" }, () => {
+      console.log("No tasks to graph.");
     });
     return;
   }
@@ -474,7 +474,7 @@ export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void
   }
 
   // Default: render the graph in the terminal
-  console.log(`\n${BOLD}Feature Dependency Graph${RESET}`);
+  console.log(`\n${BOLD}Task Dependency Graph${RESET}`);
 
   if (nodeCount > 0 && source) {
     const rendered = renderMermaidToTui(source, { ascii: !!opts.ascii }) as string;
@@ -486,7 +486,7 @@ export async function cmdFeaturesGraph(opts: FeaturesGraphOptions): Promise<void
 
   // Print orphan summary
   if (orphans.length > 0) {
-    console.log(`\n${BOLD}Standalone features${RESET} ${DIM}(${orphans.length} with no dependencies):${RESET}`);
+    console.log(`\n${BOLD}Standalone tasks${RESET} ${DIM}(${orphans.length} with no dependencies):${RESET}`);
     for (const o of orphans) {
       const badge = STATUS_BADGE[o.status];
       console.log(`  ${DIM}${badge}${RESET} ${o.id} ${DIM}— ${o.title}${RESET}`);

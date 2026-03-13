@@ -1,8 +1,8 @@
 /**
- * features/set-status.ts — Change a feature's status.
+ * tasks/set-status.ts — Change a task's status.
  *
  * Usage:
- *   wombo features set-status <feature-id> <new-status>
+ *   wombo tasks set-status <task-id> <new-status>
  *
  * Valid statuses: backlog, planned, in_progress, blocked, in_review, done, cancelled
  */
@@ -30,7 +30,7 @@ const VALID_STATUSES: FeatureStatus[] = [
   "cancelled",
 ];
 
-export interface FeaturesSetStatusOptions {
+export interface TasksSetStatusOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId: string;
@@ -43,12 +43,12 @@ export interface FeaturesSetStatusOptions {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Promise<void> {
+export async function cmdTasksSetStatus(opts: TasksSetStatusOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newStatus) {
-    outputError(fmt, `Usage: wombo features set-status <feature-id> <new-status>\nValid statuses: ${VALID_STATUSES.join(", ")}`);
+    outputError(fmt, `Usage: wombo tasks set-status <task-id> <new-status>\nValid statuses: ${VALID_STATUSES.join(", ")}`);
     return;
   }
 
@@ -62,7 +62,7 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    outputError(fmt, `Feature "${opts.featureId}" not found.`);
+    outputError(fmt, `Task "${opts.featureId}" not found.`);
     return;
   }
 
@@ -70,7 +70,7 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
   const newStatus = opts.newStatus as FeatureStatus;
 
   if (oldStatus === newStatus) {
-    outputMessage(fmt, `Feature "${opts.featureId}" is already in status "${newStatus}".`, {
+    outputMessage(fmt, `Task "${opts.featureId}" is already in status "${newStatus}".`, {
       id: opts.featureId,
       status: newStatus,
       changed: false,
@@ -106,7 +106,7 @@ export async function cmdFeaturesSetStatus(opts: FeaturesSetStatusOptions): Prom
 
   saveFeatures(projectRoot, config, data);
 
-  outputMessage(fmt, `Feature "${opts.featureId}": ${oldStatus} → ${newStatus}`, {
+  outputMessage(fmt, `Task "${opts.featureId}": ${oldStatus} → ${newStatus}`, {
     id: opts.featureId,
     old_status: oldStatus,
     new_status: newStatus,

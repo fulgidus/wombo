@@ -39,11 +39,11 @@ woco merge
 | `woco merge` | Merge verified branches |
 | `woco retry <id>` | Retry a failed agent |
 | `woco cleanup` | Remove worktrees and sessions |
-| `woco features list` | List features |
-| `woco features add` | Add a feature |
-| `woco features set-status <id> <status>` | Update feature status |
-| `woco features check` | Validate tasks file |
-| `woco features show <id>` | Show feature details |
+| `woco tasks list` | List tasks |
+| `woco tasks add` | Add a task |
+| `woco tasks set-status <id> <status>` | Update task status |
+| `woco tasks check` | Validate tasks file |
+| `woco tasks show <id>` | Show task details |
 | `woco upgrade` | Check for updates and upgrade |
 
 ## Launch options
@@ -52,7 +52,7 @@ woco merge
 woco launch --all-ready              # all features with met dependencies
 woco launch --top-priority 3         # top 3 by priority
 woco launch --quickest-wins 3        # 3 lowest-effort features
-woco launch --features "id1,id2"     # specific features
+woco launch --tasks "id1,id2"     # specific tasks
 woco launch --interactive            # tmux TUI mode
 woco launch --dry-run                # preview without launching
 ```

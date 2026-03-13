@@ -1,13 +1,13 @@
 /**
- * features/set-difficulty.ts — Change a feature's difficulty.
+ * tasks/set-difficulty.ts — Change a task's difficulty.
  *
  * Usage:
- *   wombo features set-difficulty <feature-id> <difficulty>
+ *   wombo tasks set-difficulty <task-id> <difficulty>
  *
  * Valid difficulties: trivial, easy, medium, hard, very_hard
  *
  * Supports --output json and --dry-run.
- * Works on both top-level features and subtasks.
+ * Works on both top-level tasks and subtasks.
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -31,7 +31,7 @@ const VALID_DIFFICULTIES: Difficulty[] = [
   "very_hard",
 ];
 
-export interface FeaturesSetDifficultyOptions {
+export interface TasksSetDifficultyOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId: string;
@@ -44,12 +44,12 @@ export interface FeaturesSetDifficultyOptions {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesSetDifficulty(opts: FeaturesSetDifficultyOptions): Promise<void> {
+export async function cmdTasksSetDifficulty(opts: TasksSetDifficultyOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newDifficulty) {
-    outputError(fmt, `Usage: wombo features set-difficulty <feature-id> <difficulty>\nValid difficulties: ${VALID_DIFFICULTIES.join(", ")}`);
+    outputError(fmt, `Usage: wombo tasks set-difficulty <task-id> <difficulty>\nValid difficulties: ${VALID_DIFFICULTIES.join(", ")}`);
     return;
   }
 
@@ -63,7 +63,7 @@ export async function cmdFeaturesSetDifficulty(opts: FeaturesSetDifficultyOption
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    outputError(fmt, `Feature "${opts.featureId}" not found.`);
+    outputError(fmt, `Task "${opts.featureId}" not found.`);
     return;
   }
 
@@ -71,7 +71,7 @@ export async function cmdFeaturesSetDifficulty(opts: FeaturesSetDifficultyOption
   const newDifficulty = opts.newDifficulty as Difficulty;
 
   if (oldDifficulty === newDifficulty) {
-    outputMessage(fmt, `Feature "${opts.featureId}" already has difficulty "${newDifficulty}".`, {
+    outputMessage(fmt, `Task "${opts.featureId}" already has difficulty "${newDifficulty}".`, {
       id: opts.featureId,
       difficulty: newDifficulty,
       changed: false,
@@ -96,7 +96,7 @@ export async function cmdFeaturesSetDifficulty(opts: FeaturesSetDifficultyOption
 
   saveFeatures(projectRoot, config, data);
 
-  outputMessage(fmt, `Feature "${opts.featureId}" difficulty: ${oldDifficulty} → ${newDifficulty}`, {
+  outputMessage(fmt, `Task "${opts.featureId}" difficulty: ${oldDifficulty} → ${newDifficulty}`, {
     id: opts.featureId,
     old_difficulty: oldDifficulty,
     new_difficulty: newDifficulty,

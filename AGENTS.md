@@ -26,8 +26,8 @@ changes. `bun dev` runs `bun src/index.ts` which executes the current working tr
 **Examples:**
 ```sh
 bun dev help
-bun dev features list
-bun dev features add my-feat "My Feature" --priority high
+bun dev tasks list
+bun dev tasks add my-feat "My Feature" --priority high
 bun dev launch --dry-run --all-ready
 bun dev init --force
 ```
@@ -129,7 +129,7 @@ bun run build
 
 # Run any command via dev
 bun dev help
-bun dev features check
+bun dev tasks check
 ```
 
 There is no test suite yet. When adding tests, use Bun's built-in test runner
@@ -148,19 +148,19 @@ There is no test suite yet. When adding tests, use Bun's built-in test runner
 ## Feature backlog
 
 The active backlog lives in `.wombo-combo/tasks.yml` (local, gitignored). Use
-`bun dev features list` to see it. The canonical template is at
+`bun dev tasks list` to see it. The canonical template is at
 `src/templates/tasks.yml`.
 
 ## Making changes
 
-1. **Check the backlog:** `bun dev features list`
-2. **Pick a feature/subtask:** `bun dev features show <id>`
-3. **Mark it in-progress:** `bun dev features set-status <id> in_progress`
+1. **Check the backlog:** `bun dev tasks list`
+2. **Pick a feature/subtask:** `bun dev tasks show <id>`
+3. **Mark it in-progress:** `bun dev tasks set-status <id> in_progress`
 4. **Implement the change**
 5. **Typecheck:** `bun run typecheck`
 6. **Build:** `bun run build`
 7. **Test manually:** `bun dev <relevant-command>`
-8. **Mark done:** `bun dev features set-status <id> done`
+8. **Mark done:** `bun dev tasks set-status <id> done`
 9. **Commit** with a conventional commit message referencing the feature ID
 
 ## Version and release

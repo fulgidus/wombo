@@ -296,7 +296,7 @@ export function printFeatureSelection(
   }>
 ): void {
   console.log("");
-  console.log(`${BOLD}Selected Features (${features.length}):${RESET}`);
+  console.log(`${BOLD}Selected Tasks (${features.length}):${RESET}`);
   console.log("");
 
   const header = [

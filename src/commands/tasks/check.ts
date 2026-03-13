@@ -1,13 +1,13 @@
 /**
- * features/check.ts — Validate the features file for schema issues, broken deps, and orphans.
+ * tasks/check.ts — Validate the tasks file for schema issues, broken deps, and orphans.
  *
  * Usage:
- *   wombo features check
+ *   wombo tasks check
  *
  * Checks:
- *   - Required fields present on every feature
+ *   - Required fields present on every task
  *   - No duplicate IDs
- *   - All depends_on references point to existing features
+ *   - All depends_on references point to existing tasks
  *   - No circular dependencies
  *   - No orphaned subtasks (subtask IDs unique)
  *   - Priority/difficulty values are valid enums
@@ -31,7 +31,7 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesCheckOptions {
+export interface TasksCheckOptions {
   projectRoot: string;
   config: WomboConfig;
 }
@@ -66,7 +66,7 @@ function collectAllItems(data: FeaturesFile): (Feature | Subtask)[] {
   return items;
 }
 
-function checkFeatures(data: FeaturesFile): CheckResult {
+function checkTasks(data: FeaturesFile): CheckResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const allItems = collectAllItems(data);
@@ -160,11 +160,11 @@ function checkFeatures(data: FeaturesFile): CheckResult {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesCheck(opts: FeaturesCheckOptions): Promise<void> {
+export async function cmdTasksCheck(opts: TasksCheckOptions): Promise<void> {
   const { projectRoot, config } = opts;
 
   const data = loadFeatures(projectRoot, config);
-  const result = checkFeatures(data);
+  const result = checkTasks(data);
 
   const allItems = collectAllItems(data);
   console.log(`\nChecking ${config.tasksFile} (${allItems.length} items)...\n`);

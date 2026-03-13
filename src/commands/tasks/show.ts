@@ -1,8 +1,8 @@
 /**
- * features/show.ts — Show detailed information about a specific feature.
+ * tasks/show.ts — Show detailed information about a specific task.
  *
  * Usage:
- *   wombo features show <feature-id>
+ *   wombo tasks show <task-id>
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -22,7 +22,7 @@ import { output, outputError, filterFields, type OutputFormat } from "../../lib/
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesShowOptions {
+export interface TasksShowOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId: string;
@@ -76,12 +76,12 @@ function renderSubtask(st: Subtask, indent: number): void {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> {
+export async function cmdTasksShow(opts: TasksShowOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId) {
-    outputError(fmt, "Usage: wombo features show <feature-id>");
+    outputError(fmt, "Usage: wombo tasks show <task-id>");
     return;
   }
 
@@ -89,7 +89,7 @@ export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> 
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    outputError(fmt, `Feature "${opts.featureId}" not found.`);
+    outputError(fmt, `Task "${opts.featureId}" not found.`);
     return;
   }
 
@@ -119,7 +119,7 @@ export async function cmdFeaturesShow(opts: FeaturesShowOptions): Promise<void> 
     fmt,
     fullData,
     () => {
-      console.log(`\n${BOLD}Feature: ${feature.title}${RESET}`);
+      console.log(`\n${BOLD}Task: ${feature.title}${RESET}`);
       console.log(`  ID:          ${feature.id}`);
       console.log(`  Status:      ${statusColor(feature.status)}${feature.status}${RESET}`);
       console.log(`  Priority:    ${feature.priority}`);

@@ -1,12 +1,12 @@
 /**
- * features/list.ts — List and filter features from the features file.
+ * tasks/list.ts — List and filter tasks from the tasks file.
  *
  * Usage:
- *   wombo features list                     # list all features
- *   wombo features list --status backlog    # filter by status
- *   wombo features list --priority high     # filter by priority
- *   wombo features list --ready             # show only ready features
- *   wombo features list --archive           # include archived features
+ *   wombo tasks list                     # list all tasks
+ *   wombo tasks list --status backlog    # filter by status
+ *   wombo tasks list --priority high     # filter by priority
+ *   wombo tasks list --ready             # show only ready tasks
+ *   wombo tasks list --archive           # include archived tasks
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -28,7 +28,7 @@ import { output, filterFieldsArray, renderCompactTable, type OutputFormat } from
 // Types
 // ---------------------------------------------------------------------------
 
-export interface FeaturesListOptions {
+export interface TasksListOptions {
   projectRoot: string;
   config: WomboConfig;
   status?: FeatureStatus;
@@ -62,7 +62,7 @@ const STATUS_COLOR: Record<FeatureStatus, string> = {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> {
+export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const data = loadFeatures(projectRoot, config);
 
@@ -97,7 +97,7 @@ export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> 
 
   if (features.length === 0) {
     output(opts.outputFmt ?? "text", { features: [], total: 0, effort: "0m" }, () => {
-      console.log("No features match the given filters.");
+      console.log("No tasks match the given filters.");
     });
     return;
   }
@@ -154,7 +154,7 @@ export async function cmdFeaturesList(opts: FeaturesListOptions): Promise<void> 
       effort: formatDuration(totalEffort),
     },
     () => {
-      console.log(`\n${BOLD}Features (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
+      console.log(`\n${BOLD}Tasks (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
 
       const statusOrder: FeatureStatus[] = [
         "in_progress",

@@ -1,13 +1,13 @@
 /**
- * features/set-priority.ts — Change a feature's priority.
+ * tasks/set-priority.ts — Change a task's priority.
  *
  * Usage:
- *   wombo features set-priority <feature-id> <priority>
+ *   wombo tasks set-priority <task-id> <priority>
  *
  * Valid priorities: critical, high, medium, low, wishlist
  *
  * Supports --output json and --dry-run.
- * Works on both top-level features and subtasks.
+ * Works on both top-level tasks and subtasks.
  */
 
 import type { WomboConfig } from "../../config.js";
@@ -31,7 +31,7 @@ const VALID_PRIORITIES: Priority[] = [
   "wishlist",
 ];
 
-export interface FeaturesSetPriorityOptions {
+export interface TasksSetPriorityOptions {
   projectRoot: string;
   config: WomboConfig;
   featureId: string;
@@ -44,12 +44,12 @@ export interface FeaturesSetPriorityOptions {
 // Command
 // ---------------------------------------------------------------------------
 
-export async function cmdFeaturesSetPriority(opts: FeaturesSetPriorityOptions): Promise<void> {
+export async function cmdTasksSetPriority(opts: TasksSetPriorityOptions): Promise<void> {
   const { projectRoot, config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newPriority) {
-    outputError(fmt, `Usage: wombo features set-priority <feature-id> <priority>\nValid priorities: ${VALID_PRIORITIES.join(", ")}`);
+    outputError(fmt, `Usage: wombo tasks set-priority <task-id> <priority>\nValid priorities: ${VALID_PRIORITIES.join(", ")}`);
     return;
   }
 
@@ -63,7 +63,7 @@ export async function cmdFeaturesSetPriority(opts: FeaturesSetPriorityOptions): 
   const feature = findFeatureById(data, opts.featureId);
 
   if (!feature) {
-    outputError(fmt, `Feature "${opts.featureId}" not found.`);
+    outputError(fmt, `Task "${opts.featureId}" not found.`);
     return;
   }
 
@@ -71,7 +71,7 @@ export async function cmdFeaturesSetPriority(opts: FeaturesSetPriorityOptions): 
   const newPriority = opts.newPriority as Priority;
 
   if (oldPriority === newPriority) {
-    outputMessage(fmt, `Feature "${opts.featureId}" already has priority "${newPriority}".`, {
+    outputMessage(fmt, `Task "${opts.featureId}" already has priority "${newPriority}".`, {
       id: opts.featureId,
       priority: newPriority,
       changed: false,
@@ -96,7 +96,7 @@ export async function cmdFeaturesSetPriority(opts: FeaturesSetPriorityOptions): 
 
   saveFeatures(projectRoot, config, data);
 
-  outputMessage(fmt, `Feature "${opts.featureId}" priority: ${oldPriority} → ${newPriority}`, {
+  outputMessage(fmt, `Task "${opts.featureId}" priority: ${oldPriority} → ${newPriority}`, {
     id: opts.featureId,
     old_priority: oldPriority,
     new_priority: newPriority,

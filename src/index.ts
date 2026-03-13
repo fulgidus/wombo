@@ -8,7 +8,7 @@
  *   wombo launch --quickest-wins 5
  *   wombo launch --priority high
  *   wombo launch --difficulty easy
- *   wombo launch --features "feat-a,feat-b"
+ *   wombo launch --tasks "feat-a,feat-b"
  *   wombo launch --all-ready
  *   wombo launch ... --max-concurrent 3 --model "anthropic/claude-sonnet-4-20250514"
  *   wombo launch ... --interactive
@@ -21,15 +21,15 @@
  *   wombo logs <feature-id> [--tail N] [--follow] [--output json]
  *   wombo cleanup
  *   wombo history [wave-id] [--output json]
- *   wombo features list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
- *   wombo features add <id> <title> [options]
- *   wombo features set-status <feature-id> <status>
- *   wombo features set-priority <feature-id> <priority>
- *   wombo features set-difficulty <feature-id> <difficulty>
- *   wombo features check
- *   wombo features archive [feature-id] [--dry-run]
- *   wombo features show <feature-id>
- *   wombo features graph [--ascii] [--mermaid] [--subtasks] [--status <s>]
+ *   wombo tasks list [--status <s>] [--priority <p>] [--difficulty <d>] [--ready] [--include-archive]
+ *   wombo tasks add <id> <title> [options]
+ *   wombo tasks set-status <task-id> <status>
+ *   wombo tasks set-priority <task-id> <priority>
+ *   wombo tasks set-difficulty <task-id> <difficulty>
+ *   wombo tasks check
+ *   wombo tasks archive [task-id] [--dry-run]
+ *   wombo tasks show <task-id>
+ *   wombo tasks graph [--ascii] [--mermaid] [--subtasks] [--status <s>]
  *   wombo help
  *   wombo version
  *   wombo -v
@@ -89,17 +89,17 @@ import { cmdAbort } from "./commands/abort.js";
 import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdHistory } from "./commands/history.js";
-import { cmdFeaturesList } from "./commands/tasks/list.js";
-import { cmdFeaturesAdd } from "./commands/tasks/add.js";
-import { cmdFeaturesSetStatus } from "./commands/tasks/set-status.js";
-import { cmdFeaturesSetPriority } from "./commands/tasks/set-priority.js";
-import { cmdFeaturesSetDifficulty } from "./commands/tasks/set-difficulty.js";
-import { cmdFeaturesCheck } from "./commands/tasks/check.js";
-import { cmdFeaturesArchive } from "./commands/tasks/archive.js";
-import { cmdFeaturesShow } from "./commands/tasks/show.js";
-import { cmdFeaturesGraph } from "./commands/tasks/graph.js";
+import { cmdTasksList } from "./commands/tasks/list.js";
+import { cmdTasksAdd } from "./commands/tasks/add.js";
+import { cmdTasksSetStatus } from "./commands/tasks/set-status.js";
+import { cmdTasksSetPriority } from "./commands/tasks/set-priority.js";
+import { cmdTasksSetDifficulty } from "./commands/tasks/set-difficulty.js";
+import { cmdTasksCheck } from "./commands/tasks/check.js";
+import { cmdTasksArchive } from "./commands/tasks/archive.js";
+import { cmdTasksShow } from "./commands/tasks/show.js";
+import { cmdTasksGraph } from "./commands/tasks/graph.js";
 
-import { ensureFeaturesFile } from "./lib/tasks.js";
+import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import { resolveOutputFormat, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
@@ -117,7 +117,7 @@ export interface CLIArgs {
   quickestWins?: number;
   priority?: Priority;
   difficulty?: Difficulty;
-  features?: string[];
+  tasks?: string[];
   allReady?: boolean;
   // Launch / runtime options
   maxConcurrent?: number;
@@ -177,9 +177,10 @@ export function parseArgs(argv: string[]): CLIArgs {
     outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
   };
 
-  // If the first arg is "features", treat the second positional as the subcommand
+  // If the first arg is "tasks" or "features" (backward-compat alias), treat the second positional as the subcommand
   let startIdx = 1;
-  if (result.command === "features") {
+  if (result.command === "tasks" || result.command === "features") {
+    result.command = "tasks"; // normalize to "tasks"
     result.subcommand = args[1] || "list";
     startIdx = 2;
   }
@@ -210,8 +211,9 @@ export function parseArgs(argv: string[]): CLIArgs {
       case "--difficulty":
         result.difficulty = requireValue(arg) as Difficulty;
         break;
-      case "--features":
-        result.features = requireValue(arg).split(",").map((s) => s.trim());
+      case "--tasks":
+      case "--features": // backward-compat alias
+        result.tasks = requireValue(arg).split(",").map((s) => s.trim());
         break;
       case "--all-ready":
         result.allReady = true;
@@ -263,7 +265,7 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.outputFmt = resolveOutputFormat(requireValue(arg));
         break;
 
-      // --- Features subcommand options ---
+      // --- Tasks subcommand options ---
       case "--status":
         result.status = requireValue(arg);
         break;
@@ -353,34 +355,34 @@ Commands:
   logs           Pretty-print agent logs for a feature
   cleanup        Remove all wave worktrees and multiplexer sessions
   history        List/view past wave results (stored in .wombo-combo/history/)
-  features       Manage tasks file (see below)
+  tasks          Manage tasks file (see below; 'features' also accepted)
   upgrade        Check for updates and upgrade wombo
   describe       Emit JSON schema of a command (for AI agents)
   version        Print version and exit
   help           Show this help
 
-Features Subcommands:
-  features list            List features (--status, --priority, --difficulty, --ready, --include-archive)
-  features add <id> <title> [options]
-                           Add a new feature (--desc, --priority, --difficulty, --effort, --depends-on)
-  features set-status <id> <status>
-                            Change a feature's status
-  features set-priority <id> <priority>
-                            Change a feature's priority (critical/high/medium/low/wishlist)
-  features set-difficulty <id> <difficulty>
-                            Change a feature's difficulty (trivial/easy/medium/hard/very_hard)
-  features check           Validate tasks file (schema, deps, duplicates, cycles)
-  features archive [id]    Move done/cancelled to archive (--dry-run)
-  features show <id>       Show feature details
-  features graph           Visualize dependency graph (--ascii, --mermaid, --subtasks)
+Tasks Subcommands (also available as 'features' for backward compatibility):
+  tasks list               List tasks (--status, --priority, --difficulty, --ready, --include-archive)
+  tasks add <id> <title> [options]
+                           Add a new task (--desc, --priority, --difficulty, --effort, --depends-on)
+  tasks set-status <id> <status>
+                            Change a task's status
+  tasks set-priority <id> <priority>
+                            Change a task's priority (critical/high/medium/low/wishlist)
+  tasks set-difficulty <id> <difficulty>
+                            Change a task's difficulty (trivial/easy/medium/hard/very_hard)
+  tasks check              Validate tasks file (schema, deps, duplicates, cycles)
+  tasks archive [id]       Move done/cancelled to archive (--dry-run)
+  tasks show <id>          Show task details
+  tasks graph              Visualize dependency graph (--ascii, --mermaid, --subtasks)
 
 Selection Options (for launch):
-  --top-priority N         Select top N features by priority
-  --quickest-wins N        Select N features with lowest effort
+  --top-priority N         Select top N tasks by priority
+  --quickest-wins N        Select N tasks with lowest effort
   --priority <level>       Filter by priority (critical/high/medium/low/wishlist)
   --difficulty <level>     Filter by difficulty (trivial/easy/medium/hard/very_hard)
-  --features "id1,id2"     Select specific features by ID
-  --all-ready              Select all features whose dependencies are met
+  --tasks "id1,id2"        Select specific tasks by ID (--features also accepted)
+  --all-ready              Select all tasks whose dependencies are met
 
 Launch Options:
   --max-concurrent N       Max agents running in parallel (default: from config)
@@ -412,7 +414,7 @@ Examples:
   wombo init
   wombo launch --quickest-wins 3
   wombo launch --priority high --interactive
-  wombo launch --features "auth-flow,search-api" --max-concurrent 2
+  wombo launch --tasks "auth-flow,search-api" --max-concurrent 2
   wombo resume
   wombo status
   wombo verify
@@ -426,19 +428,19 @@ Examples:
   wombo logs auth-flow --follow
   wombo logs auth-flow --output json
   wombo cleanup
-  wombo features list --status ready --priority high
-  wombo features list --fields id,status,priority --output json
-  wombo features add my-feature "My Cool Feature" --priority high --difficulty easy
-  wombo features set-status my-feature in-progress
-  wombo features check
-  wombo features archive --dry-run
-  wombo features show my-feature
+  wombo tasks list --status ready --priority high
+  wombo tasks list --fields id,status,priority --output json
+  wombo tasks add my-task "My Cool Task" --priority high --difficulty easy
+  wombo tasks set-status my-task in-progress
+  wombo tasks check
+  wombo tasks archive --dry-run
+  wombo tasks show my-task
   wombo history
   wombo history wave-2026-03-12-420
   wombo history --output json
   wombo describe                           # list all commands as JSON
   wombo describe launch                    # describe a specific command
-  wombo describe features add              # describe a subcommand
+  wombo describe tasks add                 # describe a subcommand
 `);
 }
 
@@ -470,9 +472,9 @@ async function main(): Promise<void> {
   if (args.effort) {
     assertValid(validateDuration(args.effort, "effort"));
   }
-  if (args.features) {
-    for (const fid of args.features) {
-      assertValid(validateId(fid, "feature ID in --features"));
+  if (args.tasks) {
+    for (const fid of args.tasks) {
+      assertValid(validateId(fid, "task ID in --tasks"));
     }
   }
   if (args.dependsOn) {
@@ -555,10 +557,10 @@ async function main(): Promise<void> {
   const config = loadConfig(PROJECT_ROOT);
   validateConfig(config);
 
-  // Commands that operate on the features file — ensure it exists first
-  const needsFeatures = new Set(["launch", "resume", "verify", "retry", "features"]);
-  if (needsFeatures.has(args.command)) {
-    await ensureFeaturesFile(PROJECT_ROOT, config);
+  // Commands that operate on the tasks file — ensure it exists first
+  const needsTasksFile = new Set(["launch", "resume", "verify", "retry", "tasks"]);
+  if (needsTasksFile.has(args.command)) {
+    await ensureTasksFile(PROJECT_ROOT, config);
   }
 
   switch (args.command) {
@@ -574,7 +576,7 @@ async function main(): Promise<void> {
         quickestWins: args.quickestWins,
         priority: args.priority,
         difficulty: args.difficulty,
-        features: args.features,
+        features: args.tasks,
         allReady: args.allReady,
         maxConcurrent: args.maxConcurrent ?? config.defaults.maxConcurrent,
         model: args.model,
@@ -674,8 +676,8 @@ async function main(): Promise<void> {
       break;
     }
 
-    case "features":
-      await handleFeaturesSubcommand(args, PROJECT_ROOT, config);
+    case "tasks":
+      await handleTasksSubcommand(args, PROJECT_ROOT, config);
       break;
 
     default:
@@ -687,10 +689,10 @@ async function main(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Features Subcommand Router
+// Tasks Subcommand Router
 // ---------------------------------------------------------------------------
 
-async function handleFeaturesSubcommand(
+async function handleTasksSubcommand(
   args: CLIArgs,
   projectRoot: string,
   config: import("./config.js").WomboConfig
@@ -698,7 +700,7 @@ async function handleFeaturesSubcommand(
   switch (args.subcommand) {
     case "list":
     case "ls":
-      await cmdFeaturesList({
+      await cmdTasksList({
         projectRoot,
         config,
         status: args.status as FeatureStatus | undefined,
@@ -713,11 +715,11 @@ async function handleFeaturesSubcommand(
 
     case "add": {
       if (!args.featureId || !args.title) {
-        console.error("Usage: wombo features add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>]");
+        console.error("Usage: wombo tasks add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>]");
         process.exit(1);
         return;
       }
-      await cmdFeaturesAdd({
+      await cmdTasksAdd({
         projectRoot,
         config,
         id: args.featureId,
@@ -739,11 +741,11 @@ async function handleFeaturesSubcommand(
         // If not provided via positional, check --status flag
         const newStatus = args.title || args.status;
         if (!args.featureId || !newStatus) {
-          console.error("Usage: wombo features set-status <feature-id> <status>");
+          console.error("Usage: wombo tasks set-status <task-id> <status>");
           process.exit(1);
           return;
         }
-        await cmdFeaturesSetStatus({
+        await cmdTasksSetStatus({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -752,7 +754,7 @@ async function handleFeaturesSubcommand(
           dryRun: args.dryRun,
         });
       } else {
-        await cmdFeaturesSetStatus({
+        await cmdTasksSetStatus({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -770,11 +772,11 @@ async function handleFeaturesSubcommand(
         // If not provided via positional, check --priority flag
         const newPriority = args.title || (args.priority as string | undefined);
         if (!args.featureId || !newPriority) {
-          console.error("Usage: wombo features set-priority <feature-id> <priority>");
+          console.error("Usage: wombo tasks set-priority <task-id> <priority>");
           process.exit(1);
           return;
         }
-        await cmdFeaturesSetPriority({
+        await cmdTasksSetPriority({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -783,7 +785,7 @@ async function handleFeaturesSubcommand(
           dryRun: args.dryRun,
         });
       } else {
-        await cmdFeaturesSetPriority({
+        await cmdTasksSetPriority({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -801,11 +803,11 @@ async function handleFeaturesSubcommand(
         // If not provided via positional, check --difficulty flag
         const newDifficulty = args.title || (args.difficulty as string | undefined);
         if (!args.featureId || !newDifficulty) {
-          console.error("Usage: wombo features set-difficulty <feature-id> <difficulty>");
+          console.error("Usage: wombo tasks set-difficulty <task-id> <difficulty>");
           process.exit(1);
           return;
         }
-        await cmdFeaturesSetDifficulty({
+        await cmdTasksSetDifficulty({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -814,7 +816,7 @@ async function handleFeaturesSubcommand(
           dryRun: args.dryRun,
         });
       } else {
-        await cmdFeaturesSetDifficulty({
+        await cmdTasksSetDifficulty({
           projectRoot,
           config,
           featureId: args.featureId,
@@ -828,11 +830,11 @@ async function handleFeaturesSubcommand(
 
     case "check":
     case "validate":
-      await cmdFeaturesCheck({ projectRoot, config });
+      await cmdTasksCheck({ projectRoot, config });
       break;
 
     case "archive":
-      await cmdFeaturesArchive({
+      await cmdTasksArchive({
         projectRoot,
         config,
         featureId: args.featureId,
@@ -843,11 +845,11 @@ async function handleFeaturesSubcommand(
 
     case "show": {
       if (!args.featureId) {
-        console.error("Usage: wombo features show <feature-id>");
+        console.error("Usage: wombo tasks show <task-id>");
         process.exit(1);
         return;
       }
-      await cmdFeaturesShow({
+      await cmdTasksShow({
         projectRoot,
         config,
         featureId: args.featureId,
@@ -858,7 +860,7 @@ async function handleFeaturesSubcommand(
     }
 
     case "graph":
-      await cmdFeaturesGraph({
+      await cmdTasksGraph({
         projectRoot,
         config,
         status: args.status as FeatureStatus | undefined,
@@ -876,8 +878,8 @@ async function handleFeaturesSubcommand(
       break;
 
     default:
-      console.error(`Unknown features subcommand: ${args.subcommand}`);
-      console.error("Run 'wombo features help' or 'wombo help' for usage.");
+      console.error(`Unknown tasks subcommand: ${args.subcommand}`);
+      console.error("Run 'wombo tasks help' or 'wombo help' for usage.");
       process.exit(1);
       return;
   }
