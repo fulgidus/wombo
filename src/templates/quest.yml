@@ -1,0 +1,55 @@
+# =============================================================================
+# WOMBO COMBO! — Quest Template
+# =============================================================================
+#
+# This file documents the schema for quest YAML files.
+# Each quest is stored as: .wombo-combo/quests/<quest-id>.yml
+#
+# QUEST SCHEMA:
+#   id          : string        — Unique kebab-case identifier (1-128 chars).
+#   title       : string        — Human-readable short name.
+#   goal        : string        — What this quest aims to achieve.
+#   status      : enum          — draft | planning | active | paused |
+#                                  completed | abandoned
+#   priority    : enum          — critical | high | medium | low | wishlist
+#   difficulty  : enum          — trivial | easy | medium | hard | very_hard
+#   depends_on  : list[string]  — Quest IDs that must complete first.
+#   branch      : string        — Git branch for this quest (quest/<id>).
+#   baseBranch  : string        — Branch this quest forks from.
+#   hitlMode    : enum          — yolo | cautious | supervised
+#   constraints : object        — Layered constraints applied to all tasks.
+#     add       : list[string]  — Extra constraints for every task.
+#     ban       : list[string]  — Extra forbidden items for every task.
+#     override  : object        — Deep-merge overrides for project config.
+#   taskIds     : list[string]  — Task IDs belonging to this quest.
+#   created_at  : string        — ISO 8601 datetime.
+#   updated_at  : string        — ISO 8601 datetime.
+#   started_at  : string|null   — When the quest became active.
+#   ended_at    : string|null   — When the quest completed/was abandoned.
+#   notes       : list[string]  — Free-form notes (newest first).
+#   agent_type  : string|null   — Optional agent type override for all tasks.
+#   agent       : string|null   — Optional local agent definition override.
+#
+# BRANCHING MODEL:
+#   Quest branch forks from baseBranch (e.g. "develop").
+#   Task branches fork from the quest branch (task/<task-id>).
+#   Completed tasks merge into the quest branch.
+#   Completed quest merges into baseBranch.
+#
+# HITL MODES:
+#   yolo       — Agents proceed autonomously. query_human returns a canned
+#                "proceed" response.
+#   cautious   — Real-time IPC piping. Agent blocks on query_human, TUI shows
+#                popup, user types answer, piped back. Agent never restarts.
+#   supervised — Same pipe mechanism as cautious, but the prompt injection
+#                encourages the agent to ask before major architectural
+#                decisions.
+#
+# LAYERED CONSTRAINTS:
+#   Quest constraints merge with the project config additively:
+#     - constraints.add → appended to each task's constraints list
+#     - constraints.ban → appended to each task's forbidden list
+#     - constraints.override → deep-merged into the effective WomboConfig
+#       (only specified fields are replaced; everything else inherited)
+#
+# =============================================================================
