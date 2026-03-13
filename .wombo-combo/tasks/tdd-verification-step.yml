@@ -7,15 +7,15 @@ description: >
   command (src/commands/verify.ts): add --skip-tests flag to opt out 5. In agent workflow: verification runs after agent
   commits, before marking task done The verification should be non-blocking by default (warn on missing tests) with a
   --strict-tdd flag to make it blocking. This allows gradual adoption.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - tdd-test-detection
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T21:30:00.000Z
 constraints: []
 forbidden: []
 references: []

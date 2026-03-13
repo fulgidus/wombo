@@ -7,7 +7,7 @@ description: >
   changes, the verification should flag it. Build verification should run tests and check that new tests exist for new
   functionality.
 status: backlog
-completion: 0
+completion: 75
 difficulty: hard
 priority: high
 depends_on:

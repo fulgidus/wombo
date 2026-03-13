@@ -7,7 +7,7 @@ description: >
   consistent error handling via outputError(). Run `woco <command> --output json` for every command and verify output is
   valid JSON.
 status: backlog
-completion: 0
+completion: 80
 difficulty: medium
 priority: high
 depends_on:

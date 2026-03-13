@@ -5,8 +5,8 @@ description: >
   agent consumption. This is the bulk of the work. Follow the pattern in src/lib/output.ts: import OutputFormat,
   resolveOutputFormat, output, outputError, outputMessage. Each command needs an outputFmt option and all output paths
   routed through the helpers. See src/commands/tasks/archive.ts for the reference pattern.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
@@ -14,7 +14,7 @@ depends_on:
   - json-features-archive
 effort: PT5H
 started_at: null
-ended_at: null
+ended_at: 2026-03-13T21:30:00.000Z
 constraints:
   - Human-friendly text output must remain the default
   - JSON schemas should be consistent with tasks subcommand patterns
