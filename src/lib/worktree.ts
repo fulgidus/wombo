@@ -389,8 +389,12 @@ export function listWomboWorktrees(
   return listWorktrees(projectRoot).filter((wt) => {
     // Never include the main project root
     if (resolve(wt.path) === resolvedRoot) return false;
-    // Match only worktrees whose directory name starts with the prefix
-    return basename(wt.path).startsWith(config.git.worktreePrefix);
+    // Match worktrees whose directory name starts with the worktree prefix
+    if (basename(wt.path).startsWith(config.git.worktreePrefix)) return true;
+    // Also match worktrees whose branch starts with the branch prefix —
+    // catches orphans from old waves that used a different worktree prefix
+    if (wt.branch && wt.branch.startsWith(config.git.branchPrefix)) return true;
+    return false;
   });
 }
 

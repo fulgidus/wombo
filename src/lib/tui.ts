@@ -16,6 +16,7 @@
  * Keybinds:
  *   Up/Down   — navigate agent list
  *   Enter     — attach to selected agent's multiplexer session (interactive mode)
+ *   r         — retry a failed/stuck agent
  *   b         — show build log for selected agent
  *   p         — toggle auto-scroll (pause/resume)
  *   q / C-c   — quit
@@ -51,6 +52,8 @@ export interface TUIOptions {
   projectRoot: string;
   /** Config (for multiplexer session prefix, log dir, etc.) */
   config: WomboConfig;
+  /** Callback to retry a failed/stuck agent from the TUI. */
+  onRetry?: (featureId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -134,6 +137,7 @@ export class WomboTUI {
   private state: WaveState;
   private monitor: ProcessMonitor;
   private onQuit: () => void;
+  private onRetry?: (featureId: string) => void;
   private interactive: boolean;
   private projectRoot: string;
   private config: WomboConfig;
@@ -158,6 +162,7 @@ export class WomboTUI {
     this.state = opts.state;
     this.monitor = opts.monitor;
     this.onQuit = opts.onQuit;
+    this.onRetry = opts.onRetry;
     this.interactive = opts.interactive ?? false;
     this.projectRoot = opts.projectRoot;
     this.config = opts.config;
@@ -323,6 +328,11 @@ export class WomboTUI {
     this.screen.key(["p"], () => {
       this.autoScroll = !this.autoScroll;
       this.refreshStatusBar();
+    });
+
+    // r — retry failed/stuck agent
+    this.screen.key(["r"], () => {
+      this.retrySelected();
     });
 
     // Escape — close build log or log file overlay
@@ -626,9 +636,9 @@ export class WomboTUI {
 
     let line1: string;
     if (this.waveComplete) {
-      line1 = ` {bold}{green-fg}Wave complete.{/green-fg}{/bold}  ${enterHint}  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {bold}{yellow-fg}q{/yellow-fg} exit{/bold}`;
+      line1 = ` {bold}{green-fg}Wave complete.{/green-fg}{/bold}  ${enterHint}  {gray-fg}r{/gray-fg} retry  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {bold}{yellow-fg}q{/yellow-fg} exit{/bold}`;
     } else {
-      line1 = ` {bold}Keys:{/bold} {gray-fg}↑↓{/gray-fg} navigate  ${enterHint}  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {gray-fg}q{/gray-fg} quit`;
+      line1 = ` {bold}Keys:{/bold} {gray-fg}↑↓{/gray-fg} navigate  ${enterHint}  {gray-fg}r{/gray-fg} retry  {gray-fg}b{/gray-fg} build log  {gray-fg}p{/gray-fg} ${scrollStatus}  {gray-fg}q{/gray-fg} quit`;
     }
     const line2 = ` ${agentInfo}`;
 
@@ -675,6 +685,45 @@ export class WomboTUI {
 
     // Re-create screen after returning from multiplexer
     this.recreateScreen();
+  }
+
+  /**
+   * Retry the selected agent (only if failed or stuck in retry).
+   * Resets it to "queued" so the polling loop picks it up for a fresh launch.
+   */
+  private retrySelected(): void {
+    const agent = this.state.agents[this.selectedIndex];
+    if (!agent) return;
+
+    const retryableStatuses: AgentStatus[] = ["failed", "retry"];
+    if (!retryableStatuses.includes(agent.status)) {
+      // Flash a message in the preview — agent isn't in a retryable state
+      const logs = this.monitor.activityLogs.get(agent.feature_id);
+      if (logs) {
+        logs.push({
+          timestamp: new Date().toISOString().slice(11, 19),
+          text: `!! Cannot retry — agent status is "${agent.status}" (must be failed or retry)`,
+        });
+      }
+      this.refreshPreview();
+      this.screen.render();
+      return;
+    }
+
+    if (this.onRetry) {
+      this.onRetry(agent.feature_id);
+
+      // Show feedback in preview
+      const logs = this.monitor.activityLogs.get(agent.feature_id);
+      if (logs) {
+        logs.push({
+          timestamp: new Date().toISOString().slice(11, 19),
+          text: `>> Retry requested — agent will be relaunched`,
+        });
+      }
+      this.refresh();
+      this.screen.render();
+    }
   }
 
   /**

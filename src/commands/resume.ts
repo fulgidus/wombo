@@ -489,6 +489,24 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           console.log("State saved. Use 'woco resume' to continue.");
           process.exit(0);
         },
+        onRetry: (featureId: string) => {
+          const agent = state.agents.find((a) => a.feature_id === featureId);
+          if (!agent) return;
+          if (agent.status !== "failed" && agent.status !== "retry") return;
+
+          // Reset retries if exhausted, give it one more shot
+          if (agent.retries >= agent.max_retries) {
+            updateAgent(state, featureId, { max_retries: agent.retries + 1 });
+          }
+
+          wtLog(featureId, `manual retry requested from TUI — resetting to queued`);
+          updateAgent(state, featureId, {
+            status: "queued",
+            error: null,
+            activity: "waiting for relaunch (manual retry)...",
+          });
+          saveState(projectRoot, state);
+        },
       });
       tuiRef.current.start();
     } else {

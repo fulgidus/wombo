@@ -98,6 +98,17 @@ import {
 } from "../lib/preflight.js";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Delay (ms) between sequential agent launches to avoid SQLite race conditions.
+ * Each agent spawns its own process which runs DB migrations on startup.
+ * Launching them simultaneously causes `CREATE TABLE` collisions.
+ */
+const LAUNCH_STAGGER_MS = 500;
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -361,6 +372,15 @@ export async function handleBuildVerification(
           if (monitor) {
             monitor.addProcess(agent.feature_id, retryResult.process);
           }
+        } else {
+          // Agent has no session — reset to queued for a fresh launch
+          wtLog(agent.feature_id, `no session — resetting to queued for fresh launch (retry ${agent.retries}/${agent.max_retries})`);
+          updateAgent(state, agent.feature_id, {
+            status: "queued",
+            error: null,
+            activity: "waiting for relaunch...",
+          });
+          saveState(projectRoot, state);
         }
       } else {
         updateAgent(state, agent.feature_id, {
@@ -485,8 +505,9 @@ function handleMergeSuccess(
     try {
       removeWorktree(projectRoot, agent.worktree, true);
       printAgentUpdate(agent, "worktree and branch removed");
-    } catch {
-      // Not critical — worktree cleanup is best-effort
+    } catch (err: any) {
+      // Log the failure so it's visible — stale worktrees waste disk space
+      printAgentUpdate(agent, `WARN: worktree cleanup failed: ${err.message?.split("\n")[0]}`);
     }
   }
 }
@@ -710,6 +731,12 @@ async function launchResolverAndRetryMerge(
 
 /**
  * Handle retry of a failed agent (error-based, not build-based).
+ *
+ * If the agent has a session_id, resumes the existing session with error context.
+ * If the agent crashed before establishing a session (session_id is null),
+ * resets it to "queued" so it gets relaunched from scratch on the next
+ * launchAllReady() cycle. This prevents the "stuck retry" state where an
+ * agent sits in "retry" forever with no process running.
  */
 export function handleRetry(
   projectRoot: string,
@@ -719,7 +746,20 @@ export function handleRetry(
   config: WomboConfig,
   model?: string
 ): void {
-  if (!agent.session_id || !agent.error) return;
+  if (!agent.session_id) {
+    // Agent crashed before establishing a session (e.g. SQLite race condition).
+    // Reset to queued so it gets a fresh launch on the next cycle.
+    wtLog(agent.feature_id, `no session — resetting to queued for fresh launch (retry ${agent.retries}/${agent.max_retries})`);
+    updateAgent(state, agent.feature_id, {
+      status: "queued",
+      error: null,
+      activity: "waiting for relaunch...",
+    });
+    saveState(projectRoot, state);
+    return;
+  }
+
+  if (!agent.error) return;
 
   const retryResult = retryHeadless({
     worktreePath: agent.worktree,
@@ -743,7 +783,7 @@ export function handleRetry(
  * Launch the next queued agent if capacity allows.
  * Dependency-aware: only launches agents whose dependencies are satisfied.
  */
-export function launchNextQueued(
+export async function launchNextQueued(
   projectRoot: string,
   state: WaveState,
   featureMap: Map<string, Feature>,
@@ -751,7 +791,7 @@ export function launchNextQueued(
   config: WomboConfig,
   model?: string,
   agentResolutions?: Map<string, AgentResolution>
-): void {
+): Promise<void> {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
 
@@ -759,7 +799,7 @@ export function launchNextQueued(
     const next = ready[0];
     const feature = featureMap.get(next.feature_id);
     if (feature) {
-      launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
+      await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
     }
   }
 }
@@ -769,9 +809,11 @@ export function launchNextQueued(
  * After a dependency completes, multiple downstream agents may become unblocked.
  * This launches as many as capacity allows, not just one.
  *
+ * Launches are staggered to avoid SQLite race conditions.
+ *
  * Also logs merge gate events when diamond-dependency features become unblocked.
  */
-export function launchAllReady(
+export async function launchAllReady(
   projectRoot: string,
   state: WaveState,
   featureMap: Map<string, Feature>,
@@ -779,7 +821,7 @@ export function launchAllReady(
   config: WomboConfig,
   model?: string,
   agentResolutions?: Map<string, AgentResolution>
-): void {
+): Promise<void> {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
   const available = state.max_concurrent - active.length;
@@ -787,7 +829,8 @@ export function launchAllReady(
   if (available <= 0 || ready.length === 0) return;
 
   const toLaunch = ready.slice(0, available);
-  for (const next of toLaunch) {
+  for (let i = 0; i < toLaunch.length; i++) {
+    const next = toLaunch[i];
     const feature = featureMap.get(next.feature_id);
     if (!feature) continue;
 
@@ -804,7 +847,11 @@ export function launchAllReady(
       }
     }
 
-    launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
+    await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions);
+    // Stagger between launches to avoid SQLite race conditions
+    if (i < toLaunch.length - 1) {
+      await new Promise((r) => setTimeout(r, LAUNCH_STAGGER_MS));
+    }
   }
 }
 
@@ -890,11 +937,13 @@ async function launchWaveHeadless(
         .then(() => {
           // After verification/merge, try to launch dependency-ready agents
           // Multiple queued agents may now be unblocked
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions)
+            .catch((err) => wtLog(featureId, `LAUNCH ERROR: ${err.message}`));
         })
         .catch((err) => {
           wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions)
+            .catch((err2) => wtLog(featureId, `LAUNCH ERROR: ${err2.message}`));
         });
     },
     onError: (featureId, error) => {
@@ -926,7 +975,8 @@ async function launchWaveHeadless(
       }
 
       // Try to launch dependency-ready agents
-      launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
+      launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions)
+        .catch((err) => wtLog(featureId, `LAUNCH ERROR: ${err.message}`));
     },
     onOutput: (_featureId, _data) => {
       // Raw output — logged to file by ProcessMonitor
@@ -961,6 +1011,25 @@ async function launchWaveHeadless(
         console.log("State saved. Use 'woco resume' to continue.");
         process.exit(0);
       },
+      onRetry: (featureId: string) => {
+        const agent = state.agents.find((a) => a.feature_id === featureId);
+        if (!agent) return;
+        if (agent.status !== "failed" && agent.status !== "retry") return;
+
+        // Reset retries if exhausted, give it one more shot
+        if (agent.retries >= agent.max_retries) {
+          updateAgent(state, featureId, { max_retries: agent.retries + 1 });
+        }
+
+        wtLog(featureId, `manual retry requested from TUI — resetting to queued`);
+        updateAgent(state, featureId, {
+          status: "queued",
+          error: null,
+          activity: "waiting for relaunch (manual retry)...",
+        });
+        saveState(projectRoot, state);
+        // The polling loop will call launchAllReady() and pick this up
+      },
     });
     tuiRef.current.start();
   };
@@ -980,24 +1049,28 @@ async function launchWaveHeadless(
   });
 
   // Launch initial batch — only agents whose dependencies are already satisfied
+  // Stagger launches to avoid SQLite race conditions in agent processes:
+  // each agent spawns its own DB, and simultaneous CREATE TABLE calls collide.
   const ready = readyToLaunchAgents(state);
   const tolaunch = ready.slice(0, opts.maxConcurrent);
-  console.log(`Setting up ${tolaunch.length} agent(s) in parallel...\n`);
+  console.log(`Setting up ${tolaunch.length} agent(s) (staggered)...\n`);
 
-  await Promise.all(
-    tolaunch.map((agent) =>
-      launchSingleHeadless(
-        projectRoot,
-        state,
-        agent,
-        featureMap.get(agent.feature_id)!,
-        monitor,
-        config,
-        model,
-        agentResolutions
-      )
-    )
-  );
+  for (let i = 0; i < tolaunch.length; i++) {
+    await launchSingleHeadless(
+      projectRoot,
+      state,
+      tolaunch[i],
+      featureMap.get(tolaunch[i].feature_id)!,
+      monitor,
+      config,
+      model,
+      agentResolutions
+    );
+    // Brief delay between spawns so each agent's DB migration settles
+    if (i < tolaunch.length - 1) {
+      await new Promise((r) => setTimeout(r, LAUNCH_STAGGER_MS));
+    }
+  }
 
   const launched = state.agents.filter((a) => a.status === "running").length;
 
@@ -1061,9 +1134,49 @@ async function launchWaveHeadless(
             wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
           }
         }
-        launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
+        await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
       }
     }
+
+    // Safety net: detect agents stuck in "retry" with no running process.
+    // This catches edge cases where handleRetry() wasn't called or failed
+    // to reset the agent (e.g. race between onError callback and poll loop).
+    for (const agent of state.agents) {
+      if (
+        agent.status === "retry" &&
+        (!agent.pid || !isProcessRunning(agent.pid)) &&
+        !monitor.isRunning(agent.feature_id)
+      ) {
+        if (agent.retries >= agent.max_retries) {
+          // Out of retries — mark as failed and cascade
+          wtLog(agent.feature_id, `stuck in retry with no process and retries exhausted (${agent.retries}/${agent.max_retries}) — marking failed`);
+          updateAgent(state, agent.feature_id, {
+            status: "failed",
+            error: agent.error ?? "Agent stuck in retry state with no running process",
+            activity: null,
+            completed_at: new Date().toISOString(),
+          });
+          saveState(projectRoot, state);
+          const cancelled = cancelDownstream(state, agent.feature_id);
+          if (cancelled.length > 0) {
+            wtLog(agent.feature_id, `downstream cancelled: ${cancelled.join(", ")}`);
+            saveState(projectRoot, state);
+          }
+        } else {
+          // Has retries left — reset to queued for a fresh launch
+          wtLog(agent.feature_id, `stuck in retry with no process — resetting to queued (retry ${agent.retries}/${agent.max_retries})`);
+          updateAgent(state, agent.feature_id, {
+            status: "queued",
+            error: null,
+            activity: "waiting for relaunch...",
+          });
+          saveState(projectRoot, state);
+        }
+      }
+    }
+
+    // After recovering stuck agents, try launching any that are now ready
+    await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions);
 
     // Persist state periodically
     saveState(projectRoot, state);
