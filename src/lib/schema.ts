@@ -87,7 +87,7 @@ const GLOBAL_FLAGS: FlagDef[] = [
     description: "Output format: text (default) or json",
     type: "string",
     default: "text",
-    enum: ["text", "json"],
+    enum: ["text", "json", "toon"],
   },
   {
     name: "--force",
