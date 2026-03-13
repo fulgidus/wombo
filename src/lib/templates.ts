@@ -66,6 +66,65 @@ Your environment is preconfigured with **portless** for collision-free localhost
 - **Never hardcode port numbers.** Always use the portless-assigned port.
 `;
 
+/**
+ * TDD red-green-refactor block. Injected by render/patch functions ONLY when
+ * `config.tdd.enabled` is true. The agent never sees "if TDD is enabled" —
+ * it either gets these instructions or it doesn't.
+ *
+ * The `{{testCommand}}` placeholder is replaced at render time.
+ */
+const TDD_BLOCK = `
+## Test-Driven Development (TDD)
+
+You MUST follow the **red-green-refactor** TDD cycle for all implementation work:
+
+### The TDD Cycle
+
+1. **🔴 Red — Write a failing test first**
+   - Before writing any implementation code, write a test that describes the desired behavior.
+   - Use Bun's built-in test runner. Create test files alongside source files using the \`.test.ts\` naming convention.
+   - The test MUST fail initially — this proves the test is actually testing something.
+
+2. **🔴 Verify the test fails**
+   - Run \`{{testCommand}}\` and confirm the new test fails with the expected error.
+   - If the test passes without implementation, the test is not testing the right thing — rewrite it.
+
+3. **🟢 Green — Write minimal code to pass**
+   - Implement just enough production code to make the failing test pass.
+   - Do NOT write more code than necessary to satisfy the test.
+   - Do NOT add features or handle edge cases not covered by a test yet.
+
+4. **🟢 Verify the test passes**
+   - Run \`{{testCommand}}\` and confirm ALL tests pass (both new and existing).
+   - If any test fails, fix the implementation — do NOT modify the test to make it pass (unless the test itself is wrong).
+
+5. **🔵 Refactor**
+   - Clean up the implementation while keeping all tests green.
+   - Extract helpers, rename variables, simplify logic — but run \`{{testCommand}}\` after each change.
+   - If a refactor breaks a test, undo the refactor and try a different approach.
+
+### TDD Rules
+
+- **Never skip the red step.** Every new behavior starts with a failing test.
+- **One behavior per cycle.** Each red-green-refactor iteration should cover exactly one small behavior or edge case.
+- **Tests are first-class code.** Keep them readable, well-named, and focused.
+- **Run tests frequently.** Run \`{{testCommand}}\` after every meaningful change — not just at the end.
+- **Commit at green.** Each commit should have all tests passing. Use the cycle boundaries as natural commit points.
+
+### Test File Conventions
+
+- Place test files next to the source: \`src/foo.ts\` → \`src/foo.test.ts\` (or \`tests/foo.test.ts\`)
+- Use descriptive test names: \`test("returns empty array when input is null", ...)\`
+- Import from \`bun:test\`: \`import { describe, test, expect } from "bun:test";\`
+`;
+
+/**
+ * Build the TDD block with the configured test command substituted in.
+ */
+function buildTddBlock(config: WomboConfig): string {
+  return TDD_BLOCK.replace(/\{\{testCommand\}\}/g, config.tdd.testCommand);
+}
+
 // ---------------------------------------------------------------------------
 // Placeholder Substitution
 // ---------------------------------------------------------------------------
@@ -152,6 +211,18 @@ export function renderGeneralistAgent(
     }
   }
 
+  // Deterministic TDD injection
+  if (config.tdd.enabled) {
+    const tddContent = buildTddBlock(config);
+    const neverDoMarker = "## What You Must Never Do";
+    const idx = raw.indexOf(neverDoMarker);
+    if (idx !== -1) {
+      raw = raw.slice(0, idx) + tddContent + "\n" + raw.slice(idx);
+    } else {
+      raw += "\n" + tddContent;
+    }
+  }
+
   return applyPlaceholders(raw, config, projectRoot);
 }
 
@@ -233,6 +304,11 @@ export function patchImportedAgent(
   // Deterministic portless injection (appended after body.end)
   if (config.portless.enabled && isPortlessAvailable(config)) {
     patchedBody = patchedBody.trimEnd() + "\n" + PORTLESS_BLOCK;
+  }
+
+  // Deterministic TDD injection (appended after portless or body.end)
+  if (config.tdd.enabled) {
+    patchedBody = patchedBody.trimEnd() + "\n" + buildTddBlock(config);
   }
 
   // --- Reassemble & substitute placeholders ---
