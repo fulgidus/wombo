@@ -1,0 +1,20 @@
+{
+  "yaml.schemas": {
+    "./schemas/task.schema.json": [
+      ".wombo-combo/tasks/*.yml",
+      ".wombo-combo/archive/*.yml",
+      "!.wombo-combo/tasks/_meta.yml",
+      "!.wombo-combo/archive/_meta.yml"
+    ],
+    "./schemas/meta.schema.json": [
+      ".wombo-combo/tasks/_meta.yml",
+      ".wombo-combo/archive/_meta.yml"
+    ]
+  },
+  "json.schemas": [
+    {
+      "fileMatch": [".wombo-combo/config.json"],
+      "url": "./schemas/config.schema.json"
+    }
+  ]
+}

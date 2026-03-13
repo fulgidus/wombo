@@ -1,0 +1,261 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/fulgidus/wombo/schemas/config.schema.json",
+  "title": "wombo-combo Configuration",
+  "description": "Schema for .wombo-combo/config.json",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference (for editor validation)"
+    },
+    "tasksDir": {
+      "type": "string",
+      "default": "tasks",
+      "description": "Directory name for task files relative to .wombo-combo/"
+    },
+    "archiveDir": {
+      "type": "string",
+      "default": "archive",
+      "description": "Directory name for archived task files relative to .wombo-combo/"
+    },
+    "tasksFile": {
+      "type": "string",
+      "description": "DEPRECATED: Legacy single-file path. Use tasksDir instead."
+    },
+    "archiveFile": {
+      "type": "string",
+      "description": "DEPRECATED: Legacy single-file path. Use archiveDir instead."
+    },
+    "baseBranch": {
+      "type": "string",
+      "default": "main",
+      "description": "Base branch to create feature branches from"
+    },
+    "build": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "default": "npm run build",
+          "description": "Build command to run in worktrees"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 300000,
+          "description": "Build timeout in milliseconds"
+        },
+        "artifactDir": {
+          "type": "string",
+          "default": "dist",
+          "description": "Build artifact directory"
+        }
+      }
+    },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "default": "npm install",
+          "description": "Install command to run in worktrees"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120000,
+          "description": "Install timeout in milliseconds"
+        }
+      }
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "branchPrefix": {
+          "type": "string",
+          "default": "feature/",
+          "description": "Branch name prefix for feature branches"
+        },
+        "worktreePrefix": {
+          "type": "string",
+          "default": "woco-",
+          "description": "Worktree directory name prefix"
+        },
+        "remote": {
+          "type": "string",
+          "default": "origin",
+          "description": "Git remote name"
+        },
+        "mergeStrategy": {
+          "type": "string",
+          "default": "--no-ff",
+          "description": "Merge strategy flag (e.g. --no-ff, --ff-only)"
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "bin": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Path to agent binary (null = auto-detect)"
+        },
+        "name": {
+          "type": "string",
+          "default": "wave-worker",
+          "description": "Agent name to pass via --agent flag"
+        },
+        "configFiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [".opencode/", "opencode.json", "AGENTS.md"],
+          "description": "Config files/dirs to copy into worktrees"
+        },
+        "tmuxPrefix": {
+          "type": "string",
+          "default": "woco",
+          "description": "Session name prefix for terminal multiplexer"
+        },
+        "multiplexer": {
+          "type": "string",
+          "enum": ["auto", "dmux", "tmux"],
+          "default": "auto",
+          "description": "Terminal multiplexer preference"
+        }
+      }
+    },
+    "portless": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Whether portless is enabled for agent worktrees"
+        },
+        "bin": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Path to portless binary (null = auto-detect)"
+        },
+        "proxyPort": {
+          "type": "integer",
+          "default": 1355,
+          "description": "Proxy port (portless default is 1355)"
+        },
+        "https": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether to use HTTPS mode"
+        }
+      }
+    },
+    "backup": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxBackups": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 0,
+          "description": "Maximum number of timestamped backups to keep"
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxConcurrent": {
+          "type": "integer",
+          "default": 10,
+          "minimum": 1,
+          "description": "Max concurrent agents"
+        },
+        "maxRetries": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 0,
+          "description": "Max retries per agent"
+        }
+      }
+    },
+    "browser": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable browser testing in the verify pipeline"
+        },
+        "bin": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Path to browser binary (null = auto-detect)"
+        },
+        "headless": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run browser in headless mode"
+        },
+        "testCommand": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Custom test command for browser tests"
+        },
+        "launchTimeout": {
+          "type": "integer",
+          "default": 30000,
+          "description": "Timeout for launching a browser instance (ms)"
+        },
+        "testTimeout": {
+          "type": "integer",
+          "default": 60000,
+          "description": "Timeout for each browser test script (ms)"
+        },
+        "defaultViewport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "width": {
+              "type": "integer",
+              "default": 1280
+            },
+            "height": {
+              "type": "integer",
+              "default": 720
+            }
+          }
+        }
+      }
+    },
+    "agentRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": ["auto", "monitored", "disabled"],
+          "default": "auto",
+          "description": "Agent registry download mode"
+        },
+        "source": {
+          "type": "string",
+          "default": "msitarzewski/agency-agents",
+          "description": "GitHub repo for agent registry"
+        },
+        "cacheDir": {
+          "type": "string",
+          "default": "agents-cache",
+          "description": "Local cache directory for downloaded agents"
+        }
+      }
+    }
+  }
+}

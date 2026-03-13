@@ -1,0 +1,95 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/fulgidus/wombo/schemas/task.schema.json",
+  "title": "wombo-combo Task",
+  "description": "Schema for a single task YAML file in .wombo-combo/tasks/ or .wombo-combo/archive/",
+  "type": "object",
+  "required": ["id", "title", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+      "description": "Unique kebab-case identifier"
+    },
+    "title": {
+      "type": "string",
+      "description": "Human-readable task title"
+    },
+    "description": {
+      "type": "string",
+      "description": "Detailed description of what the task entails"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"],
+      "description": "Current lifecycle status"
+    },
+    "completion": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Percentage complete (0-100)"
+    },
+    "difficulty": {
+      "type": "string",
+      "enum": ["trivial", "easy", "medium", "hard", "very_hard"],
+      "description": "Estimated implementation difficulty"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low", "wishlist"],
+      "description": "Task priority level"
+    },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "IDs of tasks that must be completed before this one"
+    },
+    "effort": {
+      "type": "string",
+      "pattern": "^P",
+      "description": "ISO 8601 duration estimate (e.g. PT2H, P1D, PT30M)"
+    },
+    "started_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when work started"
+    },
+    "ended_at": {
+      "type": ["string", "null"],
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when work ended"
+    },
+    "constraints": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Implementation constraints or requirements"
+    },
+    "forbidden": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Things the implementation must NOT do"
+    },
+    "references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Links, file paths, or other reference material"
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Free-form implementation notes"
+    },
+    "subtasks": {
+      "type": "array",
+      "items": { "$ref": "#" },
+      "description": "Nested subtasks (same schema, recursive)"
+    },
+    "agent_type": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+      "description": "Agent type from external registry (e.g. engineering/engineering-frontend-developer)"
+    }
+  }
+}
