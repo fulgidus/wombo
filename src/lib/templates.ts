@@ -19,6 +19,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import YAML from "yaml";
 import type { WomboConfig } from "../config.js";
 import { isPortlessAvailable } from "./portless.js";
+import { normalizeAgentFormat } from "./format-converter.js";
 
 // ---------------------------------------------------------------------------
 // Template Directory & Paths
@@ -138,7 +139,7 @@ const DEFAULT_RUNTIME = "Bun (not Node). TypeScript, strict mode, ESM only.";
  * Replace {{placeholders}} in template content with config-derived values.
  *
  * Supported placeholders:
- *   - {{tasksFile}}      — tasks YAML filename (e.g. "tasks.yml")
+ *   - {{tasksDir}}       — tasks directory name (e.g. "tasks")
  *   - {{branchPrefix}}   — git branch prefix (e.g. "feature/")
  *   - {{buildCommand}}   — build command (e.g. "bun run build")
  *   - {{runtime}}        — project runtime description
@@ -251,7 +252,11 @@ export function patchImportedAgent(
   config: WomboConfig,
   projectRoot: string
 ): string {
-  const { yaml: rawYaml, body: rawBody } = splitFrontmatter(rawAgentMd);
+  // Normalize agency-agents format to woco-compatible format before patching.
+  // If the content is already in woco format, this is a no-op.
+  const normalizedMd = normalizeAgentFormat(rawAgentMd);
+
+  const { yaml: rawYaml, body: rawBody } = splitFrontmatter(normalizedMd);
 
   // --- Patch frontmatter description ---
   let patchedYaml = rawYaml;

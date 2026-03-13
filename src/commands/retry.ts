@@ -105,7 +105,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   const data = loadFeatures(projectRoot, config);
   const feature = data.tasks.find((f: Feature) => f.id === opts.featureId);
   if (!feature) {
-    outputError(fmt, `Feature ${opts.featureId} not found in ${config.tasksFile}`);
+    outputError(fmt, `Feature ${opts.featureId} not found in ${config.tasksDir}`);
     return; // unreachable
   }
 

@@ -46,6 +46,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
   const state = loadState(projectRoot);
   if (!state) {
     outputError(outputFmt, "No active wave. Nothing to abort.");
+    return; // unreachable — helps TypeScript narrow
   }
 
   // Find the agent
@@ -55,6 +56,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
       outputFmt,
       `Agent not found for feature: ${featureId}. Use 'woco status' to see active agents.`
     );
+    return; // unreachable — helps TypeScript narrow
   }
 
   // Only abort agents that are actually active (running, installing, queued, resolving_conflict)
@@ -65,6 +67,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
       `Agent ${featureId} is not in an abortable state (current: ${agent.status}). ` +
         `Only running, installing, queued, or resolving_conflict agents can be aborted.`
     );
+    return; // unreachable — helps TypeScript narrow
   }
 
   // 1. Kill the multiplexer session (if any)

@@ -57,6 +57,7 @@ function makeWaveState(overrides?: Partial<WaveState>): WaveState {
     model: null,
     interactive: false,
     agents: [],
+    schedule_plan: null,
     ...overrides,
   };
 }
@@ -79,6 +80,11 @@ function makeAgentState(overrides?: Partial<AgentState>): AgentState {
     build_output: null,
     error: null,
     effort_estimate_ms: null,
+    stream_index: null,
+    depends_on: [],
+    depended_on_by: [],
+    agent_name: null,
+    agent_type: null,
     ...overrides,
   };
 }
