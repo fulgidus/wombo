@@ -107,7 +107,7 @@ import { cmdTui } from "./commands/tui.js";
 
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
-import { resolveOutputFormat, type OutputFormat } from "./lib/output.js";
+import { resolveOutputFormat, outputError, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
 import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
 import { buildToonSpec, renderToonLegend } from "./lib/toon-spec.js";
@@ -246,8 +246,7 @@ export function parseArgs(argv: string[]): CLIArgs {
     // Helper: consume the next argument, or exit with a clear error
     function requireValue(flag: string): string {
       if (i + 1 >= args.length) {
-        console.error(`Flag ${flag} requires a value.`);
-        process.exit(1);
+        outputError(result.outputFmt, `Flag ${flag} requires a value.`);
       }
       return args[++i];
     }
@@ -575,8 +574,7 @@ async function main(): Promise<void> {
   ];
   for (const [flag, value] of numericArgs) {
     if (value !== undefined && isNaN(value)) {
-      console.error(`${flag} requires a numeric value.`);
-      process.exit(1);
+      outputError(args.outputFmt, `${flag} requires a numeric value.`);
     }
   }
 
@@ -621,9 +619,7 @@ async function main(): Promise<void> {
           : args.featureId;
         const cmdSpec = spec.commands.find((c) => c.command === cmdName);
         if (!cmdSpec) {
-          console.error(`Unknown command: "${cmdName}"`);
-          console.error("Run 'woco describe --output toon' to see the full TOON spec.");
-          process.exit(1);
+          outputError(args.outputFmt, `Unknown command: "${cmdName}". Run 'woco describe --output toon' to see the full TOON spec.`);
           return;
         }
         console.log(JSON.stringify(cmdSpec, null, 2));
@@ -641,9 +637,7 @@ async function main(): Promise<void> {
         : args.featureId;
       const def = findCommandDef(cmdName);
       if (!def) {
-        console.error(`Unknown command: "${cmdName}"`);
-        console.error("Run 'woco describe' to list all commands.");
-        process.exit(1);
+        outputError(args.outputFmt, `Unknown command: "${cmdName}". Run 'woco describe' to list all commands.`);
         return;
       }
       console.log(JSON.stringify(commandToSchema(def), null, 2));
@@ -672,8 +666,7 @@ async function main(): Promise<void> {
 
   if (args.command === "logs") {
     if (!args.featureId) {
-      console.error("Usage: woco logs <feature-id> [--tail N] [--follow] [--output json]");
-      process.exit(1);
+      outputError(args.outputFmt, "Usage: woco logs <feature-id> [--tail N] [--follow] [--output json]");
       return;
     }
     await cmdLogs({
@@ -771,8 +764,7 @@ async function main(): Promise<void> {
 
     case "retry": {
       if (!args.featureId) {
-        console.error("Usage: woco retry <feature-id>");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco retry <feature-id>");
         return;
       }
       await cmdRetry({
@@ -802,8 +794,7 @@ async function main(): Promise<void> {
 
     case "abort": {
       if (!args.featureId) {
-        console.error("Usage: woco abort <feature-id> [--requeue] [--output json]");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco abort <feature-id> [--requeue] [--output json]");
         return;
       }
       await cmdAbort({
@@ -836,6 +827,9 @@ async function main(): Promise<void> {
       break;
 
     default:
+      if (args.outputFmt !== "text") {
+        outputError(args.outputFmt, `Unknown command: ${args.command}`);
+      }
       console.error(`Unknown command: ${args.command}`);
       cmdHelp();
       process.exit(1);
@@ -869,8 +863,7 @@ async function handleTasksSubcommand(
 
     case "add": {
       if (!args.featureId || !args.title) {
-        console.error("Usage: woco tasks add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>]");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco tasks add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>]");
         return;
       }
       await cmdTasksAdd({
@@ -894,8 +887,7 @@ async function handleTasksSubcommand(
       // or from the --status flag
       const newStatus = args.title || args.status;
       if (!args.featureId || !newStatus) {
-        console.error("Usage: woco tasks set-status <task-id> <status>");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco tasks set-status <task-id> <status>");
         return;
       }
       await cmdTasksSetStatus({
@@ -914,8 +906,7 @@ async function handleTasksSubcommand(
       // or from the --priority flag
       const newPriority = args.title || (args.priority as string | undefined);
       if (!args.featureId || !newPriority) {
-        console.error("Usage: woco tasks set-priority <task-id> <priority>");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco tasks set-priority <task-id> <priority>");
         return;
       }
       await cmdTasksSetPriority({
@@ -934,8 +925,7 @@ async function handleTasksSubcommand(
       // or from the --difficulty flag
       const newDifficulty = args.title || (args.difficulty as string | undefined);
       if (!args.featureId || !newDifficulty) {
-        console.error("Usage: woco tasks set-difficulty <task-id> <difficulty>");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco tasks set-difficulty <task-id> <difficulty>");
         return;
       }
       await cmdTasksSetDifficulty({
@@ -965,8 +955,7 @@ async function handleTasksSubcommand(
 
     case "show": {
       if (!args.featureId) {
-        console.error("Usage: woco tasks show <task-id>");
-        process.exit(1);
+        outputError(args.outputFmt, "Usage: woco tasks show <task-id>");
         return;
       }
       await cmdTasksShow({
@@ -998,9 +987,7 @@ async function handleTasksSubcommand(
       break;
 
     default:
-      console.error(`Unknown tasks subcommand: ${args.subcommand}`);
-      console.error("Run 'woco tasks help' or 'woco help' for usage.");
-      process.exit(1);
+      outputError(args.outputFmt, `Unknown tasks subcommand: ${args.subcommand}. Run 'woco tasks help' or 'woco help' for usage.`);
       return;
   }
 }

@@ -468,24 +468,42 @@ export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
     return;
   }
 
-  // --output json: emit structured data
-  if (fmt === "json") {
-    const rendered = source ? renderMermaidToTui(source, { ascii: true }) as string : null;
-    console.log(
-      JSON.stringify({
-        mermaid: source || null,
-        rendered,
-        nodes: nodeCount,
-        edges: edgeCount,
-        orphan_count: orphanCount,
-        orphans,
-      })
-    );
-    return;
-  }
+  // Non-mermaid mode: render the graph visually or emit structured data
+  const graphData = {
+    mermaid: source || null,
+    rendered: source ? renderMermaidToTui(source, { ascii: true }) as string : null,
+    nodes: nodeCount,
+    edges: edgeCount,
+    orphan_count: orphanCount,
+    orphans,
+  };
 
-  // --output toon: emit compact TOON format
-  if (fmt === "toon") {
+  output(fmt, graphData, () => {
+    // Default text: render the graph in the terminal
+    console.log(`\n${BOLD}Task Dependency Graph${RESET}`);
+
+    if (nodeCount > 0 && source) {
+      const rendered = renderMermaidToTui(source, { ascii: !!opts.ascii }) as string;
+      console.log(`${DIM}${nodeCount} nodes, ${edgeCount} edges${RESET}\n`);
+      console.log(rendered);
+    } else {
+      console.log(`${DIM}No dependency relationships found.${RESET}`);
+    }
+
+    // Print orphan summary
+    if (orphans.length > 0) {
+      console.log(`\n${BOLD}Standalone tasks${RESET} ${DIM}(${orphans.length} with no dependencies):${RESET}`);
+      for (const o of orphans) {
+        const badge = STATUS_BADGE[o.status];
+        console.log(`  ${DIM}${badge}${RESET} ${o.id} ${DIM}— ${o.title}${RESET}`);
+      }
+    }
+
+    // Print legend and diagnostics
+    printLegend(data.tasks);
+    printDiagnostics(data, !!opts.subtasks);
+    console.log("");
+  }, () => {
     console.log(renderGraph({
       mermaid: source || null,
       nodes: nodeCount,
@@ -493,31 +511,5 @@ export async function cmdTasksGraph(opts: TasksGraphOptions): Promise<void> {
       orphan_count: orphanCount,
       orphans,
     }));
-    return;
-  }
-
-  // Default: render the graph in the terminal
-  console.log(`\n${BOLD}Task Dependency Graph${RESET}`);
-
-  if (nodeCount > 0 && source) {
-    const rendered = renderMermaidToTui(source, { ascii: !!opts.ascii }) as string;
-    console.log(`${DIM}${nodeCount} nodes, ${edgeCount} edges${RESET}\n`);
-    console.log(rendered);
-  } else {
-    console.log(`${DIM}No dependency relationships found.${RESET}`);
-  }
-
-  // Print orphan summary
-  if (orphans.length > 0) {
-    console.log(`\n${BOLD}Standalone tasks${RESET} ${DIM}(${orphans.length} with no dependencies):${RESET}`);
-    for (const o of orphans) {
-      const badge = STATUS_BADGE[o.status];
-      console.log(`  ${DIM}${badge}${RESET} ${o.id} ${DIM}— ${o.title}${RESET}`);
-    }
-  }
-
-  // Print legend and diagnostics
-  printLegend(data.tasks);
-  printDiagnostics(data, !!opts.subtasks);
-  console.log("");
+  });
 }
