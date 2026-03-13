@@ -7,6 +7,7 @@
  *   - Determine pass/fail
  *   - Extract error messages for retry prompts
  *   - Run browser-based verification when enabled
+ *   - Run TDD verification (tests + test detection) when enabled
  *
  * IMPORTANT: runBuild is ASYNC — does not block the event loop.
  */
@@ -20,6 +21,11 @@ import {
   extractBrowserErrorSummary,
   type BrowserVerificationResult,
 } from "./browser-verifier.js";
+import {
+  runTddVerification,
+  extractTddErrorSummary,
+  type TddVerificationResult,
+} from "./tdd-verifier.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,15 +42,25 @@ export interface BuildResult {
   durationMs: number;
 }
 
+/** Options for controlling the full verification pipeline */
+export interface FullVerificationOptions {
+  /** Skip running tests (--skip-tests) */
+  skipTests?: boolean;
+  /** Strict TDD mode — fail if new files are missing tests (--strict-tdd) */
+  strictTdd?: boolean;
+}
+
 /**
- * Combined result of build verification + browser verification.
+ * Combined result of build verification + browser verification + TDD verification.
  */
 export interface FullVerificationResult {
   /** Build result (always runs) */
   build: BuildResult;
   /** Browser verification result (may be skipped) */
   browser: BrowserVerificationResult;
-  /** Overall pass: build passed AND browser passed (or was skipped) */
+  /** TDD verification result (may be skipped) */
+  tdd: TddVerificationResult;
+  /** Overall pass: build passed AND browser passed AND tdd passed */
   overallPassed: boolean;
   /** Combined error summary for retry prompts */
   combinedErrorSummary: string;
@@ -174,19 +190,36 @@ export function hasBuildArtifacts(
  * Run the complete verification pipeline:
  *   1. Run the build command
  *   2. If build passes and browser testing is enabled, run browser tests
+ *   3. If build passes and TDD is enabled, run tests + test detection
  *
- * Browser testing is additive — it runs AFTER the build passes and is
- * skipped if the build fails (no point testing a broken build in browser).
+ * Browser testing and TDD verification are additive — they run AFTER the
+ * build passes and are skipped if the build fails.
  */
 export async function runFullVerification(
   worktreePath: string,
   featureId: string,
-  config: WomboConfig
+  config: WomboConfig,
+  opts?: FullVerificationOptions
 ): Promise<FullVerificationResult> {
+  const skipTests = opts?.skipTests ?? false;
+  const strictTdd = opts?.strictTdd ?? false;
+
+  // Default TDD result (skipped)
+  const defaultTddResult: TddVerificationResult = {
+    ran: false,
+    skipReason: "Skipped because build failed",
+    testRun: null,
+    testDetection: null,
+    passed: true,
+    hasWarnings: false,
+    summary: "TDD verification skipped (build failed)",
+    strictMode: strictTdd,
+  };
+
   // Step 1: Build verification (always runs)
   const buildResult = await runBuild(worktreePath, config);
 
-  // If build failed, skip browser testing
+  // If build failed, skip browser testing and TDD verification
   if (!buildResult.passed) {
     return {
       build: buildResult,
@@ -195,6 +228,7 @@ export async function runFullVerification(
         skipReason: "Skipped because build failed",
         browserResult: null,
       },
+      tdd: defaultTddResult,
       overallPassed: false,
       combinedErrorSummary: buildResult.errorSummary,
     };
@@ -207,9 +241,20 @@ export async function runFullVerification(
     config,
   });
 
+  // Step 3: TDD verification (runs only if build passed and TDD enabled)
+  const tddResult = await runTddVerification({
+    worktreePath,
+    featureId,
+    config,
+    skipTests,
+    strictTdd,
+    baseBranch: config.baseBranch,
+  });
+
   // Determine overall pass
   const browserPassed = !browserResult.ran || (browserResult.browserResult?.allPassed ?? true);
-  const overallPassed = buildResult.passed && browserPassed;
+  const tddPassed = tddResult.passed;
+  const overallPassed = buildResult.passed && browserPassed && tddPassed;
 
   // Combine error summaries
   let combinedErrorSummary = "";
@@ -222,10 +267,17 @@ export async function runFullVerification(
       ? `${combinedErrorSummary}\n\n--- Browser Test Errors ---\n\n${browserErrors}`
       : browserErrors;
   }
+  if (tddResult.ran && !tddResult.passed) {
+    const tddErrors = extractTddErrorSummary(tddResult);
+    combinedErrorSummary = combinedErrorSummary
+      ? `${combinedErrorSummary}\n\n--- TDD Verification Errors ---\n\n${tddErrors}`
+      : tddErrors;
+  }
 
   return {
     build: buildResult,
     browser: browserResult,
+    tdd: tddResult,
     overallPassed,
     combinedErrorSummary,
   };
