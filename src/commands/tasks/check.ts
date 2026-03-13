@@ -22,10 +22,12 @@ import {
   type Feature,
   type Subtask,
   type FeaturesFile,
-  type Priority,
-  type Difficulty,
-  type FeatureStatus,
 } from "../../lib/tasks.js";
+import {
+  VALID_STATUSES,
+  VALID_PRIORITIES,
+  VALID_DIFFICULTIES,
+} from "../../lib/task-schema.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,16 +44,8 @@ interface CheckResult {
 }
 
 // ---------------------------------------------------------------------------
-// Validation
+// Validation (enums imported from task-schema.ts — single source of truth)
 // ---------------------------------------------------------------------------
-
-const VALID_STATUSES: FeatureStatus[] = [
-  "backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled",
-];
-
-const VALID_PRIORITIES: Priority[] = ["critical", "high", "medium", "low", "wishlist"];
-
-const VALID_DIFFICULTIES: Difficulty[] = ["trivial", "easy", "medium", "hard", "very_hard"];
 
 function collectAllItems(data: FeaturesFile): (Feature | Subtask)[] {
   const items: (Feature | Subtask)[] = [];
@@ -91,13 +85,13 @@ function checkTasks(data: FeaturesFile): CheckResult {
     if (!item.status) errors.push(`${prefix} Missing required field: status`);
 
     // Validate enum values
-    if (item.status && !VALID_STATUSES.includes(item.status)) {
+    if (item.status && !(VALID_STATUSES as readonly string[]).includes(item.status)) {
       errors.push(`${prefix} Invalid status: "${item.status}"`);
     }
-    if (item.priority && !VALID_PRIORITIES.includes(item.priority)) {
+    if (item.priority && !(VALID_PRIORITIES as readonly string[]).includes(item.priority)) {
       errors.push(`${prefix} Invalid priority: "${item.priority}"`);
     }
-    if (item.difficulty && !VALID_DIFFICULTIES.includes(item.difficulty)) {
+    if (item.difficulty && !(VALID_DIFFICULTIES as readonly string[]).includes(item.difficulty)) {
       errors.push(`${prefix} Invalid difficulty: "${item.difficulty}"`);
     }
 

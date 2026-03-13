@@ -1,0 +1,48 @@
+# =============================================================================
+# WOMBO COMBO! — Task Store Metadata (_meta.yml)
+# =============================================================================
+#
+# This file lives at: .wombo-combo/<tasks|archive>/_meta.yml
+# Sibling files: one <task-id>.yml per task (see TASK SCHEMA below).
+#
+# REQUIRED FIELDS:
+#   version    : string — Schema version (currently "1.0").
+#   meta       : object — Metadata about this task store.
+#     created_at  : string — ISO 8601 datetime when the store was created.
+#     updated_at  : string — ISO 8601 datetime, auto-updated on every write.
+#     project     : string — Project name.
+#     generator   : string — Tool that created this file (always "wombo-combo").
+#     maintainer  : string — Primary maintainer handle or email.
+#
+# TASK FILE SCHEMA (<task-id>.yml):
+#   Each task file is a plain YAML mapping with these fields:
+#
+#   id          : string        — Unique kebab-case identifier (1-128 chars).
+#   title       : string        — Human-readable short name.
+#   description : string        — Detailed explanation of the task's goal.
+#   status      : enum          — backlog | planned | in_progress | blocked |
+#                                  in_review | done | cancelled
+#   completion  : integer       — Percentage 0-100.
+#   difficulty  : enum          — trivial | easy | medium | hard | very_hard
+#   priority    : enum          — critical | high | medium | low | wishlist
+#   depends_on  : list[string]  — IDs of tasks that must complete first.
+#   effort      : string        — ISO 8601 duration (e.g. "PT2H", "P1D").
+#   started_at  : string|null   — ISO 8601 datetime or null.
+#   ended_at    : string|null   — ISO 8601 datetime or null.
+#   constraints : list[string]  — Technical or process constraints.
+#   forbidden   : list[string]  — Explicitly forbidden approaches.
+#   references  : list[string]  — URLs or file paths for relevant docs.
+#   notes       : list[string]  — Free-form updates (newest first).
+#   subtasks    : list[task]    — Always [] in folder-based storage (legacy).
+#   agent_type  : string|null   — Optional agent type from registry.
+#
+# =============================================================================
+
+version: "1.0"
+
+meta:
+  created_at: "{{created_at}}"
+  updated_at: "{{updated_at}}"
+  project: "{{project}}"
+  generator: "wombo-combo"
+  maintainer: "{{maintainer}}"

@@ -37,7 +37,9 @@ import {
 // Template path (resolved relative to this source file)
 // ---------------------------------------------------------------------------
 
-export const TASKS_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", "tasks.yml");
+export const META_TEMPLATE_PATH = join(dirname(import.meta.dir), "templates", "_meta.yml");
+/** @deprecated Use META_TEMPLATE_PATH — the old monolithic template no longer exists. */
+export const TASKS_TEMPLATE_PATH = META_TEMPLATE_PATH;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,23 +114,9 @@ export type Subtask = Task;
 export type FeatureStatus = TaskStatus;
 export type FeaturesFile = TasksFile & { archive: Task[] };
 
-// Priority ordering (lower = more important)
-const PRIORITY_ORDER: Record<Priority, number> = {
-  critical: 0,
-  high: 1,
-  medium: 2,
-  low: 3,
-  wishlist: 4,
-};
-
-// Difficulty ordering (lower = easier)
-const DIFFICULTY_ORDER: Record<Difficulty, number> = {
-  trivial: 0,
-  easy: 1,
-  medium: 2,
-  hard: 3,
-  very_hard: 4,
-};
+// Re-export ordering maps from the canonical source (task-schema.ts)
+import { PRIORITY_ORDER, DIFFICULTY_ORDER } from "./task-schema.js";
+export { PRIORITY_ORDER, DIFFICULTY_ORDER };
 
 // ---------------------------------------------------------------------------
 // ISO 8601 Duration Parser
@@ -547,8 +535,6 @@ function sortByEffort(tasks: Task[]): Task[] {
 // ---------------------------------------------------------------------------
 // Utility Exports
 // ---------------------------------------------------------------------------
-
-export { PRIORITY_ORDER, DIFFICULTY_ORDER };
 
 /**
  * Get a compact summary of a task for display.

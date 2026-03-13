@@ -17,19 +17,12 @@ import {
   findFeatureById,
   type Difficulty,
 } from "../../lib/tasks.js";
+import { VALID_DIFFICULTIES } from "../../lib/task-schema.js";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-const VALID_DIFFICULTIES: Difficulty[] = [
-  "trivial",
-  "easy",
-  "medium",
-  "hard",
-  "very_hard",
-];
 
 export interface TasksSetDifficultyOptions {
   projectRoot: string;
@@ -54,7 +47,7 @@ export async function cmdTasksSetDifficulty(opts: TasksSetDifficultyOptions): Pr
   }
 
   // Validate difficulty
-  if (!VALID_DIFFICULTIES.includes(opts.newDifficulty as Difficulty)) {
+  if (!(VALID_DIFFICULTIES as readonly string[]).includes(opts.newDifficulty)) {
     outputError(fmt, `Invalid difficulty: "${opts.newDifficulty}"\nValid difficulties: ${VALID_DIFFICULTIES.join(", ")}`);
     return;
   }

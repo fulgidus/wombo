@@ -13,11 +13,13 @@ import {
   saveFeatures,
   createBlankFeature,
   allFeatureIds,
-  PRIORITY_ORDER,
-  DIFFICULTY_ORDER,
   type Priority,
   type Difficulty,
 } from "../../lib/tasks.js";
+import {
+  VALID_PRIORITIES,
+  VALID_DIFFICULTIES,
+} from "../../lib/task-schema.js";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 import { validateEnum } from "../../lib/validate.js";
 
@@ -57,10 +59,7 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
     return;
   }
 
-  // Validate priority and difficulty enums
-  const VALID_PRIORITIES = Object.keys(PRIORITY_ORDER) as Priority[];
-  const VALID_DIFFICULTIES = Object.keys(DIFFICULTY_ORDER) as Difficulty[];
-
+  // Validate priority and difficulty enums (imported from task-schema.ts)
   if (opts.priority) {
     const pResult = validateEnum(opts.priority, VALID_PRIORITIES, "--priority");
     if (!pResult.valid) {

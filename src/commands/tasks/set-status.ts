@@ -14,21 +14,12 @@ import {
   findFeatureById,
   type FeatureStatus,
 } from "../../lib/tasks.js";
+import { VALID_STATUSES } from "../../lib/task-schema.js";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-const VALID_STATUSES: FeatureStatus[] = [
-  "backlog",
-  "planned",
-  "in_progress",
-  "blocked",
-  "in_review",
-  "done",
-  "cancelled",
-];
 
 export interface TasksSetStatusOptions {
   projectRoot: string;
@@ -53,7 +44,7 @@ export async function cmdTasksSetStatus(opts: TasksSetStatusOptions): Promise<vo
   }
 
   // Validate status
-  if (!VALID_STATUSES.includes(opts.newStatus as FeatureStatus)) {
+  if (!(VALID_STATUSES as readonly string[]).includes(opts.newStatus)) {
     outputError(fmt, `Invalid status: "${opts.newStatus}"\nValid statuses: ${VALID_STATUSES.join(", ")}`);
     return;
   }

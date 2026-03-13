@@ -17,19 +17,12 @@ import {
   findFeatureById,
   type Priority,
 } from "../../lib/tasks.js";
+import { VALID_PRIORITIES } from "../../lib/task-schema.js";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-const VALID_PRIORITIES: Priority[] = [
-  "critical",
-  "high",
-  "medium",
-  "low",
-  "wishlist",
-];
 
 export interface TasksSetPriorityOptions {
   projectRoot: string;
@@ -54,7 +47,7 @@ export async function cmdTasksSetPriority(opts: TasksSetPriorityOptions): Promis
   }
 
   // Validate priority
-  if (!VALID_PRIORITIES.includes(opts.newPriority as Priority)) {
+  if (!(VALID_PRIORITIES as readonly string[]).includes(opts.newPriority)) {
     outputError(fmt, `Invalid priority: "${opts.newPriority}"\nValid priorities: ${VALID_PRIORITIES.join(", ")}`);
     return;
   }

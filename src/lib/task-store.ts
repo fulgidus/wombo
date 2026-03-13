@@ -33,6 +33,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { WomboConfig } from "../config.js";
 import { WOMBO_DIR } from "../config.js";
 import type { Task, TasksFile, ArchiveFile } from "./tasks.js";
+import { validateTask, validateMeta as validateMetaSchema } from "./task-schema.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -107,6 +108,17 @@ function loadMeta(dir: string): TasksMeta {
   try {
     const raw = readFileSync(metaPath, "utf-8");
     const parsed = parseYaml(raw);
+
+    // Validate and warn
+    const issues = validateMetaSchema(parsed);
+    for (const issue of issues) {
+      if (issue.level === "error") {
+        console.error(`  [schema] ${issue.taskId}: ${issue.message}`);
+      } else {
+        console.warn(`  [schema] ${issue.taskId}: ${issue.message}`);
+      }
+    }
+
     return {
       version: parsed?.version ?? "1.0",
       meta: parsed?.meta ?? defaultMeta().meta,
@@ -159,6 +171,17 @@ function loadTaskFile(filePath: string): Task | null {
     const parsed = parseYaml(raw);
     if (!parsed || typeof parsed !== "object") return null;
     normalizeTask(parsed as Task);
+
+    // Validate and warn (but still return the task)
+    const issues = validateTask(parsed);
+    for (const issue of issues) {
+      if (issue.level === "error") {
+        console.error(`  [schema] ${issue.taskId}: ${issue.message}`);
+      } else {
+        console.warn(`  [schema] ${issue.taskId}: ${issue.message}`);
+      }
+    }
+
     return parsed as Task;
   } catch {
     return null;

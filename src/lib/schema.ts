@@ -13,6 +13,7 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { VALID_STATUSES, VALID_PRIORITIES, VALID_DIFFICULTIES } from "./task-schema.js";
 
 // ---------------------------------------------------------------------------
 // Dynamic version reader
@@ -138,8 +139,8 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     flags: [
       { name: "--top-priority", description: "Select top N features by priority", type: "number" },
       { name: "--quickest-wins", description: "Select N features with lowest effort", type: "number" },
-      { name: "--priority", description: "Filter by priority level", type: "string", enum: ["critical", "high", "medium", "low", "wishlist"] },
-      { name: "--difficulty", description: "Filter by difficulty level", type: "string", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
+      { name: "--priority", description: "Filter by priority level", type: "string", enum: VALID_PRIORITIES },
+      { name: "--difficulty", description: "Filter by difficulty level", type: "string", enum: VALID_DIFFICULTIES },
       { name: "--features", description: "Select specific features by comma-separated IDs (alias for --tasks)", type: "string" },
       { name: "--tasks", description: "Select specific tasks by comma-separated IDs", type: "string" },
       { name: "--all-ready", description: "Select all features whose dependencies are met", type: "boolean", default: false },
@@ -325,9 +326,9 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         summary: "List tasks with optional filtering",
         positionals: [],
         flags: [
-          { name: "--status", description: "Filter by status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
-          { name: "--priority", description: "Filter by priority", type: "string", enum: ["critical", "high", "medium", "low", "wishlist"] },
-          { name: "--difficulty", description: "Filter by difficulty", type: "string", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
+          { name: "--status", description: "Filter by status", type: "string", enum: VALID_STATUSES },
+          { name: "--priority", description: "Filter by priority", type: "string", enum: VALID_PRIORITIES },
+          { name: "--difficulty", description: "Filter by difficulty", type: "string", enum: VALID_DIFFICULTIES },
           { name: "--ready", description: "Show only ready tasks (backlog + deps met)", type: "boolean", default: false },
           { name: "--include-archive", description: "Include archived tasks", type: "boolean", default: false },
           { name: "--fields", description: "Comma-separated list of fields to include in output", type: "string" },
@@ -344,8 +345,8 @@ export const COMMAND_REGISTRY: CommandDef[] = [
         ],
         flags: [
           { name: "--description", alias: "--desc", description: "Task description", type: "string" },
-          { name: "--priority", description: "Priority level", type: "string", default: "medium", enum: ["critical", "high", "medium", "low", "wishlist"] },
-          { name: "--difficulty", description: "Difficulty level", type: "string", default: "medium", enum: ["trivial", "easy", "medium", "hard", "very_hard"] },
+          { name: "--priority", description: "Priority level", type: "string", default: "medium", enum: VALID_PRIORITIES },
+          { name: "--difficulty", description: "Difficulty level", type: "string", default: "medium", enum: VALID_DIFFICULTIES },
           { name: "--effort", description: "Effort estimate (ISO 8601 duration, e.g. PT2H)", type: "string", default: "PT1H" },
           { name: "--depends-on", description: "Comma-separated dependency IDs", type: "string" },
           { name: "--dry-run", description: "Show what would be added without writing", type: "boolean", default: false },
@@ -433,7 +434,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
           "detection, dangling dependency warnings, and cycle detection.",
         positionals: [],
         flags: [
-          { name: "--status", description: "Filter graph to tasks with this status", type: "string", enum: ["backlog", "planned", "in_progress", "blocked", "in_review", "done", "cancelled"] },
+          { name: "--status", description: "Filter graph to tasks with this status", type: "string", enum: VALID_STATUSES },
           { name: "--ascii", description: "Use ASCII-only rendering (no Unicode box chars)", type: "boolean", default: false },
           { name: "--mermaid", description: "Emit raw Mermaid source instead of rendered graph", type: "boolean", default: false },
           { name: "--subtasks", description: "Include subtask-level nodes in the graph", type: "boolean", default: false },
