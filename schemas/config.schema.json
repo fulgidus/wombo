@@ -107,7 +107,7 @@
         },
         "name": {
           "type": "string",
-          "default": "wave-worker",
+          "default": "generalist-agent",
           "description": "Agent name to pass via --agent flag"
         },
         "configFiles": {

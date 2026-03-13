@@ -20,7 +20,7 @@
   },
   "agent": {
     "bin": null,
-    "name": "wave-worker",
+    "name": "generalist-agent",
     "configFiles": [
       ".opencode/",
       "opencode.json",

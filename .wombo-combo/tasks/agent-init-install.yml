@@ -1,9 +1,9 @@
 id: agent-init-install
-title: Install agent template into project during 'wombo init'
+title: Install agent template into project during 'woco init'
 description: >
-  During 'wombo init', create the agent/ directory and write the wave-worker.md template into it. Also ensure agent/ is
-  added to the configFiles array in the generated wombo.json. If agent/wave-worker.md already exists, prompt the user
-  before overwriting.
+  During 'woco init', create the .opencode/agents/ directory and write the generalist-agent.md template into it. Also
+  ensure it is added to the configFiles array in the generated config. If the agent template already exists, prompt the
+  user before overwriting.
 status: done
 completion: 100
 difficulty: easy

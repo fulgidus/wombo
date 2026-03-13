@@ -26,7 +26,7 @@ import { isPortlessAvailable } from "./portless.js";
 
 const TEMPLATES_DIR = join(dirname(import.meta.dir), "templates");
 
-/** Standalone generalist agent template (replaces wave-worker.md). */
+/** Standalone generalist agent template. */
 export const GENERALIST_TEMPLATE_PATH = join(TEMPLATES_DIR, "generalist-agent.md");
 
 /** Patch: text appended to an imported agent's frontmatter `description` field. */

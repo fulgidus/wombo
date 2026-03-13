@@ -19,8 +19,8 @@ import type { WorktreeInfo } from "../src/lib/worktree.js";
 
 function makeConfig(overrides?: Partial<WomboConfig["git"]>): WomboConfig {
   return {
-    tasksFile: "tasks.yml",
-    archiveFile: "archive.yml",
+    tasksDir: "tasks",
+    archiveDir: "archive",
     baseBranch: "main",
     build: { command: "bun run build", timeout: 300_000, artifactDir: "dist" },
     install: { command: "bun install", timeout: 120_000 },
@@ -33,11 +33,33 @@ function makeConfig(overrides?: Partial<WomboConfig["git"]>): WomboConfig {
     },
     agent: {
       bin: null,
-      name: "wave-worker",
+      name: "generalist-agent",
       configFiles: [],
       tmuxPrefix: "wombo",
+      multiplexer: "auto",
     },
+    portless: {
+      enabled: true,
+      bin: null,
+      proxyPort: 1355,
+      https: false,
+    },
+    backup: { maxBackups: 5 },
     defaults: { maxConcurrent: 6, maxRetries: 2 },
+    browser: {
+      enabled: false,
+      bin: null,
+      headless: true,
+      testCommand: null,
+      launchTimeout: 30_000,
+      testTimeout: 60_000,
+      defaultViewport: { width: 1280, height: 720 },
+    },
+    agentRegistry: {
+      mode: "auto",
+      source: "msitarzewski/agency-agents",
+      cacheDir: "agents-cache",
+    },
   };
 }
 

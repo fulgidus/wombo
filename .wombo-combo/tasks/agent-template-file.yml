@@ -1,7 +1,7 @@
 id: agent-template-file
-title: Ship wave-worker.md as a bundled template in src/templates/
+title: Ship generalist-agent.md as a bundled template in src/templates/
 description: >
-  Move/copy the current agent/wave-worker.md content into src/templates/wave-worker.md so wombo always has a canonical
+  Move/copy the current agent definition into src/templates/generalist-agent.md so wombo-combo always has a canonical
   agent definition to install. The template should use placeholders (e.g. {{project}}) where appropriate so it can be
   customized per-project.
 status: done

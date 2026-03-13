@@ -71,7 +71,7 @@ async function runSafe(cmd: string, cwd: string): Promise<{ ok: boolean; output:
  *
  * Git emits this when a merge would overwrite untracked files:
  *   error: The following untracked working tree files would be overwritten by merge:
- *   	.opencode/agents/wave-worker.md
+ *   	.opencode/agents/generalist-agent.md
  *   Please move or remove them before you merge.
  *   Aborting
  */
