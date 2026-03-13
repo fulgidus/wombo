@@ -104,9 +104,11 @@ import { cmdTasksArchive } from "./commands/tasks/archive.js";
 import { cmdTasksShow } from "./commands/tasks/show.js";
 import { cmdTasksGraph } from "./commands/tasks/graph.js";
 import { cmdTui } from "./commands/tui.js";
+import { handleQuestSubcommand } from "./commands/quest.js";
 
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
+import type { QuestHitlMode } from "./lib/quest.js";
 import { resolveOutputFormat, outputError, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
 import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
@@ -169,6 +171,9 @@ export interface CLIArgs {
   strictTdd?: boolean;
   // Agent selection (per-task override)
   agent?: string;
+  // Quest-specific options
+  goal?: string;
+  hitlMode?: QuestHitlMode;
 }
 
 // ---------------------------------------------------------------------------
@@ -190,6 +195,7 @@ export const COMMAND_ALIASES: Record<string, string> = {
   lo: "logs",
   t: "tasks",
   features: "tasks", // backward-compat full-word alias
+  q: "quest",
   u: "upgrade",
   d: "describe",
   comp: "completion",
@@ -208,6 +214,17 @@ export const SUBCOMMAND_ALIASES: Record<string, string> = {
   ar: "archive",
   sh: "show",
   g: "graph",
+};
+
+/** Map of short aliases → canonical quest subcommand names. */
+export const QUEST_SUBCOMMAND_ALIASES: Record<string, string> = {
+  c: "create",
+  ls: "list",
+  sh: "show",
+  a: "activate",
+  p: "pause",
+  co: "complete",
+  ab: "abandon",
 };
 
 // ---------------------------------------------------------------------------
@@ -237,6 +254,11 @@ export function parseArgs(argv: string[]): CLIArgs {
     result.subcommand = args[1] || "list";
     // Resolve subcommand alias (e.g., "ls" → "list", "ss" → "set-status")
     result.subcommand = SUBCOMMAND_ALIASES[result.subcommand] ?? result.subcommand;
+    startIdx = 2;
+  } else if (result.command === "quest") {
+    result.subcommand = args[1] || "list";
+    // Resolve quest subcommand alias (e.g., "c" → "create", "sh" → "show")
+    result.subcommand = QUEST_SUBCOMMAND_ALIASES[result.subcommand] ?? result.subcommand;
     startIdx = 2;
   }
 
@@ -384,6 +406,14 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.agent = requireValue(arg);
         break;
 
+      // --- Quest-specific options ---
+      case "--goal":
+        result.goal = requireValue(arg);
+        break;
+      case "--hitl":
+        result.hitlMode = requireValue(arg) as QuestHitlMode;
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -423,6 +453,7 @@ Commands:                        (alias)
   cleanup                        (c)     Remove all wave worktrees and multiplexer sessions
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
+  quest                          (q)     Manage quests (scoped missions; see below)
   tui                                    Interactive TUI: browse tasks, select, launch, monitor
   upgrade                        (u)     Check for updates and upgrade wombo-combo
   describe                       (d)     Emit JSON schema or TOON legend (--output toon)
@@ -440,6 +471,15 @@ Tasks Subcommands:               (alias)
   tasks archive [id]             (ar)    Move done/cancelled to archive (--dry-run)
   tasks show <id>                (sh)    Show task details
   tasks graph                    (g)     Visualize dependency graph (--ascii, --mermaid, --subtasks)
+
+Quest Subcommands:               (alias)
+  quest create <id> "Title"      (c)     Create a new quest (--goal, --priority, --difficulty, --hitl)
+  quest list                     (ls)    List all quests (--status to filter)
+  quest show <id>                (sh)    Show quest details
+  quest activate <id>            (a)     Activate a quest (creates branch, sets status to active)
+  quest pause <id>               (p)     Pause an active/planning quest
+  quest complete <id>            (co)    Complete quest (merges branch into base; --force to skip merge)
+  quest abandon <id>             (ab)    Abandon quest without merging (--force to delete branch)
 
 Selection Options (for launch):
   --top-priority N         Select top N tasks by priority
@@ -484,6 +524,9 @@ Aliases (every command has a short form):
   woco t ls                      woco tasks list
   woco t a my-task "Title"       woco tasks add my-task "Title"
   woco t ss my-task done         woco tasks set-status my-task done
+  woco q c my-quest "Quest"      woco quest create my-quest "Quest" --goal "..."
+  woco q ls                      woco quest list
+  woco q sh my-quest             woco quest show my-quest
 
 Shell Completion:
   eval "$(woco completion bash)"    # Bash: add to ~/.bashrc
@@ -522,6 +565,10 @@ Examples:
   woco describe launch                    # describe a specific command
   woco describe tasks add                 # describe a subcommand
   woco describe --output toon             # emit TOON format legend/spec
+  woco quest create auth "Auth Overhaul" --goal "Replace basic auth with OAuth2" --priority high
+  woco quest list
+  woco quest activate auth
+  woco quest complete auth
 `);
 }
 
@@ -809,6 +856,26 @@ async function main(): Promise<void> {
 
     case "tasks":
       await handleTasksSubcommand(args, PROJECT_ROOT, config);
+      break;
+
+    case "quest":
+      await handleQuestSubcommand({
+        projectRoot: PROJECT_ROOT,
+        config,
+        subcommand: args.subcommand ?? "list",
+        questId: args.featureId,
+        title: args.title,
+        goal: args.goal,
+        priority: args.priority,
+        difficulty: args.difficulty,
+        hitlMode: args.hitlMode,
+        status: args.status,
+        agent: args.agent,
+        dryRun: args.dryRun,
+        force: args.force,
+        outputFmt: args.outputFmt,
+        fields: args.fields,
+      });
       break;
 
     case "tui":

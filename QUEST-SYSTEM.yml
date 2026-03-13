@@ -209,7 +209,7 @@ phases:
           branch. Completed tasks merge into quest branch (not baseBranch).
           Quest completion merges quest branch into baseBranch.
           Modify worktreePath/createWorktree to be quest-aware.
-        status: pending
+        status: done
         effort: PT6H
         depends_on: [p0-quest-storage]
         files:
@@ -226,7 +226,7 @@ phases:
           woco quest pause <id> — pause quest (agents can be stopped)
           woco quest complete <id> — merge quest branch, archive tasks
           woco quest abandon <id> — cancel without merging
-        status: pending
+        status: done
         effort: PT8H
         depends_on: [p1-quest-branching]
         files:
