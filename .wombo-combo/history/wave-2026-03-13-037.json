@@ -1,0 +1,48 @@
+{
+  "wave_id": "wave-2026-03-13-037",
+  "base_branch": "main",
+  "started_at": "2026-03-13T23:37:27.268Z",
+  "exported_at": "2026-03-13T23:49:25.611Z",
+  "model": null,
+  "max_concurrent": 8,
+  "interactive": false,
+  "summary": {
+    "total": 2,
+    "succeeded": 2,
+    "failed": 0,
+    "merged": 2,
+    "verified": 0,
+    "total_retries": 0,
+    "total_duration_ms": 1180584
+  },
+  "agents": [
+    {
+      "feature_id": "tdd-red-green-coercion",
+      "branch": "feature/tdd-red-green-coercion",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-13T23:37:27.270Z",
+      "completed_at": "2026-03-13T23:45:55.490Z",
+      "duration_ms": 508220,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "json-output-complete",
+      "branch": "feature/json-output-complete",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-13T23:37:27.948Z",
+      "completed_at": "2026-03-13T23:48:40.312Z",
+      "duration_ms": 672364,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    }
+  ]
+}

@@ -140,6 +140,59 @@ export function featureBranchName(
   return `${config.git.branchPrefix}${featureId}`;
 }
 
+// ---------------------------------------------------------------------------
+// Quest Branch Management
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate the branch name for a quest.
+ * Quest branches always use the "quest/" prefix regardless of config.git.branchPrefix.
+ */
+export function questBranchName(questId: string): string {
+  return `quest/${questId}`;
+}
+
+/**
+ * Create a quest branch from the project's base branch.
+ * If the branch already exists, reuses it (idempotent for resume).
+ */
+export async function createQuestBranch(
+  projectRoot: string,
+  questId: string,
+  baseBranch: string
+): Promise<string> {
+  const branch = questBranchName(questId);
+  await createBranch(projectRoot, branch, baseBranch);
+  return branch;
+}
+
+/**
+ * Check if a quest branch exists locally.
+ */
+export function questBranchExists(
+  projectRoot: string,
+  questId: string
+): boolean {
+  return branchExists(projectRoot, questBranchName(questId));
+}
+
+/**
+ * Delete a quest branch. Used when abandoning a quest.
+ * Safe: only deletes if the branch is not checked out.
+ */
+export function deleteQuestBranch(
+  projectRoot: string,
+  questId: string
+): boolean {
+  const branch = questBranchName(questId);
+  try {
+    runSync(`git branch -D "${branch}"`, { cwd: projectRoot, silent: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Return the path to the worktrees directory: a sibling directory to
  * the project root named `<project-basename>-worktrees/`.
@@ -431,6 +484,8 @@ export function listWomboWorktrees(
     // Also match worktrees whose branch starts with the branch prefix —
     // catches orphans from old waves or legacy worktree layouts
     if (wt.branch && wt.branch.startsWith(config.git.branchPrefix)) return true;
+    // Also match quest branches
+    if (wt.branch && wt.branch.startsWith("quest/")) return true;
     return false;
   });
 }
