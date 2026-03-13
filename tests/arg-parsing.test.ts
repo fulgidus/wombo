@@ -66,61 +66,75 @@ describe("parseArgs — basic commands", () => {
 // Features subcommand routing
 // ---------------------------------------------------------------------------
 
-describe("parseArgs — features subcommands", () => {
-  test("defaults features subcommand to list", () => {
-    const result = parseArgs(argv("features"));
-    expect(result.command).toBe("features");
+describe("parseArgs — tasks subcommands", () => {
+  test("defaults tasks subcommand to list", () => {
+    const result = parseArgs(argv("tasks"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("list");
   });
 
-  test("parses features list", () => {
-    const result = parseArgs(argv("features", "list"));
-    expect(result.command).toBe("features");
+  test("parses tasks list", () => {
+    const result = parseArgs(argv("tasks", "list"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("list");
   });
 
-  test("parses features add with positional args", () => {
-    const result = parseArgs(argv("features", "add", "my-feat", "My Feature Title"));
-    expect(result.command).toBe("features");
+  test("parses tasks add with positional args", () => {
+    const result = parseArgs(argv("tasks", "add", "my-feat", "My Feature Title"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("add");
     expect(result.featureId).toBe("my-feat");
     expect(result.title).toBe("My Feature Title");
   });
 
-  test("parses features set-status with positional args", () => {
-    const result = parseArgs(argv("features", "set-status", "my-feat", "done"));
-    expect(result.command).toBe("features");
+  test("parses tasks set-status with positional args", () => {
+    const result = parseArgs(argv("tasks", "set-status", "my-feat", "done"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("set-status");
     expect(result.featureId).toBe("my-feat");
     expect(result.title).toBe("done"); // title holds second positional
   });
 
-  test("parses features show with feature ID", () => {
-    const result = parseArgs(argv("features", "show", "my-feat"));
-    expect(result.command).toBe("features");
+  test("parses tasks show with feature ID", () => {
+    const result = parseArgs(argv("tasks", "show", "my-feat"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("show");
     expect(result.featureId).toBe("my-feat");
   });
 
-  test("parses features check", () => {
-    const result = parseArgs(argv("features", "check"));
-    expect(result.command).toBe("features");
+  test("parses tasks check", () => {
+    const result = parseArgs(argv("tasks", "check"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("check");
   });
 
-  test("parses features archive with --dry-run", () => {
-    const result = parseArgs(argv("features", "archive", "--dry-run"));
-    expect(result.command).toBe("features");
+  test("parses tasks archive with --dry-run", () => {
+    const result = parseArgs(argv("tasks", "archive", "--dry-run"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("archive");
     expect(result.dryRun).toBe(true);
   });
 
-  test("parses features graph with options", () => {
-    const result = parseArgs(argv("features", "graph", "--ascii", "--subtasks"));
-    expect(result.command).toBe("features");
+  test("parses tasks graph with options", () => {
+    const result = parseArgs(argv("tasks", "graph", "--ascii", "--subtasks"));
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("graph");
     expect(result.ascii).toBe(true);
     expect(result.graphSubtasks).toBe(true);
+  });
+
+  test("features alias resolves to tasks command", () => {
+    const result = parseArgs(argv("features"));
+    expect(result.command).toBe("tasks");
+    expect(result.subcommand).toBe("list");
+  });
+
+  test("features alias with subcommand resolves correctly", () => {
+    const result = parseArgs(argv("features", "add", "my-feat", "My Title"));
+    expect(result.command).toBe("tasks");
+    expect(result.subcommand).toBe("add");
+    expect(result.featureId).toBe("my-feat");
+    expect(result.title).toBe("My Title");
   });
 });
 
@@ -149,14 +163,19 @@ describe("parseArgs — selection options", () => {
     expect(result.difficulty).toBe("easy");
   });
 
-  test("parses --features as comma-separated list", () => {
+  test("parses --features as comma-separated list (stored in tasks)", () => {
     const result = parseArgs(argv("launch", "--features", "feat-a,feat-b,feat-c"));
-    expect(result.features).toEqual(["feat-a", "feat-b", "feat-c"]);
+    expect(result.tasks).toEqual(["feat-a", "feat-b", "feat-c"]);
+  });
+
+  test("parses --tasks as comma-separated list", () => {
+    const result = parseArgs(argv("launch", "--tasks", "feat-a,feat-b,feat-c"));
+    expect(result.tasks).toEqual(["feat-a", "feat-b", "feat-c"]);
   });
 
   test("trims whitespace in --features list", () => {
     const result = parseArgs(argv("launch", "--features", "feat-a, feat-b , feat-c"));
-    expect(result.features).toEqual(["feat-a", "feat-b", "feat-c"]);
+    expect(result.tasks).toEqual(["feat-a", "feat-b", "feat-c"]);
   });
 
   test("parses --all-ready boolean flag", () => {
@@ -310,15 +329,15 @@ describe("parseArgs — edge cases", () => {
     expect(result.dryRun).toBe(true);
   });
 
-  test("handles features add with interleaved flags", () => {
+  test("handles tasks add with interleaved flags", () => {
     const result = parseArgs(argv(
-      "features", "add", "new-feat", "New Feature",
+      "tasks", "add", "new-feat", "New Feature",
       "--priority", "critical",
       "--difficulty", "hard",
       "--effort", "P2D",
       "--desc", "A detailed description"
     ));
-    expect(result.command).toBe("features");
+    expect(result.command).toBe("tasks");
     expect(result.subcommand).toBe("add");
     expect(result.featureId).toBe("new-feat");
     expect(result.title).toBe("New Feature");
@@ -406,9 +425,9 @@ describe("parseArgs — edge cases", () => {
     expect(result.title).toBe("add");
   });
 
-  test("handles upgrade with --version flag", () => {
-    const result = parseArgs(argv("upgrade", "--version", "v0.1.0"));
+  test("handles upgrade with --tag flag", () => {
+    const result = parseArgs(argv("upgrade", "--tag", "v0.1.0"));
     expect(result.command).toBe("upgrade");
-    expect(result.version).toBe("v0.1.0");
+    expect(result.tag).toBe("v0.1.0");
   });
 });
