@@ -1,0 +1,26 @@
+id: tui-postmortem
+title: TUI stays open after wave completes + failed agent log dump
+description: >
+  When a wave finishes, the TUI should remain open so the user can browse agent statuses, build output, and logs without
+  losing them to terminal scroll. The header shows a WAVE COMPLETE banner, and pressing q exits cleanly (without killing
+  processes or marking agents as interrupted). After TUI exit, full log contents for all failed agents are dumped to
+  stdout for post-mortem analysis. Works in both TUI and --no-tui modes.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT2H
+started_at: 2026-03-12T22:00:00Z
+ended_at: 2026-03-12T23:00:00Z
+constraints:
+  - TUI must not call onQuit (which kills processes) when wave is already complete
+  - Must dump logs for ALL failed agents, not just the last one
+  - Must handle missing or empty log files gracefully
+  - Must work in both TUI and --no-tui modes
+  - resume.ts must have the same behavior as launch.ts
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Implemented in tui.ts (markWaveComplete/waitForQuit), launch.ts (dumpFailedAgentLogs), and resume.ts."
+subtasks: []

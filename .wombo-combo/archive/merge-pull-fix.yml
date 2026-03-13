@@ -1,0 +1,18 @@
+id: merge-pull-fix
+title: Fix silent git pull --ff-only failure
+description: >
+  mergeBranch() now handles git pull --ff-only failure by falling back to git fetch + git reset --hard origin/<branch>,
+  preventing merges against stale local state.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T01:00:00Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

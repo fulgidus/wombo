@@ -1,0 +1,18 @@
+id: merge-manual-pipeline
+title: Give manual merge command the full pipeline
+description: >
+  cmdMerge now calls attemptMerge() instead of mergeBranch() directly, getting pre-flight checks, conflict resolution,
+  and retry support. Loads features for prompt generation. Added model to MergeCommandOptions.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T01:00:00Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

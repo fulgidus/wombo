@@ -1,0 +1,18 @@
+id: release-version-sync
+title: Verify package.json version matches tag
+description: |
+  Add a step that checks the git tag matches the version field in package.json and fails the workflow if they diverge.
+status: done
+completion: 100
+difficulty: trivial
+priority: medium
+depends_on:
+  - release-workflow-yaml
+effort: PT30M
+started_at: null
+ended_at: 2026-03-11T11:13:58.632Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

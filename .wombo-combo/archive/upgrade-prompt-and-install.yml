@@ -1,0 +1,18 @@
+id: upgrade-prompt-and-install
+title: Prompt and run bun install -g
+description: |
+  Show version diff, ask for confirmation (unless --force), then exec `bun install -g github:fulgidus/wombo#<tag>`.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on:
+  - upgrade-version-check
+effort: PT1H
+started_at: null
+ended_at: 2026-03-11T11:15:50.123Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

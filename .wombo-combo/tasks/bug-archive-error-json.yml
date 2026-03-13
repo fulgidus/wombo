@@ -1,0 +1,20 @@
+id: bug-archive-error-json
+title: Fix tasks archive to use outputError() for JSON errors
+description: >
+  `woco tasks archive nonexistent --output json` outputs plain text instead of JSON error. The error path needs to use
+  outputError() from src/lib/output.ts. Check src/commands/tasks/archive.ts — it already imports outputError but may
+  have code paths that bypass it (e.g. early returns with console.error). All error paths must go through
+  outputError(fmt, message) so JSON consumers get structured error responses.
+status: backlog
+completion: 0
+difficulty: trivial
+priority: medium
+depends_on: []
+effort: PT15M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

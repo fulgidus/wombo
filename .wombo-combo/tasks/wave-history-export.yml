@@ -1,0 +1,24 @@
+id: wave-history-export
+title: Wave history and summary export
+description: >
+  After a wave completes (or on demand), export wave results to a structured file (.wombo-history/<wave-id>.json) with:
+  which features succeeded/failed, how long each took, retry counts, merge conflicts encountered, and resolution
+  details. Currently wave state is lost after cleanup. This enables retrospective analysis and improvement planning.
+status: done
+completion: 100
+difficulty: medium
+priority: medium
+depends_on: []
+effort: PT4H
+started_at: null
+ended_at: 2026-03-12T21:50:07.039Z
+constraints:
+  - Must auto-export on wave completion (not just manual)
+  - Must survive cleanup (stored separately from .wombo-state.json)
+  - Must support `wombo history` command to list/view past waves
+  - Must support --output json
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

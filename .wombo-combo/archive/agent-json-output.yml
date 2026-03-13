@@ -1,0 +1,20 @@
+id: agent-json-output
+title: Add --output json to every command
+description: >
+  Introduce a global --output flag (json | text, default text). When json is selected, every command must emit
+  structured JSON to stdout instead of human-formatted text. Also auto-detect: if stdout is not a TTY, default to json.
+status: done
+completion: 100
+difficulty: medium
+priority: critical
+depends_on: []
+effort: PT4H
+started_at: 2026-03-11T11:20:57.464Z
+ended_at: 2026-03-11T11:21:01.752Z
+constraints:
+  - JSON output must be valid, parseable JSON on a single line (or NDJSON for streaming).
+  - 'Errors must also be JSON when --output json is active, e.g. {"error": "message"}.'
+forbidden: []
+references: []
+notes: []
+subtasks: []

@@ -1,0 +1,24 @@
+id: test-arg-parsing
+title: Test CLI arg parsing edge cases
+description: >
+  Unit tests (bun test) for CLI arg parsing in src/index.ts. Test scenarios: - Trailing flags: `--output` as last arg
+  (no value) should error gracefully, not crash with args[++i] OOB - Missing values: `--branch` without a value,
+  `--agent` without a value - Flag collisions: `-v` is version, `--verbose` is separate (if added) - Command/subcommand
+  routing: `tasks list`, `tasks add`, `tasks set-status`, `tasks set-priority`, `tasks set-difficulty` - Boolean flags:
+  `--dry-run`, `--all-ready`, `--force` — should not consume next positional arg - Unknown flags: should warn or error,
+  not silently ignore - requireValue() helper: returns value or exits with error message Place tests in
+  tests/arg-parsing.test.ts. May need to refactor parseArgs into a testable function that returns parsed results rather
+  than directly executing commands.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

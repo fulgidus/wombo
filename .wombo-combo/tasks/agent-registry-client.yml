@@ -1,0 +1,24 @@
+id: agent-registry-client
+title: Build agency-agents registry client
+description: >
+  Fetch agent definitions from github.com/msitarzewski/agency-agents, parse their format, and cache locally. Create
+  src/lib/agent-registry.ts with these exports: - listRegistryAgents(): fetch repo contents, return list of available
+  agent names + descriptions - fetchAgent(name): download a specific agent definition by name - getCachedAgents(): list
+  locally cached agents from .wombo-combo/agents-cache/ - Cache management: store fetched agents in
+  .wombo-combo/agents-cache/ with TTL (default 24h) - Offline support: when fetch fails, fall back to cache silently
+  with a warning Use Bun's fetch() for HTTP requests. Parse the agency-agents repo structure (may need to inspect their
+  README/format first). The client only fetches and caches — conversion to woco format is handled by
+  agent-format-converter.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT4H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

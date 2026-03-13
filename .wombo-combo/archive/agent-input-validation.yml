@@ -1,0 +1,21 @@
+id: agent-input-validation
+title: Input hardening against hallucinations
+description: >
+  Add validation to all user/agent-supplied inputs: feature IDs, file paths, branch names, config values. Reject control
+  characters (below ASCII 0x20), path traversals (../), embedded query params (?/#) in IDs, and percent-encoded strings
+  that would be double-encoded.
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT3H
+started_at: null
+ended_at: 2026-03-11T11:22:31.151Z
+constraints:
+  - Validation must happen at the CLI boundary (parseArgs or command entry), not deep in library code.
+  - Error messages must clearly state what was rejected and why.
+forbidden: []
+references: []
+notes: []
+subtasks: []

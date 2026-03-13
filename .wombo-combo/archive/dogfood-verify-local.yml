@@ -1,0 +1,19 @@
+id: dogfood-verify-local
+title: Add dev-mode guard to prevent global binary during development
+description: >
+  Optionally detect when running inside the wombo repo itself and warn if the global binary is being used instead of
+  `bun dev`. This could check if cwd contains wombo's own package.json with name wombo-combo.
+status: done
+completion: 100
+difficulty: easy
+priority: medium
+depends_on:
+  - dogfood-dev-script
+effort: PT45M
+started_at: null
+ended_at: 2026-03-11T11:13:17.259Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

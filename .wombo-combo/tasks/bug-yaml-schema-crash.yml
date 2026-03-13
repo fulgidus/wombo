@@ -1,0 +1,19 @@
+id: bug-yaml-schema-crash
+title: Graceful error on invalid YAML schema
+description: >
+  When .features.yml has valid YAML but invalid schema (e.g. `features: not-an-array`), wombo crashes with "Attempted to
+  assign to readonly property" instead of a helpful error. Should catch this in loadFeatures() and emit a clear message.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T15:57:56.600Z
+constraints: []
+forbidden: []
+references: []
+notes:
+  - "Test: echo 'features: not-an-array' > .features.yml && bun dev features list"
+subtasks: []

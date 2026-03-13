@@ -1,0 +1,20 @@
+id: json-features-archive
+title: Retrofit tasks archive with --output json
+description: >
+  `woco tasks archive` already imports outputMessage/outputError from src/lib/output.ts and supports --output json.
+  However, verify that ALL success/error paths use the output helpers consistently. The success path should emit JSON
+  with {archived: [...], count: N} structure. Check for any console.log/console.error calls that bypass the output
+  format system in src/commands/tasks/archive.ts.
+status: backlog
+completion: 0
+difficulty: trivial
+priority: medium
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

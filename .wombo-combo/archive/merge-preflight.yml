@@ -1,0 +1,18 @@
+id: merge-preflight
+title: Activate canMerge() pre-flight check
+description: >
+  canMerge() was exported but never called. Now activated in attemptMerge() — uses git merge-tree to detect conflicts
+  before the real merge, skipping straight to conflict resolution if conflicts found.
+status: done
+completion: 100
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T01:00:00Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

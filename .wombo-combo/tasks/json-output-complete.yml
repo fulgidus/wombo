@@ -1,0 +1,22 @@
+id: json-output-complete
+title: Finish --output json retrofit across all commands
+description: >
+  The agent-ready JSON output was only retrofitted on tasks subcommands (list, show, add, archive). Operational commands
+  (status, launch, cleanup, verify, merge, resume, retry) and remaining tasks subcommands (check) still ignore --output
+  json. This is the integration/QA task: verify all commands emit structured JSON when --output json is passed, with
+  consistent error handling via outputError(). Run `woco <command> --output json` for every command and verify output is
+  valid JSON.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - json-operational-commands
+effort: PT6H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

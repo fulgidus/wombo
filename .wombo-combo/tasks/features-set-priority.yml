@@ -1,0 +1,23 @@
+id: features-set-priority
+title: features set-priority and set-difficulty commands
+description: >
+  Add `wombo features set-priority <id> <priority>` and `wombo features set-difficulty <id> <difficulty>` commands.
+  Currently changing priority or difficulty requires manually editing the YAML file. We have set-status but no way to
+  reprioritize programmatically.
+status: done
+completion: 100
+difficulty: easy
+priority: medium
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: 2026-03-12T21:45:28.451Z
+constraints:
+  - Must validate enum values (same enums as features add)
+  - Must support --output json and --dry-run
+  - Must work on both top-level features and subtasks
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Created during codebase audit."
+subtasks: []

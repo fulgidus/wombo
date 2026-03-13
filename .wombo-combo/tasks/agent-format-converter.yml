@@ -1,0 +1,21 @@
+id: agent-format-converter
+title: Convert agency-agents format to woco agent template
+description: >
+  Map the agency-agents definition format to woco's generalist-agent.md template format. Handle differences in
+  structure, prompt style, and capabilities. The canonical template lives at src/templates/generalist-agent.md and is
+  installed into .opencode/agents/ via init. The converter must produce markdown files compatible with the
+  ensureAgentDefinition() / renderAgentTemplate() pipeline in src/lib/templates.ts.
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - agent-registry-client
+effort: PT4H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

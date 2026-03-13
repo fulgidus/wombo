@@ -1,0 +1,30 @@
+id: self-upgrade
+title: wombo upgrade command
+description: >
+  Add a `wombo upgrade` command that pulls the latest version of wombo-combo from GitHub and reinstalls it globally via
+  bun. Should show the current version, check for a newer version, and prompt before upgrading. Must also support
+  `--force` to skip the prompt and `--version vX.Y.Z` to pin to a specific release.
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on:
+  - upgrade-prompt-and-install
+  - upgrade-cli-wiring
+effort: PT3H
+started_at: 2026-03-11T11:14:11.510Z
+ended_at: 2026-03-11T11:15:50.325Z
+constraints:
+  - Must work on Linux and macOS where bun is available.
+  - Must display current version (from package.json) and latest remote version before prompting.
+  - Must gracefully handle network failures and missing GitHub tags.
+  - The upgrade itself must use `bun install -g github:fulgidus/wombo` (or
+forbidden:
+  - Do not shell out to npm or yarn.
+  - Do not download and replace files manually — use bun's package manager.
+references:
+  - https://bun.sh/docs/cli/add
+  - https://docs.github.com/en/rest/repos/repos#list-repository-tags
+notes:
+  - "2026-03-11: Feature created. Current install path is `bun install -g github:fulgidus/wombo`."
+subtasks: []

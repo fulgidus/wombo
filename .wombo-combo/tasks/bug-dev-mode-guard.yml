@@ -1,0 +1,20 @@
+id: bug-dev-mode-guard
+title: Fix dev-mode guard checking wrong package name
+description: >
+  src/index.ts:54 checks `pkgName !== "wombo"` but package.json has `"name": "wombo-combo"`. The guard that warns users
+  against running the global binary inside the development repo never triggers because the comparison always fails.
+status: done
+completion: 100
+difficulty: trivial
+priority: high
+depends_on: []
+effort: PT15M
+started_at: null
+ended_at: 2026-03-13T15:57:49.645Z
+constraints:
+  - Must match the actual package name "wombo-combo" in package.json
+forbidden: []
+references: []
+notes:
+  - "2026-03-12: Found during codebase audit."
+subtasks: []

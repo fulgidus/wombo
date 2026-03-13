@@ -1,0 +1,28 @@
+id: toon-format-spec
+title: Design TOON format specification and key legend
+description: >
+  Define the TOON (Token-Optimized Output Notation) encoding specification. Document in a source file
+  (src/lib/toon-spec.ts or as a const in src/lib/toon.ts) so the legend can be programmatically emitted via `woco
+  describe --output toon`.
+
+  Specification to define: - Delimiter: pipe character (|) - Status codes: BL=backlog, IP=in_progress, DN=done,
+  CN=cancelled - Priority codes: C=critical, H=high, M=medium, L=low, W=wishlist - Difficulty codes: T=trivial, E=easy,
+  M=medium, H=hard - Duration format: compact (30m, 2h, 1d4h) instead of ISO 8601 - Boolean: 1/0 instead of true/false -
+  Null/missing: empty field (||) - Field ordering per command (fixed positional, no field names in output) - Header
+  line: optional #FIELDS comment listing field order
+
+  The spec must be self-describing: an agent can call `woco describe --output toon` once per session to learn the
+  format, then parse all subsequent toon output without further context.
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT1H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

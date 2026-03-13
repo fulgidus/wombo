@@ -1,0 +1,18 @@
+id: merge-queue
+title: Promise-based merge queue to serialize merge operations
+description: >
+  Added enqueueMerge() in merger.ts — a promise-based mutex that serializes all merge operations, eliminating concurrent
+  git checkout races.
+status: done
+completion: 100
+difficulty: medium
+priority: critical
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: 2026-03-13T01:00:00Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

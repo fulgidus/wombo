@@ -1,0 +1,20 @@
+id: ux-launch-no-features-msg
+title: Fix misleading launch --all-ready message
+description: >
+  `woco launch --all-ready` with no launchable tasks says "Use --all-ready to see all available" which contradicts the
+  flag already being passed. Should say "No launchable tasks found (all tasks are done/cancelled)" or similar
+  context-aware message. The relevant code is in src/commands/launch.ts around line 1339 where it outputs "No launchable
+  tasks found". Check that the follow-up hint text is context-aware of which flags are already set.
+status: backlog
+completion: 0
+difficulty: trivial
+priority: medium
+depends_on: []
+effort: PT15M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

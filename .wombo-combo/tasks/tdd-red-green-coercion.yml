@@ -1,0 +1,30 @@
+id: tdd-red-green-coercion
+title: Coerce TDD red-green development cycle
+description: >
+  Enforce test-driven development in the agent workflow. Agents must: (1) write failing tests first (red phase), (2)
+  verify tests fail, (3) implement code to make tests pass (green phase), (4) verify tests pass, (5) optionally
+  refactor. The verification pipeline should enforce this cycle — if an agent commits code without corresponding test
+  changes, the verification should flag it. Build verification should run tests and check that new tests exist for new
+  functionality.
+status: backlog
+completion: 0
+difficulty: hard
+priority: high
+depends_on:
+  - unit-test-suite
+  - tdd-verification-step
+  - tdd-agent-prompt-integration
+effort: P1DT4H
+started_at: null
+ended_at: null
+constraints:
+  - Must detect test files and verify they exist for new source files
+  - Must run tests as part of build verification
+  - Must enforce red-green cycle in agent prompts and verification
+  - Must not block features that are explicitly marked as non-testable (config, docs)
+forbidden:
+  - Do not make TDD mandatory for trivial changes (config files, documentation)
+references: []
+notes:
+  - "2026-03-12: User requirement. Agents should follow TDD discipline."
+subtasks: []

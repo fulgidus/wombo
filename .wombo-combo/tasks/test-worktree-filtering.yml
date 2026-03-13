@@ -1,0 +1,23 @@
+id: test-worktree-filtering
+title: Test worktree listing and filtering
+description: >
+  Unit tests (bun test) for worktree management in src/lib/worktree.ts. Test targets: - listWomboWorktrees(): filters by
+  config.git.worktreePrefix, excludes project root even when project dir name
+    starts with the prefix (e.g. "wombo-combo" with prefix "woco-" — but also the dangerous case "woco-something"
+    with prefix "woco-")
+  - removeWorktree(): safety guard must never remove project root or non-worktree directories - cleanupAllWorktrees():
+  removes all woco worktrees, skips non-woco ones - verifyConfigFiles(): ensures .opencode/agents/ and config files are
+  copied into worktrees Place tests in tests/worktree-filtering.test.ts. Mock git commands or use a real temp git repo.
+status: backlog
+completion: 0
+difficulty: easy
+priority: critical
+depends_on: []
+effort: PT2H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

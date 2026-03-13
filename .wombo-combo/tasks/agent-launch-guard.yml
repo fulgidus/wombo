@@ -1,0 +1,20 @@
+id: agent-launch-guard
+title: Check agent definition exists on launch, reinstall if absent
+description: >
+  At the start of 'wombo launch', verify that the agent definition file exists at the expected path
+  (agent/<agentName>.md based on config). If missing, reinstall from the bundled template and warn the user. This
+  prevents the failure mode where agents spawn without their agent definition file and fall back to defaults.
+status: done
+completion: 100
+difficulty: easy
+priority: critical
+depends_on:
+  - agent-template-file
+effort: PT1H
+started_at: null
+ended_at: 2026-03-13T15:57:50.969Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

@@ -1,0 +1,18 @@
+id: dep-graph-builder
+title: Build dependency graph and detect cycles
+description: >
+  Parse depends_on fields across all features and subtasks to build a DAG. Detect circular dependencies and report them
+  before launch. Compute topological ordering for sequential scheduling.
+status: done
+completion: 100
+difficulty: medium
+priority: critical
+depends_on: []
+effort: PT4H
+started_at: null
+ended_at: 2026-03-13T15:57:51.291Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []
