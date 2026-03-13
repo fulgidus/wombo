@@ -21,6 +21,7 @@ import { loadState } from "../lib/state.js";
 import { printDashboard } from "../lib/ui.js";
 import { handleBuildVerification } from "./launch.js";
 import { output, outputMessage, type OutputFormat } from "../lib/output.js";
+import { renderVerifyResults } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,5 +125,12 @@ export async function cmdVerify(opts: VerifyCommandOptions): Promise<void> {
     agents: results,
   }, () => {
     printDashboard(state);
+  }, () => {
+    console.log(renderVerifyResults({
+      wave_id: state.wave_id,
+      verified: results.filter((r) => r.status === "verified").length,
+      failed: results.filter((r) => r.status === "failed").length,
+      agents: results,
+    }));
   });
 }

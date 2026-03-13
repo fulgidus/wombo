@@ -384,6 +384,301 @@ export function renderTasksCheck(result: {
 }
 
 // ---------------------------------------------------------------------------
+// Abort Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render abort result in TOON format.
+ *
+ * Uses key:value pairs for the single-record result.
+ */
+export function renderAbort(result: {
+  feature_id: string;
+  previous_status: string;
+  new_status: string;
+  mux_killed: boolean;
+  process_killed: boolean;
+  requeued: boolean;
+}): string {
+  const lines: string[] = [];
+  lines.push(`fid:${result.feature_id}`);
+  lines.push(`prev:${result.previous_status}`);
+  lines.push(`new:${result.new_status}`);
+  lines.push(`mux:${encodeBool(result.mux_killed)}`);
+  lines.push(`proc:${encodeBool(result.process_killed)}`);
+  lines.push(`rq:${encodeBool(result.requeued)}`);
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Cleanup Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render cleanup result in TOON format.
+ *
+ * Uses key:value pairs for summary data.
+ */
+export function renderCleanup(result: {
+  mux_sessions_killed?: number;
+  worktrees_removed?: number;
+  state_removed?: boolean;
+  logs_removed?: boolean;
+  remaining_branches?: string[];
+  history_preserved?: boolean;
+  // dry-run fields
+  dry_run?: boolean;
+  mux_sessions?: string[];
+  mux_sessions_count?: number;
+  worktrees?: string[];
+  worktrees_count?: number;
+  files_to_remove?: string[];
+}): string {
+  const lines: string[] = [];
+
+  if (result.dry_run) {
+    lines.push(`dry:1`);
+    lines.push(`mux:${result.mux_sessions_count ?? 0}`);
+    lines.push(`wt:${result.worktrees_count ?? 0}`);
+    if (result.mux_sessions && result.mux_sessions.length > 0) {
+      lines.push(`mux_list:${encodeArray(result.mux_sessions)}`);
+    }
+    if (result.worktrees && result.worktrees.length > 0) {
+      lines.push(`wt_list:${encodeArray(result.worktrees)}`);
+    }
+    if (result.files_to_remove && result.files_to_remove.length > 0) {
+      lines.push(`files:${encodeArray(result.files_to_remove)}`);
+    }
+  } else {
+    lines.push(`mux:${result.mux_sessions_killed ?? 0}`);
+    lines.push(`wt:${result.worktrees_removed ?? 0}`);
+    lines.push(`st:${encodeBool(result.state_removed ?? false)}`);
+    lines.push(`logs:${encodeBool(result.logs_removed ?? false)}`);
+    if (result.remaining_branches && result.remaining_branches.length > 0) {
+      lines.push(`branches:${encodeArray(result.remaining_branches)}`);
+    }
+    lines.push(`hist:${encodeBool(result.history_preserved ?? false)}`);
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Merge Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render merge results in TOON format.
+ *
+ * Fields: feature_id|branch|status|error
+ */
+export function renderMerge(result: {
+  wave_id: string;
+  base_branch: string;
+  merged?: number;
+  failed?: number;
+  agents: Array<{ feature_id: string; branch: string; status?: string; error?: string | null }>;
+  // dry-run fields
+  dry_run?: boolean;
+  count?: number;
+  auto_push?: boolean;
+}): string {
+  const lines: string[] = [];
+
+  if (result.dry_run) {
+    lines.push(`#DRY wave:${result.wave_id}|base:${result.base_branch}|count:${result.count ?? 0}|push:${encodeBool(result.auto_push ?? false)}`);
+    lines.push(fieldsHeader(["feature_id", "branch"]));
+    for (const a of result.agents) {
+      lines.push(row(a.feature_id, a.branch));
+    }
+  } else {
+    lines.push(`#MERGE wave:${result.wave_id}|base:${result.base_branch}|merged:${result.merged}|failed:${result.failed}`);
+    lines.push(fieldsHeader(["feature_id", "branch", "status", "error"]));
+    for (const a of result.agents) {
+      lines.push(row(a.feature_id, a.branch, a.status, encodeNullable(a.error)));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Retry Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render retry result in TOON format.
+ *
+ * Uses key:value pairs for the single-record result.
+ */
+export function renderRetry(result: {
+  feature_id: string;
+  mode?: string;
+  status?: string;
+  mux_session?: string;
+  pid?: number | null;
+  // dry-run fields
+  dry_run?: boolean;
+  current_status?: string;
+  retries_so_far?: number;
+  worktree?: string;
+  model?: string | null;
+}): string {
+  const lines: string[] = [];
+
+  if (result.dry_run) {
+    lines.push(`dry:1`);
+    lines.push(`fid:${result.feature_id}`);
+    lines.push(`st:${result.current_status ?? ""}`);
+    lines.push(`retries:${result.retries_so_far ?? 0}`);
+    lines.push(`wt:${result.worktree ?? ""}`);
+    lines.push(`mode:${result.mode ?? ""}`);
+    lines.push(`model:${encodeNullable(result.model ?? null)}`);
+  } else {
+    lines.push(`fid:${result.feature_id}`);
+    lines.push(`mode:${result.mode ?? ""}`);
+    lines.push(`st:${result.status ?? ""}`);
+    if (result.mux_session) {
+      lines.push(`mux:${result.mux_session}`);
+    }
+    if (result.pid !== undefined && result.pid !== null) {
+      lines.push(`pid:${result.pid}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Logs Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render logs in TOON format.
+ *
+ * Emits a header line then one line per log entry.
+ */
+export function renderLogs(result: {
+  feature_id: string;
+  log_file: string;
+  line_count: number;
+  first_line: number | null;
+  last_line: number | null;
+  lines: string[];
+}): string {
+  const output: string[] = [];
+  output.push(`#LOGS fid:${result.feature_id}|count:${result.line_count}|first:${result.first_line ?? ""}|last:${result.last_line ?? ""}`);
+  for (const line of result.lines) {
+    output.push(line);
+  }
+  return output.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Launch Dry-Run Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render launch dry-run result in TOON format.
+ *
+ * Fields: id|priority|difficulty|effort
+ */
+export function renderLaunchDryRun(result: {
+  dry_run: boolean;
+  base_branch: string;
+  max_concurrent: number;
+  model: string | null;
+  interactive: boolean;
+  selected: Array<{ id: string; title: string; priority: string; difficulty: string; effort: string }>;
+}): string {
+  const lines: string[] = [];
+
+  lines.push(`#LAUNCH dry:1|base:${result.base_branch}|max:${result.max_concurrent}|model:${encodeNullable(result.model)}|interactive:${encodeBool(result.interactive)}`);
+  lines.push(fieldsHeader(["id", "priority", "difficulty", "effort", "title"]));
+
+  for (const f of result.selected) {
+    lines.push(row(
+      f.id,
+      encodePriority(f.priority),
+      encodeDifficulty(f.difficulty),
+      encodeDuration(f.effort),
+      f.title,
+    ));
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Graph Renderer
+// ---------------------------------------------------------------------------
+
+/**
+ * Render tasks graph in TOON format.
+ *
+ * Emits mermaid source (if any), node/edge counts, and orphans.
+ */
+export function renderGraph(result: {
+  mermaid: string | null;
+  nodes: number;
+  edges: number;
+  orphan_count?: number;
+  orphans?: Array<{ id: string; title: string; status: string }>;
+}): string {
+  const lines: string[] = [];
+
+  lines.push(`#GRAPH nodes:${result.nodes}|edges:${result.edges}|orphans:${result.orphan_count ?? 0}`);
+
+  if (result.mermaid) {
+    lines.push(`#MERMAID`);
+    lines.push(result.mermaid);
+    lines.push(`#END`);
+  }
+
+  if (result.orphans && result.orphans.length > 0) {
+    lines.push(fieldsHeader(["id", "status", "title"]));
+    for (const o of result.orphans) {
+      lines.push(row(o.id, encodeStatus(o.status), o.title));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Verify Results Renderer (multi-agent)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render verify command results in TOON format.
+ *
+ * Fields: feature_id|branch|status|build_passed|error
+ */
+export function renderVerifyResults(result: {
+  wave_id: string;
+  verified: number;
+  failed: number;
+  agents: Array<{ feature_id: string; branch: string; status: string; build_passed: boolean | null; error?: string | null }>;
+}): string {
+  const lines: string[] = [];
+
+  lines.push(`#VERIFY wave:${result.wave_id}|verified:${result.verified}|failed:${result.failed}`);
+  lines.push(fieldsHeader(["feature_id", "branch", "status", "build_passed", "error"]));
+
+  for (const a of result.agents) {
+    lines.push(row(
+      a.feature_id,
+      a.branch,
+      a.status,
+      a.build_passed === null ? "" : encodeBool(a.build_passed),
+      encodeNullable(a.error),
+    ));
+  }
+
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Generic Fallback Renderer
 // ---------------------------------------------------------------------------
 

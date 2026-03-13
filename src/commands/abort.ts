@@ -21,6 +21,7 @@ import {
   isProcessRunning,
 } from "../lib/launcher.js";
 import { output, outputError, type OutputFormat } from "../lib/output.js";
+import { renderAbort } from "../lib/toon.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -134,5 +135,7 @@ export async function cmdAbort(opts: AbortCommandOptions): Promise<void> {
     } else {
       console.log(`  Feature marked as failed.`);
     }
+  }, () => {
+    console.log(renderAbort(result));
   });
 }
