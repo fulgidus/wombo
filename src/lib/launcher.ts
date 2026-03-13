@@ -255,6 +255,11 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
     "--dir", JSON.stringify(opts.worktreePath),
   ];
 
+  // Pass agent name if specified (specialized agent from registry or per-task override)
+  if (opts.agentName) {
+    ocArgs.push("--agent", JSON.stringify(opts.agentName));
+  }
+
   if (opts.model) {
     ocArgs.push("--model", JSON.stringify(opts.model));
   }

@@ -21,6 +21,13 @@ import { ProcessMonitor } from "../lib/monitor.js";
 import { launchSingleHeadless } from "./launch.js";
 import { output, outputError, outputMessage, type OutputFormat } from "../lib/output.js";
 import { renderRetry } from "../lib/toon.js";
+import {
+  resolveAgentForTask,
+  isSpecializedAgent,
+  writeAgentToWorktree,
+  type AgentResolution,
+} from "../lib/agent-registry.js";
+import { patchImportedAgent } from "../lib/templates.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -112,7 +119,32 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
     return; // unreachable
   }
 
+  // Re-resolve specialized agent from registry if agent_type was set
+  let agentResolution: AgentResolution | undefined;
+  const agentName = agent.agent_name ?? undefined;
+
+  if (agent.agent_type && config.agentRegistry.mode !== "disabled") {
+    try {
+      const resolution = await resolveAgentForTask(feature, config, projectRoot);
+      if (isSpecializedAgent(resolution)) {
+        agentResolution = resolution;
+      }
+    } catch (err: any) {
+      if (fmt === "text") console.log(`  WARN: agent resolution failed for ${opts.featureId}, using cached agent name: ${err.message}`);
+    }
+  }
+
   if (opts.interactive) {
+    // Write specialized agent to worktree if applicable
+    if (agentResolution && isSpecializedAgent(agentResolution)) {
+      try {
+        const patchedContent = patchImportedAgent(agentResolution.rawContent, config, projectRoot);
+        writeAgentToWorktree(agent.worktree, agentResolution.name, patchedContent);
+      } catch {
+        // Non-fatal — agent will fall back to default
+      }
+    }
+
     const prompt = generatePrompt(feature, state.base_branch, config);
     launchInteractive({
       worktreePath: agent.worktree,
@@ -121,6 +153,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       model: opts.model,
       interactive: true,
       config,
+      agentName,
     });
 
     updateAgent(state, agent.feature_id, {
@@ -146,8 +179,14 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       }));
     });
   } else {
+    // Build agent resolutions map for launchSingleHeadless
+    let agentResolutions: Map<string, AgentResolution> | undefined;
+    if (agentResolution) {
+      agentResolutions = new Map([[opts.featureId, agentResolution]]);
+    }
+
     const monitor = new ProcessMonitor(projectRoot);
-    await launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, opts.model);
+    await launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, opts.model, agentResolutions);
 
     // Re-read agent after launch to get PID
     const updatedAgent = state.agents.find((a) => a.feature_id === opts.featureId);

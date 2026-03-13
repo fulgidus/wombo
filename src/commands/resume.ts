@@ -59,6 +59,13 @@ import {
 } from "../lib/multiplexer.js";
 import { exportWaveHistory } from "../lib/history.js";
 import { outputError, outputMessage, type OutputFormat } from "../lib/output.js";
+import {
+  prepareAgentDefinitions,
+  isSpecializedAgent,
+  type AgentResolution,
+} from "../lib/agent-registry.js";
+import { patchImportedAgent } from "../lib/templates.js";
+import { writeAgentToWorktree } from "../lib/agent-registry.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -342,6 +349,29 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     return;
   }
 
+  // ---------------------------------------------------------------------------
+  // Re-resolve specialized agents for relaunched tasks that have agent_type
+  // ---------------------------------------------------------------------------
+  let agentResolutions: Map<string, AgentResolution> | undefined;
+
+  if (config.agentRegistry.mode !== "disabled") {
+    const agentsWithType = toLaunchNow.filter((a) => a.agent_type);
+    if (agentsWithType.length > 0) {
+      // Build feature list for tasks being relaunched
+      const featuresToResolve = agentsWithType
+        .map((a) => featureMap.get(a.feature_id))
+        .filter((f): f is Feature => !!f);
+      if (featuresToResolve.length > 0) {
+        if (fmt === "text") console.log(`\nRe-resolving ${featuresToResolve.length} specialized agent(s) from registry...`);
+        try {
+          agentResolutions = await prepareAgentDefinitions(featuresToResolve, config, projectRoot);
+        } catch (err: any) {
+          if (fmt === "text") console.log(`  WARN: agent resolution failed, using cached agent names: ${err.message}`);
+        }
+      }
+    }
+  }
+
   if (fmt === "text") {
     console.log(`\nRe-launching ${toLaunchNow.length} agent(s)...\n`);
     printDashboard(state);
@@ -368,6 +398,19 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             await installDeps(agent.worktree, agent.feature_id, config);
           }
 
+          // Write specialized agent to worktree if applicable
+          const resolution = agentResolutions?.get(agent.feature_id);
+          const agentName = agent.agent_name ?? undefined;
+          if (resolution && isSpecializedAgent(resolution)) {
+            try {
+              const patchedContent = patchImportedAgent(resolution.rawContent, config, projectRoot);
+              writeAgentToWorktree(agent.worktree, resolution.name, patchedContent);
+              wtLog(agent.feature_id, `wrote specialized agent: ${resolution.name}`);
+            } catch (err: any) {
+              wtLog(agent.feature_id, `WARN: failed to write specialized agent: ${err.message}`);
+            }
+          }
+
           const prompt = generatePrompt(feature, state.base_branch, config);
           const result = launchInteractive({
             worktreePath: agent.worktree,
@@ -376,6 +419,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             model,
             interactive: true,
             config,
+            agentName,
           });
 
           const muxName = getMultiplexerName(config);
@@ -485,7 +529,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       toLaunchNow.map((agent) => {
         const feature = featureMap.get(agent.feature_id);
         if (!feature) return Promise.resolve();
-        return launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, model);
+        return launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, model, agentResolutions);
       })
     );
 
