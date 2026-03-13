@@ -326,14 +326,30 @@ export function patchImportedAgent(
 // ---------------------------------------------------------------------------
 
 /**
- * Render the agent template. Backward-compatible wrapper around
- * `renderGeneralistAgent` — existing code that calls this function
- * continues to work unchanged.
+ * Render the agent template. When `agentName` is provided and differs from
+ * the config default, check for a local agent definition file at
+ * `.opencode/agents/<agentName>.md`. If it exists, return its contents
+ * with placeholder substitution applied. Otherwise, fall back to the
+ * bundled generalist agent.
  */
 export function renderAgentTemplate(
   config: WomboConfig,
-  projectRoot: string
+  projectRoot: string,
+  agentName?: string
 ): string {
+  // If a specific agent is requested and it's not the default generalist,
+  // try to read it from the local agents directory.
+  if (agentName && agentName !== config.agent.name) {
+    const localPath = resolve(projectRoot, ".opencode", "agents", `${agentName}.md`);
+    if (existsSync(localPath)) {
+      const content = readFileSync(localPath, "utf-8");
+      return applyPlaceholders(content, config, projectRoot);
+    }
+    // If the local file doesn't exist, fall back to generalist with a warning
+    console.warn(
+      `\x1b[33m[WARNING]\x1b[0m Local agent definition not found: .opencode/agents/${agentName}.md — falling back to ${config.agent.name}`
+    );
+  }
   return renderGeneralistAgent(config, projectRoot);
 }
 
@@ -348,16 +364,34 @@ export function renderAgentTemplate(
  * Called at the start of `woco launch` to prevent the failure mode where
  * agents spawn without their agent definition file.
  *
- * @returns true if the file was reinstalled, false if it already existed.
+ * When `agentName` is provided (from a task's `agent` field), also ensure
+ * that the specified agent definition exists. For non-default agents,
+ * only warns if missing (does not generate a template — the user must
+ * provide custom agent definitions).
+ *
+ * @returns true if the default file was reinstalled, false if it already existed.
  */
 export function ensureAgentDefinition(
   projectRoot: string,
-  config: WomboConfig
+  config: WomboConfig,
+  agentName?: string
 ): boolean {
   const agentDir = resolve(projectRoot, ".opencode", "agents");
   const agentDefPath = resolve(agentDir, `${config.agent.name}.md`);
 
   if (existsSync(agentDefPath)) {
+    // Default agent exists; also check per-task agent if specified
+    if (agentName && agentName !== config.agent.name) {
+      const customPath = resolve(agentDir, `${agentName}.md`);
+      if (!existsSync(customPath)) {
+        console.warn(
+          `\x1b[33m[WARNING]\x1b[0m Custom agent definition not found: .opencode/agents/${agentName}.md`
+        );
+        console.warn(
+          `  Tasks specifying agent: "${agentName}" will fall back to the default agent (${config.agent.name}).\n`
+        );
+      }
+    }
     return false;
   }
 
@@ -372,6 +406,20 @@ export function ensureAgentDefinition(
     const content = renderGeneralistAgent(config, projectRoot);
     writeFileSync(agentDefPath, content, "utf-8");
     console.warn(`  Restored .opencode/agents/${config.agent.name}.md\n`);
+
+    // Also check per-task agent after restoring default
+    if (agentName && agentName !== config.agent.name) {
+      const customPath = resolve(agentDir, `${agentName}.md`);
+      if (!existsSync(customPath)) {
+        console.warn(
+          `\x1b[33m[WARNING]\x1b[0m Custom agent definition not found: .opencode/agents/${agentName}.md`
+        );
+        console.warn(
+          `  Tasks specifying agent: "${agentName}" will fall back to the default agent (${config.agent.name}).\n`
+        );
+      }
+    }
+
     return true;
   } catch (err: any) {
     console.error(
