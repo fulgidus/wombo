@@ -16,7 +16,8 @@
         "woco": "bun src/index.ts",
         "start": "bun src/index.ts",
         "build": "bun build src/index.ts --outdir dist --target node",
-        "typecheck": "tsc --noEmit"
+        "typecheck": "tsc --noEmit",
+        "test": "bun test"
     },
     "repository": {
         "type": "git",
