@@ -1334,14 +1334,31 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   const selected = selectFeatures(data, selOpts);
 
   if (selected.length === 0) {
-    if (opts.allReady) {
+    // Build a context-aware message based on which flags were passed
+    const activeFilters: string[] = [];
+    if (opts.allReady) activeFilters.push("--all-ready");
+    if (opts.topPriority) activeFilters.push(`--top-priority ${opts.topPriority}`);
+    if (opts.quickestWins) activeFilters.push(`--quickest-wins ${opts.quickestWins}`);
+    if (opts.priority) activeFilters.push(`--priority ${opts.priority}`);
+    if (opts.difficulty) activeFilters.push(`--difficulty ${opts.difficulty}`);
+    if (opts.features?.length) activeFilters.push(`--tasks ${opts.features.join(",")}`);
+
+    if (opts.allReady && activeFilters.length === 1) {
+      // Only --all-ready was passed, no additional filters
       console.error(
         "No launchable tasks found (all tasks are done, cancelled, or have unmet dependencies).\n" +
         "Run 'woco tasks list' to review task statuses."
       );
-    } else {
+    } else if (activeFilters.length > 0) {
+      // Specific filter flags were passed (with or without --all-ready)
       console.error(
-        "No tasks matched the selection criteria.\n" +
+        `No tasks matched the current filters: ${activeFilters.join(", ")}.\n` +
+        "Try broadening your criteria or run 'woco tasks list --ready' to see available tasks."
+      );
+    } else {
+      // No selection flags at all — default selection found nothing
+      console.error(
+        "No launchable tasks found.\n" +
         "Use --all-ready to select all tasks whose dependencies are met,\n" +
         "or run 'woco tasks list --ready' to see available tasks."
       );
