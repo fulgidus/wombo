@@ -12,7 +12,7 @@
  * This prevents port collisions when multiple agents run concurrent
  * dev servers in different worktrees. Each worktree gets a unique
  * name derived from the feature ID, e.g.:
- *   http://wombo-my-feature.localhost:1355
+ *   http://woco-my-feature.localhost:1355
  *
  * Integration is transparent to agents — they don't need to know
  * about portless. The orchestrator sets up the environment so that
@@ -182,7 +182,7 @@ export function portlessEnv(
   // Set a unique app name based on the feature ID.
   // This ensures each worktree's server gets a unique .localhost URL
   // and avoids collisions between concurrent agents.
-  env.PORTLESS_APP_NAME = `wombo-${featureId}`;
+  env.PORTLESS_APP_NAME = `woco-${featureId}`;
 
   return env;
 }
@@ -197,7 +197,7 @@ export function portlessUrl(
 ): string {
   const protocol = config.portless.https ? "https" : "http";
   const port = config.portless.proxyPort;
-  return `${protocol}://wombo-${featureId}.localhost:${port}`;
+  return `${protocol}://woco-${featureId}.localhost:${port}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +208,7 @@ export function portlessUrl(
  * Wrap a command to run through portless.
  *
  * Given a command like "npm run dev", returns:
- *   portless wombo-<featureId> npm run dev
+ *   portless woco-<featureId> npm run dev
  *
  * If portless is not available or disabled, returns the original command.
  */
@@ -222,7 +222,7 @@ export function wrapWithPortless(
   const bin = resolvePortlessBin(config);
   if (!bin) return command;
 
-  const appName = `wombo-${featureId}`;
+  const appName = `woco-${featureId}`;
   return `"${bin}" ${appName} ${command}`;
 }
 
@@ -239,7 +239,7 @@ export function portlessRunCommand(
   const bin = resolvePortlessBin(config);
   if (!bin) return null;
 
-  return `"${bin}" run --name wombo-${featureId}`;
+  return `"${bin}" run --name woco-${featureId}`;
 }
 
 // ---------------------------------------------------------------------------

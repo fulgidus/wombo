@@ -1,5 +1,5 @@
 # =============================================================================
-# WOMBO Task Tracking File - YAML v1.2
+# WOMBO COMBO! — Task Tracking File - YAML v1.2
 # =============================================================================
 #
 # PURPOSE:
@@ -75,8 +75,8 @@ version: "1.0"
 meta:
   created_at: "2026-01-01T00:00:00+01:00"
   updated_at: "2026-01-01T00:00:00+01:00"
-  project: "wombo"
-  generator: "wombo"
+  project: "wombo-combo"
+  generator: "wombo-combo"
   maintainer: "user"
 # =============================================================================
 # Active tasks in the pipeline (backlog through in_review). This is where

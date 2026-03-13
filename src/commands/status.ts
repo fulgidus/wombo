@@ -2,8 +2,8 @@
  * status.ts — Show the status of the current wave.
  *
  * Usage:
- *   wombo status                  # human-readable dashboard
- *   wombo status --output json    # structured JSON for programmatic access
+ *   woco status                  # human-readable dashboard
+ *   woco status --output json    # structured JSON for programmatic access
  *
  * Loads the wave state, checks for dead processes, and prints a dashboard
  * or emits structured JSON with wave metadata, agent states, timing info,
@@ -123,7 +123,7 @@ export async function cmdStatus(opts: StatusOptions): Promise<void> {
   const state = loadState(opts.projectRoot);
 
   if (!state) {
-    outputMessage(fmt, "No active wave. Use 'wombo launch' to start one.", {
+    outputMessage(fmt, "No active wave. Use 'woco launch' to start one.", {
       wave_id: null,
       agents: [],
       summary: { total: 0 },

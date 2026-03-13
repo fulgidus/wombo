@@ -1,11 +1,11 @@
 /**
- * upgrade.ts — Self-upgrade wombo from GitHub.
+ * upgrade.ts — Self-upgrade wombo-combo from GitHub.
  *
  * Usage:
- *   wombo upgrade              # Check for updates and prompt to install
- *   wombo upgrade --force      # Skip confirmation prompt
- *   wombo upgrade --tag v0.1.0 # Install a specific version
- *   wombo upgrade --check      # Only check, don't install
+ *   woco upgrade              # Check for updates and prompt to install
+ *   woco upgrade --force      # Skip confirmation prompt
+ *   woco upgrade --tag v0.1.0 # Install a specific version
+ *   woco upgrade --check      # Only check, don't install
  */
 
 import { readFileSync } from "node:fs";
@@ -170,7 +170,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
 
   if (opts.checkOnly) {
     console.log(`\nUpdate available: v${localVersion} → ${latestTag}`);
-    console.log(`Run 'wombo upgrade' to install.`);
+    console.log(`Run 'woco upgrade' to install.`);
     return;
   }
 
@@ -188,7 +188,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
 }
 
 async function installVersion(tag: string): Promise<void> {
-  console.log(`\nInstalling wombo@${tag}...`);
+  console.log(`\nInstalling wombo-combo@${tag}...`);
 
   const proc = Bun.spawn(
     ["bun", "install", "-g", `github:${REPO}#${tag}`],

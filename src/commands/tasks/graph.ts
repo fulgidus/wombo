@@ -2,12 +2,12 @@
  * tasks/graph.ts — Visualize the task dependency graph.
  *
  * Usage:
- *   wombo tasks graph                     # show full dependency graph
- *   wombo tasks graph --status backlog    # filter by status
- *   wombo tasks graph --ascii             # ASCII-only rendering
- *   wombo tasks graph --output json       # emit mermaid source as JSON
- *   wombo tasks graph --mermaid           # emit raw mermaid source text
- *   wombo tasks graph --subtasks          # include subtask-level nodes
+ *   woco tasks graph                     # show full dependency graph
+ *   woco tasks graph --status backlog    # filter by status
+ *   woco tasks graph --ascii             # ASCII-only rendering
+ *   woco tasks graph --output json       # emit mermaid source as JSON
+ *   woco tasks graph --mermaid           # emit raw mermaid source text
+ *   woco tasks graph --subtasks          # include subtask-level nodes
  *
  * Builds a Mermaid flowchart from the tasks dependency graph and renders
  * it as a Unicode box diagram in the terminal using mermaidtui.

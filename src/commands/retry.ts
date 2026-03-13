@@ -1,7 +1,7 @@
 /**
  * retry.ts — Retry a specific failed agent.
  *
- * Usage: wombo retry <feature-id> [--interactive] [--model <model>]
+ * Usage: woco retry <feature-id> [--interactive] [--model <model>]
  *
  * Resets the agent's retry count and re-launches it. Can launch in either
  * headless mode (default) or interactive (dmux/tmux) mode.
@@ -41,7 +41,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
 
   if (!opts.featureId) {
-    console.error("Usage: wombo retry <feature-id>");
+    console.error("Usage: woco retry <feature-id>");
     process.exit(1);
     return; // unreachable — helps TypeScript narrow
   }

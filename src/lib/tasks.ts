@@ -245,7 +245,7 @@ export async function ensureTasksFile(
         created_at: now,
         updated_at: now,
         project: "unknown",
-        generator: "wombo",
+        generator: "wombo-combo",
         maintainer: "unknown",
       },
       tasks: [],
@@ -306,7 +306,7 @@ export function loadTasks(
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       project: "unknown",
-      generator: "wombo",
+      generator: "wombo-combo",
       maintainer: "unknown",
     },
     tasks: tasks ?? [],
@@ -336,7 +336,7 @@ export function loadArchive(
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         project: "unknown",
-        generator: "wombo",
+        generator: "wombo-combo",
         maintainer: "unknown",
       },
       tasks: [],
@@ -358,7 +358,7 @@ export function loadArchive(
   if (parsed === null || parsed === undefined || typeof parsed !== "object") {
     return {
       version: "1.0",
-      meta: { created_at: "", updated_at: "", project: "", generator: "wombo", maintainer: "" },
+      meta: { created_at: "", updated_at: "", project: "", generator: "wombo-combo", maintainer: "" },
       tasks: [],
     };
   }
@@ -366,7 +366,7 @@ export function loadArchive(
   const tasks = parsed.tasks ?? parsed.features ?? [];
   const result: ArchiveFile = {
     version: parsed.version ?? "1.0",
-    meta: parsed.meta ?? { created_at: "", updated_at: "", project: "", generator: "wombo", maintainer: "" },
+    meta: parsed.meta ?? { created_at: "", updated_at: "", project: "", generator: "wombo-combo", maintainer: "" },
     tasks: Array.isArray(tasks) ? tasks : [],
   };
 

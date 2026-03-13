@@ -311,7 +311,7 @@ export function validateConfig(config: WomboConfig): void {
 }
 
 /**
- * Generate the default .wombo-combo/config.json content string (for `wombo init`).
+ * Generate the default .wombo-combo/config.json content string (for `woco init`).
  */
 export function generateDefaultConfig(): string {
   return JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n";

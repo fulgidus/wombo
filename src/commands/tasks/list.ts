@@ -2,11 +2,11 @@
  * tasks/list.ts — List and filter tasks from the tasks file.
  *
  * Usage:
- *   wombo tasks list                     # list all tasks
- *   wombo tasks list --status backlog    # filter by status
- *   wombo tasks list --priority high     # filter by priority
- *   wombo tasks list --ready             # show only ready tasks
- *   wombo tasks list --archive           # include archived tasks
+ *   woco tasks list                     # list all tasks
+ *   woco tasks list --status backlog    # filter by status
+ *   woco tasks list --priority high     # filter by priority
+ *   woco tasks list --ready             # show only ready tasks
+ *   woco tasks list --archive           # include archived tasks
  */
 
 import type { WomboConfig } from "../../config.js";

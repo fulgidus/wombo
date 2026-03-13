@@ -1,15 +1,26 @@
 /**
  * init.ts — Interactive guided setup for .wombo-combo/config.json.
  *
- * Usage: wombo init [--force]
+ * Usage: woco init [--force]
  *
  * Walks the user through every config section, showing defaults and
  * accepting overrides.  Press Enter on any prompt to keep the default.
+ *
+ * Key behaviors:
+ *   - Checks for required external tools (git, tmux/dmux, portless) when
+ *     the user selects options that depend on them.
+ *   - If a tool is missing, offers to install it or defers a reminder to
+ *     the end of init.
+ *   - Creates all operative files: config.json, tasks.yml, archive.yml,
+ *     state.json, logs/, history/.
+ *   - Ensures the .wombo-combo/ directory exists before writing anything.
  */
 
 import { existsSync, writeFileSync, readFileSync, mkdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { execSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { stringify as stringifyYaml } from "yaml";
 import { CONFIG_FILE, DEFAULT_CONFIG, WOMBO_DIR, type WomboConfig, type AgentRegistryMode } from "../config.js";
 import { FEATURES_TEMPLATE_PATH } from "../lib/tasks.js";
 import { renderAgentTemplate } from "../lib/templates.js";
@@ -93,6 +104,124 @@ function section(title: string): void {
 }
 
 // ---------------------------------------------------------------------------
+// Dependency checking
+// ---------------------------------------------------------------------------
+
+interface DependencyInfo {
+  /** Binary name to look up via `which` */
+  bin: string;
+  /** Human-readable name */
+  name: string;
+  /** Install instructions per platform */
+  installHint: string;
+  /** Which config feature requires this */
+  requiredBy: string;
+}
+
+/** Check if a binary is available on PATH. */
+function isBinAvailable(bin: string): boolean {
+  try {
+    execSync(`which ${bin}`, { encoding: "utf-8", stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Try to install a tool. Returns true if the install command succeeded. */
+async function tryInstall(dep: DependencyInfo, p: Prompter): Promise<boolean> {
+  const installCmd = getInstallCommand(dep.bin);
+  if (!installCmd) {
+    return false;
+  }
+
+  const doInstall = await p.yesNo(
+    `  ${dep.name} not found. Attempt to install via '${installCmd}'?`,
+    false
+  );
+
+  if (!doInstall) return false;
+
+  try {
+    console.log(`  Installing ${dep.name}...`);
+    execSync(installCmd, { stdio: "inherit", timeout: 120_000 });
+    // Verify it worked
+    if (isBinAvailable(dep.bin)) {
+      console.log(`  ${dep.name} installed successfully.`);
+      return true;
+    }
+    console.log(`  Install command ran but ${dep.bin} still not found on PATH.`);
+    return false;
+  } catch {
+    console.log(`  Installation failed.`);
+    return false;
+  }
+}
+
+/** Return a platform-appropriate install command for common tools. */
+function getInstallCommand(bin: string): string | null {
+  const isLinux = process.platform === "linux";
+  const isMac = process.platform === "darwin";
+
+  switch (bin) {
+    case "git":
+      if (isMac) return "brew install git";
+      if (isLinux) {
+        // Try to detect package manager
+        if (isBinAvailable("apt-get")) return "sudo apt-get install -y git";
+        if (isBinAvailable("dnf")) return "sudo dnf install -y git";
+        if (isBinAvailable("pacman")) return "sudo pacman -S --noconfirm git";
+      }
+      return null;
+
+    case "tmux":
+      if (isMac) return "brew install tmux";
+      if (isLinux) {
+        if (isBinAvailable("apt-get")) return "sudo apt-get install -y tmux";
+        if (isBinAvailable("dnf")) return "sudo dnf install -y tmux";
+        if (isBinAvailable("pacman")) return "sudo pacman -S --noconfirm tmux";
+      }
+      return null;
+
+    case "dmux":
+      // dmux is typically installed from source or via cargo
+      if (isBinAvailable("cargo")) return "cargo install dmux";
+      return null;
+
+    case "portless":
+      if (isBinAvailable("npm")) return "npm install -g portless";
+      if (isBinAvailable("bun")) return "bun install -g portless";
+      return null;
+
+    default:
+      return null;
+  }
+}
+
+/**
+ * Check a dependency. If missing, offer to install or add to deferred list.
+ * Returns true if the dependency is available (either already present or freshly installed).
+ */
+async function checkDependency(
+  dep: DependencyInfo,
+  p: Prompter,
+  deferredWarnings: string[]
+): Promise<boolean> {
+  if (isBinAvailable(dep.bin)) return true;
+
+  console.log(`\n  \x1b[33m[WARNING]\x1b[0m ${dep.name} is not installed (required by: ${dep.requiredBy}).`);
+
+  const installed = await tryInstall(dep, p);
+  if (installed) return true;
+
+  // Defer the warning to end of init
+  deferredWarnings.push(
+    `  - ${dep.name}: ${dep.installHint} (needed for ${dep.requiredBy})`
+  );
+  return false;
+}
+
+// ---------------------------------------------------------------------------
 // Command
 // ---------------------------------------------------------------------------
 
@@ -106,14 +235,27 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`\nWombo — Project Setup`);
+  console.log(`\nwombo-combo — Project Setup`);
   console.log(`Configuring ${CONFIG_FILE} for ${opts.projectRoot}`);
   console.log(`Press Enter to accept the default shown in [brackets].\n`);
 
   const p = new Prompter();
+  const deferredWarnings: string[] = [];
 
   try {
     const cfg: WomboConfig = structuredClone(DEFAULT_CONFIG);
+
+    // -- Check git upfront (always required) --------------------------------
+    await checkDependency(
+      {
+        bin: "git",
+        name: "git",
+        installHint: "https://git-scm.com/downloads",
+        requiredBy: "core (worktrees, branches)",
+      },
+      p,
+      deferredWarnings
+    );
 
     // -- General ----------------------------------------------------------
     section("General");
@@ -158,6 +300,64 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       cfg.agent.multiplexer = "auto";
     }
 
+    // Check multiplexer availability
+    if (cfg.agent.multiplexer === "dmux") {
+      await checkDependency(
+        {
+          bin: "dmux",
+          name: "dmux",
+          installHint: "cargo install dmux  or  https://github.com/nicholasgasior/dmux",
+          requiredBy: "multiplexer (agent.multiplexer = dmux)",
+        },
+        p,
+        deferredWarnings
+      );
+    } else if (cfg.agent.multiplexer === "tmux") {
+      await checkDependency(
+        {
+          bin: "tmux",
+          name: "tmux",
+          installHint: "https://github.com/tmux/tmux",
+          requiredBy: "multiplexer (agent.multiplexer = tmux)",
+        },
+        p,
+        deferredWarnings
+      );
+    } else {
+      // "auto" — check both, warn only if neither is found
+      const hasDmux = isBinAvailable("dmux");
+      const hasTmux = isBinAvailable("tmux");
+      if (!hasDmux && !hasTmux) {
+        console.log(`\n  \x1b[33m[WARNING]\x1b[0m No terminal multiplexer found (dmux or tmux).`);
+        console.log(`  Interactive mode (--interactive) requires a multiplexer.`);
+        const installTmux = await p.yesNo("Attempt to install tmux?", false);
+        if (installTmux) {
+          const installed = await tryInstall(
+            {
+              bin: "tmux",
+              name: "tmux",
+              installHint: "https://github.com/tmux/tmux",
+              requiredBy: "multiplexer (interactive mode)",
+            },
+            p
+          );
+          if (!installed) {
+            deferredWarnings.push(
+              "  - tmux or dmux: needed for interactive mode (--interactive). Install one:\n" +
+              "      tmux: https://github.com/tmux/tmux\n" +
+              "      dmux: https://github.com/nicholasgasior/dmux"
+            );
+          }
+        } else {
+          deferredWarnings.push(
+            "  - tmux or dmux: needed for interactive mode (--interactive). Install one:\n" +
+            "      tmux: https://github.com/tmux/tmux\n" +
+            "      dmux: https://github.com/nicholasgasior/dmux"
+          );
+        }
+      }
+    }
+
     // -- Agent Registry ---------------------------------------------------
     section("Agent Registry (specialized agent downloads)");
     console.log("  Pull specialized agent definitions from an external registry at launch time.\n");
@@ -184,6 +384,18 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     console.log("  Portless prevents port collisions when multiple agents run dev servers.\n");
     cfg.portless.enabled = await p.yesNo("Enable portless integration", cfg.portless.enabled);
     if (cfg.portless.enabled) {
+      // Check portless availability
+      await checkDependency(
+        {
+          bin: "portless",
+          name: "portless",
+          installHint: "npm install -g portless",
+          requiredBy: "portless integration (portless.enabled = true)",
+        },
+        p,
+        deferredWarnings
+      );
+
       cfg.portless.bin = await p.stringOrNull("Portless binary path (or 'auto')", cfg.portless.bin);
       cfg.portless.proxyPort = await p.number("Proxy port", cfg.portless.proxyPort);
       cfg.portless.https = await p.yesNo("Enable HTTPS/HTTP2", cfg.portless.https);
@@ -194,26 +406,68 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
     cfg.defaults.maxConcurrent = await p.number("Max concurrent agents", cfg.defaults.maxConcurrent);
     cfg.defaults.maxRetries = await p.number("Max retries per agent", cfg.defaults.maxRetries);
 
-    // -- Write config ------------------------------------------------------
+    // -- Write all operative files -----------------------------------------
     console.log(`\n${"─".repeat(60)}`);
+
+    // Ensure .wombo-combo/ directory exists before writing any files
+    const womboDir = resolve(opts.projectRoot, WOMBO_DIR);
+    if (!existsSync(womboDir)) mkdirSync(womboDir, { recursive: true });
+
+    // 1. config.json
     const json = JSON.stringify(cfg, null, 2) + "\n";
     writeFileSync(configPath, json, "utf-8");
     console.log(`\nCreated ${CONFIG_FILE}`);
 
-    // -- Create features file from template -------------------------------
-    const womboDir = resolve(opts.projectRoot, WOMBO_DIR);
-    if (!existsSync(womboDir)) mkdirSync(womboDir, { recursive: true });
+    // 2. tasks.yml from template
+    const now = new Date().toISOString();
+    const projectName = opts.projectRoot.split("/").pop() ?? "project";
     const featuresPath = resolve(womboDir, cfg.tasksFile);
     if (existsSync(featuresPath) && !opts.force) {
       console.log(`${cfg.tasksFile} already exists, skipping.`);
     } else {
       const template = readFileSync(FEATURES_TEMPLATE_PATH, "utf-8");
-      const now = new Date().toISOString();
       const content = template
         .replace(/created_at:\s*".*?"/, `created_at: "${now}"`)
-        .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`);
+        .replace(/updated_at:\s*".*?"/, `updated_at: "${now}"`)
+        .replace(/project:\s*".*?"/, `project: "${projectName}"`)
+        .replace(/generator:\s*".*?"/, `generator: "wombo-combo"`)
+        .replace(/maintainer:\s*".*?"/, `maintainer: "user"`);
       writeFileSync(featuresPath, content, "utf-8");
-      console.log(`Created ${cfg.tasksFile} from template.`);
+      console.log(`Created ${WOMBO_DIR}/${cfg.tasksFile} from template.`);
+    }
+
+    // 3. archive.yml
+    const archivePath = resolve(womboDir, cfg.archiveFile);
+    if (existsSync(archivePath) && !opts.force) {
+      console.log(`${cfg.archiveFile} already exists, skipping.`);
+    } else {
+      const archiveContent = stringifyYaml({
+        version: "1.0",
+        meta: {
+          created_at: now,
+          updated_at: now,
+          project: projectName,
+          generator: "wombo-combo",
+          maintainer: "user",
+        },
+        tasks: [],
+      }, { lineWidth: 120 });
+      writeFileSync(archivePath, archiveContent, "utf-8");
+      console.log(`Created ${WOMBO_DIR}/${cfg.archiveFile}.`);
+    }
+
+    // 4. logs/ directory
+    const logsDir = resolve(womboDir, "logs");
+    if (!existsSync(logsDir)) {
+      mkdirSync(logsDir, { recursive: true });
+      console.log(`Created ${WOMBO_DIR}/logs/`);
+    }
+
+    // 5. history/ directory
+    const historyDir = resolve(womboDir, "history");
+    if (!existsSync(historyDir)) {
+      mkdirSync(historyDir, { recursive: true });
+      console.log(`Created ${WOMBO_DIR}/history/`);
     }
 
     // -- Install agent definition template --------------------------------
@@ -246,7 +500,18 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       console.log(`Added agent/ to configFiles in ${CONFIG_FILE}.`);
     }
 
-    console.log(`\nYou're all set! Run 'wombo help' to see available commands.\n`);
+    // -- Deferred dependency warnings -------------------------------------
+    if (deferredWarnings.length > 0) {
+      console.log(`\n\x1b[33m── Missing Dependencies ─────────────────────────────────────\x1b[0m`);
+      console.log(`The following tools were not found and should be installed`);
+      console.log(`before running wombo-combo:\n`);
+      for (const warning of deferredWarnings) {
+        console.log(warning);
+      }
+      console.log();
+    }
+
+    console.log(`\nYou're all set! Run 'woco help' to see available commands.\n`);
   } finally {
     p.close();
   }

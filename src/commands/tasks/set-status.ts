@@ -2,7 +2,7 @@
  * tasks/set-status.ts — Change a task's status.
  *
  * Usage:
- *   wombo tasks set-status <task-id> <new-status>
+ *   woco tasks set-status <task-id> <new-status>
  *
  * Valid statuses: backlog, planned, in_progress, blocked, in_review, done, cancelled
  */
@@ -48,7 +48,7 @@ export async function cmdTasksSetStatus(opts: TasksSetStatusOptions): Promise<vo
   const fmt = opts.outputFmt ?? "text";
 
   if (!opts.featureId || !opts.newStatus) {
-    outputError(fmt, `Usage: wombo tasks set-status <task-id> <new-status>\nValid statuses: ${VALID_STATUSES.join(", ")}`);
+    outputError(fmt, `Usage: woco tasks set-status <task-id> <new-status>\nValid statuses: ${VALID_STATUSES.join(", ")}`);
     return;
   }
 

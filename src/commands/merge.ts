@@ -1,7 +1,7 @@
 /**
  * merge.ts — Merge verified branches into the base branch.
  *
- * Usage: wombo merge [feature-id]
+ * Usage: woco merge [feature-id]
  *
  * Merges all verified agents (or a specific one) into the base branch.
  * Uses the full merge pipeline including pre-flight conflict detection,

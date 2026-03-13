@@ -153,7 +153,7 @@ export function tuiPreflightConfirm(
     // Create screen
     const screen = blessed.screen({
       smartCSR: true,
-      title: "Wombo — Launch Preflight",
+      title: "wombo-combo — Launch Preflight",
       fullUnicode: true,
     });
 

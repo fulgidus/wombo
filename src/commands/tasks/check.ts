@@ -2,7 +2,7 @@
  * tasks/check.ts — Validate the tasks file for schema issues, broken deps, and orphans.
  *
  * Usage:
- *   wombo tasks check
+ *   woco tasks check
  *
  * Checks:
  *   - Required fields present on every task

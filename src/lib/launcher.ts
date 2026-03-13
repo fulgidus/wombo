@@ -116,7 +116,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
     "--format", "json",
     "--agent", opts.agentName ?? opts.config.agent.name,
     "--dir", opts.worktreePath,
-    "--title", `wombo: ${opts.featureId}`,
+    "--title", `woco: ${opts.featureId}`,
   ];
 
   if (opts.model) {
@@ -204,7 +204,7 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
     "--format", "json",
     "--agent", opts.config.agent.name,
     "--dir", opts.worktreePath,
-    "--title", `wombo: conflict-resolve ${opts.featureId}`,
+    "--title", `woco: conflict-resolve ${opts.featureId}`,
   ];
 
   if (opts.model) {
@@ -267,7 +267,7 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
   // Send the prompt as initial message after a brief delay
   setTimeout(() => {
     try {
-      const tmpFile = `/tmp/wombo-prompt-${opts.featureId}.txt`;
+      const tmpFile = `/tmp/woco-prompt-${opts.featureId}.txt`;
       writeFileSync(tmpFile, opts.prompt);
       muxLoadBuffer(mux, tmpFile);
       muxPasteBuffer(mux, sessionName);
@@ -298,7 +298,7 @@ export function retryInteractive(opts: RetryOptions): LaunchResult {
 
   if (exists) {
     const retryMsg = `The build failed. Fix these errors:\n${opts.buildErrors}`;
-    const tmpFile = `/tmp/wombo-retry-${opts.featureId}.txt`;
+    const tmpFile = `/tmp/woco-retry-${opts.featureId}.txt`;
     writeFileSync(tmpFile, retryMsg);
     muxLoadBuffer(mux, tmpFile);
     muxPasteBuffer(mux, sessionName);
@@ -353,7 +353,7 @@ export function killMuxSession(
 }
 
 /**
- * List all wombo-related multiplexer sessions.
+ * List all woco-related multiplexer sessions.
  */
 export function listMuxSessions(config: WomboConfig): string[] {
   const mux = getMux(config);
@@ -362,7 +362,7 @@ export function listMuxSessions(config: WomboConfig): string[] {
 }
 
 /**
- * Kill all wombo-related multiplexer sessions.
+ * Kill all woco-related multiplexer sessions.
  */
 export function killAllMuxSessions(config: WomboConfig): number {
   const mux = getMux(config);

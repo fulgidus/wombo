@@ -1,7 +1,7 @@
 /**
  * launch.ts — Launch a wave of agents.
  *
- * Usage: wombo launch [selection options] [launch options]
+ * Usage: woco launch [selection options] [launch options]
  *
  * This is the primary entry point for starting a new wave. It selects features
  * from the features file, creates a wave state, sets up worktrees, and launches
@@ -958,7 +958,7 @@ async function launchWaveHeadless(
         }
         monitor.killAll();
         saveState(projectRoot, state);
-        console.log("State saved. Use 'wombo resume' to continue.");
+        console.log("State saved. Use 'woco resume' to continue.");
         process.exit(0);
       },
     });
@@ -975,7 +975,7 @@ async function launchWaveHeadless(
     }
     monitor.killAll();
     saveState(projectRoot, state);
-    console.log("\nState saved. Use 'wombo resume' to continue.");
+    console.log("\nState saved. Use 'woco resume' to continue.");
     process.exit(0);
   });
 
@@ -1214,10 +1214,10 @@ async function launchWaveInteractive(
   console.log("\nInteractive sessions launched. Use these commands:");
   console.log(`  ${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<feature-id>`)}   # attach to a session`);
   console.log(`  ${muxListCommand(mux)}${" ".repeat(Math.max(1, 54 - muxListCommand(mux).length))}# list sessions`);
-  console.log("  wombo status                                             # check status");
-  console.log("  wombo verify                                             # verify builds");
-  console.log("  wombo merge                                              # merge verified");
-  console.log("  wombo cleanup                                            # remove worktrees");
+  console.log("  woco status                                             # check status");
+  console.log("  woco verify                                             # verify builds");
+  console.log("  woco merge                                              # merge verified");
+  console.log("  woco cleanup                                            # remove worktrees");
 
   printDashboard(state);
 }
@@ -1229,7 +1229,7 @@ async function launchWaveInteractive(
 export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
 
-  console.log("\n--- Wombo: Launch ---\n");
+  console.log("\n--- wombo-combo: Launch ---\n");
 
   // Ensure agent definition exists — reinstall from template if missing
   ensureAgentDefinition(projectRoot, config);
@@ -1298,18 +1298,18 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       }
 
       // Verified agents: build passed but NOT merged — do NOT mark done.
-      // Leave them for 'wombo resume' to attempt the merge.
+      // Leave them for 'woco resume' to attempt the merge.
       if (verified.length > 0) {
         for (const agent of verified) {
-          console.log(`  ${agent.feature_id}: verified (not yet merged) — use 'wombo resume' to merge`);
+          console.log(`  ${agent.feature_id}: verified (not yet merged) — use 'woco resume' to merge`);
         }
       }
 
       const activeCount = running.length + completed.length + queued.length;
       if (activeCount > 0) {
         console.error(`\nWave ${existingState.wave_id} has ${activeCount} unfinished agent(s).`);
-        console.error("Use 'wombo resume' to continue the existing wave,");
-        console.error("or 'wombo cleanup' to clear it before starting a new one.");
+      console.error("Use 'woco resume' to continue the existing wave,");
+      console.error("or 'woco cleanup' to clear it before starting a new one.");
         process.exit(1);
       }
 
@@ -1337,13 +1337,13 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     if (opts.allReady) {
       console.error(
         "No launchable tasks found (all tasks are done, cancelled, or have unmet dependencies).\n" +
-        "Run 'wombo tasks list' to review task statuses."
+        "Run 'woco tasks list' to review task statuses."
       );
     } else {
       console.error(
         "No tasks matched the selection criteria.\n" +
         "Use --all-ready to select all tasks whose dependencies are met,\n" +
-        "or run 'wombo tasks list --ready' to see available tasks."
+        "or run 'woco tasks list --ready' to see available tasks."
       );
     }
     process.exit(1);
