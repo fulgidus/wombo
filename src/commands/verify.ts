@@ -1,7 +1,7 @@
 /**
  * verify.ts — Run build verification on completed agents.
  *
- * Usage: woco verify [feature-id] [--browser]
+ * Usage: woco verify [feature-id] [--browser] [--skip-tests] [--strict-tdd]
  *
  * Runs the build command in each completed agent's worktree. If a specific
  * feature-id is given, verifies only that agent. Otherwise verifies all
@@ -9,11 +9,15 @@
  *
  * When --browser is passed (or browser.enabled is true in config), also
  * runs browser-based verification after the build passes.
+ *
+ * When TDD is enabled (tdd.enabled in config), also runs tests and checks
+ * for test coverage of new files. Use --skip-tests to skip or --strict-tdd
+ * to fail on missing tests.
  */
 
 import type { WomboConfig } from "../config.js";
 import { loadFeatures, type Feature } from "../lib/tasks.js";
-import { loadState, saveState } from "../lib/state.js";
+import { loadState } from "../lib/state.js";
 import { printDashboard } from "../lib/ui.js";
 import { handleBuildVerification } from "./launch.js";
 
@@ -29,6 +33,10 @@ export interface VerifyCommandOptions {
   maxRetries?: number;
   /** Enable browser verification (overrides config.browser.enabled) */
   browserVerify?: boolean;
+  /** Skip running tests during TDD verification */
+  skipTests?: boolean;
+  /** Strict TDD mode: fail verification if new files are missing tests */
+  strictTdd?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +49,11 @@ export async function cmdVerify(opts: VerifyCommandOptions): Promise<void> {
   // Apply browser verification override if --browser flag was passed
   if (opts.browserVerify !== undefined) {
     config.browser.enabled = opts.browserVerify;
+  }
+
+  // Apply TDD overrides from CLI flags
+  if (opts.strictTdd !== undefined) {
+    config.tdd.strictTdd = opts.strictTdd;
   }
 
   const state = loadState(projectRoot);
@@ -66,7 +79,16 @@ export async function cmdVerify(opts: VerifyCommandOptions): Promise<void> {
     const feature = data.tasks.find((f: Feature) => f.id === agent.feature_id);
     if (!feature) continue;
 
-    await handleBuildVerification(projectRoot, state, agent, feature, config, opts.model);
+    await handleBuildVerification(
+      projectRoot,
+      state,
+      agent,
+      feature,
+      config,
+      opts.model,
+      undefined, // monitor
+      { skipTests: opts.skipTests, strictTdd: opts.strictTdd }
+    );
   }
 
   printDashboard(state);

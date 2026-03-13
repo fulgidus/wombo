@@ -149,6 +149,10 @@ export interface TddConfig {
   enabled: boolean;
   /** Test command to run (default: "bun test") */
   testCommand: string;
+  /** Strict TDD mode: fail verification if new files are missing tests */
+  strictTdd: boolean;
+  /** Test command timeout in milliseconds (default: 120_000) */
+  testTimeout: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +219,8 @@ export const DEFAULT_CONFIG: WomboConfig = {
   tdd: {
     enabled: false,
     testCommand: "bun test",
+    strictTdd: false,
+    testTimeout: 120_000,
   },
 };
 
