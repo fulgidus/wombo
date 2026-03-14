@@ -33,6 +33,7 @@ import { loadFeatures } from "../lib/tasks.js";
 import {
   loadState,
   saveState,
+  flushState,
   updateAgent,
   queuedAgents,
   readyToLaunchAgents,
@@ -569,7 +570,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         }
       }
       monitor.killAll();
-      saveState(projectRoot, state);
+      flushState(projectRoot, state);
       if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
       process.exit(0);
     });
@@ -591,7 +592,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         interactive: false,
         config,
         onQuit: () => {
-          // Audit (wave-detach-audit): Same killAll() + saveState pattern as
+          // Audit (wave-detach-audit): Same killAll() + flushState pattern as
           // launch.ts onQuit. See launch.ts for full lifecycle documentation.
           for (const agent of state.agents) {
             if (agent.status === "running" || agent.status === "resolving_conflict") {
@@ -599,9 +600,13 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             }
           }
           monitor.killAll();
-          saveState(projectRoot, state);
+          flushState(projectRoot, state);
           if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
           process.exit(0);
+        },
+        onBeforeDestroy: () => {
+          // Flush state to disk before the blessed screen is destroyed.
+          flushState(projectRoot, state);
         },
         onRetry: (featureId: string) => {
           const agent = state.agents.find((a) => a.feature_id === featureId);
