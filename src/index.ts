@@ -223,6 +223,7 @@ export const QUEST_SUBCOMMAND_ALIASES: Record<string, string> = {
   c: "create",
   ls: "list",
   sh: "show",
+  pl: "plan",
   a: "activate",
   p: "pause",
   co: "complete",

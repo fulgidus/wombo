@@ -37,6 +37,11 @@ import {
 import {
   mergeQuestIntoBranch,
 } from "../lib/merger.js";
+import {
+  runQuestPlanner,
+  applyPlanToQuest,
+  type PlanResult,
+} from "../lib/quest-planner.js";
 import { VALID_PRIORITIES, VALID_DIFFICULTIES } from "../lib/task-schema.js";
 import { output, outputError, outputMessage } from "../lib/output.js";
 import { validateEnum } from "../lib/validate.js";
@@ -644,6 +649,145 @@ async function questAbandon(opts: QuestCommandOptions): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: plan
+// ---------------------------------------------------------------------------
+
+async function questPlan(opts: QuestCommandOptions): Promise<void> {
+  const { projectRoot, config } = opts;
+  const fmt = opts.outputFmt ?? "text";
+
+  if (!opts.questId) {
+    outputError(fmt, "Usage: woco quest plan <quest-id> [--model <model>]");
+    return;
+  }
+
+  const quest = loadQuest(projectRoot, opts.questId);
+  if (!quest) {
+    outputError(fmt, `Quest "${opts.questId}" not found.`);
+    return;
+  }
+
+  if (quest.status === "completed" || quest.status === "abandoned") {
+    outputError(fmt, `Quest "${quest.id}" is ${quest.status} and cannot be planned.`);
+    return;
+  }
+
+  // Set quest to planning status
+  quest.status = "planning";
+  saveQuest(projectRoot, quest);
+
+  if (fmt === "text") {
+    console.log(`\n${BOLD}Planning quest: ${quest.title}${RESET}`);
+    console.log(`  Goal: ${quest.goal}`);
+    console.log(`  Running quest planner agent...\n`);
+  }
+
+  let result: PlanResult;
+  try {
+    result = await runQuestPlanner(quest, projectRoot, config, {
+      model: opts.dryRun ? undefined : undefined, // model passed via config or CLI
+      onProgress: (msg) => {
+        if (fmt === "text") {
+          console.log(`  ${DIM}${msg}${RESET}`);
+        }
+      },
+    });
+  } catch (err: unknown) {
+    const reason = err instanceof Error ? err.message : String(err);
+    // Revert planning status on failure
+    quest.status = "draft";
+    saveQuest(projectRoot, quest);
+    outputError(fmt, `Planner failed: ${reason}`);
+    return;
+  }
+
+  // Show results
+  if (fmt === "text") {
+    console.log(`\n  ${BOLD}Planner produced ${result.tasks.length} tasks${RESET}`);
+
+    if (result.issues.length > 0) {
+      console.log(`\n  ${BOLD}Validation Issues:${RESET}`);
+      for (const issue of result.issues) {
+        const color = issue.level === "error" ? RED : YELLOW;
+        const prefix = issue.level === "error" ? "ERROR" : "WARN";
+        const taskRef = issue.taskId ? ` [${issue.taskId}]` : "";
+        console.log(`    ${color}${prefix}${taskRef}: ${issue.message}${RESET}`);
+      }
+    }
+
+    if (result.tasks.length > 0) {
+      console.log(`\n  ${BOLD}Proposed Tasks:${RESET}`);
+      for (const task of result.tasks) {
+        const deps = task.depends_on.length > 0
+          ? ` ${DIM}deps: ${task.depends_on.join(", ")}${RESET}`
+          : "";
+        console.log(
+          `    ${CYAN}${task.id}${RESET} — ${task.title} ` +
+          `[${task.priority}/${task.difficulty}] ${DIM}${task.effort}${RESET}${deps}`
+        );
+      }
+    }
+
+    if (result.knowledge) {
+      console.log(`\n  ${BOLD}Knowledge:${RESET} ${DIM}${result.knowledge.length} chars${RESET}`);
+    }
+  }
+
+  if (!result.success) {
+    // Revert to draft if plan has errors
+    quest.status = "draft";
+    saveQuest(projectRoot, quest);
+
+    output(fmt, {
+      success: false,
+      tasks: result.tasks,
+      issues: result.issues,
+      error: result.error,
+    }, () => {
+      console.log(`\n  ${RED}Plan has errors. Quest reverted to draft.${RESET}`);
+      console.log(`  Fix issues and run ${BOLD}woco quest plan ${quest.id}${RESET} again.\n`);
+    });
+    return;
+  }
+
+  if (opts.dryRun) {
+    // Revert to previous status
+    quest.status = "draft";
+    saveQuest(projectRoot, quest);
+
+    output(fmt, {
+      dry_run: true,
+      success: true,
+      tasks: result.tasks,
+      knowledge: result.knowledge ? `${result.knowledge.length} chars` : null,
+      issues: result.issues,
+    }, () => {
+      console.log(`\n  ${GREEN}[dry-run]${RESET} Plan looks good. Run without --dry-run to apply.`);
+    });
+    return;
+  }
+
+  // Apply the plan — creates tasks and activates the quest
+  const tasks = applyPlanToQuest(result, quest, projectRoot, config);
+
+  output(fmt, {
+    success: true,
+    quest_id: quest.id,
+    quest_status: quest.status,
+    tasks_created: tasks.length,
+    task_ids: tasks.map((t) => t.id),
+    has_knowledge: result.knowledge !== null,
+  }, () => {
+    console.log(`\n  ${GREEN}Plan applied!${RESET}`);
+    console.log(`  Created ${tasks.length} tasks and activated quest "${quest.id}".`);
+    if (result.knowledge) {
+      console.log(`  Saved knowledge file (${result.knowledge.length} chars).`);
+    }
+    console.log(`\n  Use ${BOLD}woco launch --quest ${quest.id}${RESET} or the TUI to start agents.\n`);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -670,6 +814,9 @@ export async function handleQuestSubcommand(opts: QuestCommandOptions): Promise<
     case "abandon":
       await questAbandon(opts);
       break;
+    case "plan":
+      await questPlan(opts);
+      break;
     case "help":
     case "--help":
     case "-h":
@@ -694,6 +841,7 @@ Quest Subcommands:                (alias)
   quest create <id> "Title"       (c)     Create a new quest (--goal, --priority, --difficulty, --hitl)
   quest list                      (ls)    List all quests (--status to filter)
   quest show <id>                 (sh)    Show full quest details
+  quest plan <id>                 (pl)    Run planner agent to decompose quest into tasks
   quest activate <id>             (a)     Activate a quest (creates branch, sets status to active)
   quest pause <id>                (p)     Pause an active quest
   quest complete <id>             (co)    Complete quest (merges branch into base, --force to skip merge)
@@ -706,6 +854,7 @@ Options:
   --hitl <mode>             HITL mode (yolo/cautious/supervised, default: yolo)
   --status <status>         Filter by status (for list)
   --agent <name>            Agent definition override for all tasks in this quest
+  --model <name>            Model override (for plan)
   --dry-run                 Show what would happen without doing it
   --force                   Force action (complete: skip merge; abandon: delete branch)
   --output <fmt>            Output format (text/json/toon)
@@ -713,6 +862,8 @@ Options:
 Examples:
   woco quest create auth-overhaul "Auth Overhaul" --goal "Replace basic auth with OAuth2"
   woco quest create ui-refresh "UI Refresh" --goal "Modernize UI" --priority high --hitl cautious
+  woco quest plan auth-overhaul
+  woco quest plan auth-overhaul --dry-run
   woco quest list
   woco quest list --status active
   woco quest show auth-overhaul
@@ -721,6 +872,7 @@ Examples:
   woco quest complete auth-overhaul
   woco quest abandon auth-overhaul --force
   woco q c my-quest "My Quest" --goal "Do something"
+  woco q pl my-quest
   woco q ls
   woco q sh my-quest
 `);
