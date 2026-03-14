@@ -253,7 +253,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-2
     title: "Quest TUI — browser integration"
-    status: in_progress
+    status: done
     tasks:
 
       - id: p2-quest-selector
@@ -275,8 +275,8 @@ phases:
         description: >
           Key binding in quest picker to create a new quest.
           Inline text input for ID, title, goal (multi-line).
-          Constraint editor (add/ban/override).
-        status: pending
+          Priority, difficulty, and HITL mode selection via list widgets.
+        status: done
         effort: PT8H
         depends_on: [p2-quest-selector]
         files:

@@ -27,9 +27,11 @@
 
 import blessed from "neo-blessed";
 import type { Widgets } from "neo-blessed";
-import type { Quest } from "./quest.js";
-import { QUEST_STATUS_ORDER } from "./quest.js";
-import { loadAllQuests, saveQuest } from "./quest-store.js";
+import type { Quest, QuestHitlMode } from "./quest.js";
+import { QUEST_STATUS_ORDER, createBlankQuest, VALID_HITL_MODES } from "./quest.js";
+import { loadAllQuests, saveQuest, loadQuest } from "./quest-store.js";
+import { VALID_PRIORITIES, VALID_DIFFICULTIES } from "./task-schema.js";
+import type { Priority, Difficulty } from "./tasks.js";
 import { loadTasks, getDoneTaskIds, loadArchive } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
 
@@ -276,6 +278,11 @@ export class QuestPicker {
     this.screen.key(["a"], () => {
       this.toggleQuestActive();
     });
+
+    // C -- create new quest
+    this.screen.key(["c"], () => {
+      this.showCreateQuestModal();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -316,6 +323,428 @@ export class QuestPicker {
     this.loadQuests();
     this.refreshAll();
     this.screen.render();
+  }
+
+  // -----------------------------------------------------------------------
+  // Create Quest Modal
+  // -----------------------------------------------------------------------
+
+  /** Whether the create modal is currently showing (blocks other key handlers) */
+  private creatingQuest = false;
+
+  /**
+   * Show a multi-step modal form to create a new quest.
+   * Steps: ID -> Title -> Goal -> Priority -> Difficulty -> HITL -> Confirm
+   */
+  private showCreateQuestModal(): void {
+    if (this.creatingQuest) return;
+    this.creatingQuest = true;
+
+    // Overlay box that covers the detail pane
+    const modal = blessed.box({
+      parent: this.screen,
+      top: "center",
+      left: "center",
+      width: "70%",
+      height: "80%",
+      tags: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "magenta" },
+        fg: "white",
+        bg: "black",
+      },
+      label: " {magenta-fg}New Quest{/magenta-fg} ",
+      shadow: true,
+    });
+
+    // Content area (instructions)
+    const content = blessed.box({
+      parent: modal,
+      top: 0,
+      left: 1,
+      right: 1,
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Textbox for text input steps
+    const textbox = blessed.textbox({
+      parent: modal,
+      top: 3,
+      left: 1,
+      right: 1,
+      height: 3,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "magenta" } },
+      },
+      inputOnFocus: true,
+    });
+
+    // Textarea for goal (multi-line)
+    const textarea = blessed.textarea({
+      parent: modal,
+      top: 3,
+      left: 1,
+      right: 1,
+      height: 10,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "magenta" } },
+      },
+      inputOnFocus: true,
+      hidden: true,
+    });
+
+    // Selection list for enum steps (priority, difficulty, hitl)
+    const selectList = blessed.list({
+      parent: modal,
+      top: 3,
+      left: 1,
+      right: 1,
+      height: "100%-8",
+      tags: true,
+      keys: true,
+      vi: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        selected: { bg: "blue", fg: "white", bold: true },
+        item: { fg: "white" },
+        bg: "black",
+      },
+      hidden: true,
+    });
+
+    // Status line at bottom of modal
+    const statusLine = blessed.box({
+      parent: modal,
+      bottom: 0,
+      left: 1,
+      right: 1,
+      height: 1,
+      tags: true,
+      style: { fg: "gray", bg: "black" },
+    });
+
+    // Collected values
+    let questId = "";
+    let questTitle = "";
+    let questGoal = "";
+    let questPriority: Priority = "medium";
+    let questDifficulty: Difficulty = "medium";
+    let questHitl: QuestHitlMode = "yolo";
+
+    type Step = "id" | "title" | "goal" | "priority" | "difficulty" | "hitl";
+    const steps: Step[] = ["id", "title", "goal", "priority", "difficulty", "hitl"];
+    let currentStepIdx = 0;
+
+    const cleanup = () => {
+      modal.destroy();
+      this.creatingQuest = false;
+      this.questList.focus();
+      this.screen.render();
+    };
+
+    const showStep = (step: Step) => {
+      textbox.hide();
+      textarea.hide();
+      selectList.hide();
+
+      const stepLabel = `Step ${currentStepIdx + 1}/${steps.length}`;
+
+      switch (step) {
+        case "id":
+          content.setContent(
+            `{bold}${stepLabel} — Quest ID{/bold}\n` +
+            `{gray-fg}Kebab-case identifier (e.g. auth-overhaul, search-api){/gray-fg}\n` +
+            `{gray-fg}Esc to cancel{/gray-fg}`
+          );
+          statusLine.setContent("{gray-fg}Enter a unique ID for the quest{/gray-fg}");
+          textbox.setValue("");
+          textbox.show();
+          textbox.focus();
+          break;
+
+        case "title":
+          content.setContent(
+            `{bold}${stepLabel} — Title{/bold}\n` +
+            `{gray-fg}Human-readable name for the quest{/gray-fg}\n` +
+            `{gray-fg}Esc to go back{/gray-fg}`
+          );
+          statusLine.setContent(`{gray-fg}ID: ${questId}{/gray-fg}`);
+          textbox.setValue("");
+          textbox.show();
+          textbox.focus();
+          break;
+
+        case "goal":
+          content.setContent(
+            `{bold}${stepLabel} — Goal{/bold}\n` +
+            `{gray-fg}What should this quest achieve? (Enter to submit, Esc to go back){/gray-fg}\n` +
+            `{gray-fg}Shift+Enter or \\n for newlines{/gray-fg}`
+          );
+          statusLine.setContent(`{gray-fg}ID: ${questId} | Title: ${questTitle}{/gray-fg}`);
+          textarea.setValue("");
+          textarea.show();
+          textarea.focus();
+          break;
+
+        case "priority":
+          content.setContent(
+            `{bold}${stepLabel} — Priority{/bold}\n` +
+            `{gray-fg}Select with Enter, Esc to go back{/gray-fg}`
+          );
+          statusLine.setContent(`{gray-fg}ID: ${questId} | Title: ${questTitle}{/gray-fg}`);
+          selectList.setItems(
+            (VALID_PRIORITIES as readonly string[]).map((p) => {
+              const dot = PRIORITY_COLORS[p] ?? "white";
+              const marker = p === "medium" ? " {gray-fg}(default){/gray-fg}" : "";
+              return `  {${dot}-fg}\u25CF{/${dot}-fg}  ${p}${marker}`;
+            }) as any
+          );
+          // Pre-select "medium" (index 2)
+          selectList.select(2);
+          selectList.show();
+          selectList.focus();
+          break;
+
+        case "difficulty":
+          content.setContent(
+            `{bold}${stepLabel} — Difficulty{/bold}\n` +
+            `{gray-fg}Select with Enter, Esc to go back{/gray-fg}`
+          );
+          statusLine.setContent(`{gray-fg}ID: ${questId} | Priority: ${questPriority}{/gray-fg}`);
+          selectList.setItems(
+            (VALID_DIFFICULTIES as readonly string[]).map((d) => {
+              const marker = d === "medium" ? " {gray-fg}(default){/gray-fg}" : "";
+              return `  ${d}${marker}`;
+            }) as any
+          );
+          selectList.select(2);
+          selectList.show();
+          selectList.focus();
+          break;
+
+        case "hitl":
+          content.setContent(
+            `{bold}${stepLabel} — HITL Mode{/bold}\n` +
+            `{gray-fg}Human-in-the-loop mode for agents. Select with Enter, Esc to go back{/gray-fg}`
+          );
+          statusLine.setContent(`{gray-fg}ID: ${questId} | Difficulty: ${questDifficulty}{/gray-fg}`);
+          const hitlDescs: Record<string, string> = {
+            yolo: "Full autonomy, no interruptions",
+            cautious: "Agent blocks on uncertainty, user answers in TUI",
+            supervised: "Like cautious, but prompt encourages asking often",
+          };
+          selectList.setItems(
+            (VALID_HITL_MODES as readonly string[]).map((m) => {
+              const desc = hitlDescs[m] ?? "";
+              const marker = m === "yolo" ? " {gray-fg}(default){/gray-fg}" : "";
+              return `  ${m}${marker}  {gray-fg}— ${desc}{/gray-fg}`;
+            }) as any
+          );
+          selectList.select(0);
+          selectList.show();
+          selectList.focus();
+          break;
+      }
+
+      this.screen.render();
+    };
+
+    const goBack = () => {
+      if (currentStepIdx <= 0) {
+        cleanup();
+        return;
+      }
+      currentStepIdx--;
+      showStep(steps[currentStepIdx]);
+    };
+
+    const advanceOrFinish = () => {
+      currentStepIdx++;
+      if (currentStepIdx >= steps.length) {
+        // All done — create the quest
+        this.finishCreateQuest(
+          questId,
+          questTitle,
+          questGoal,
+          questPriority,
+          questDifficulty,
+          questHitl,
+          modal,
+          content,
+          statusLine
+        );
+        return;
+      }
+      showStep(steps[currentStepIdx]);
+    };
+
+    // --- Textbox submit/cancel for ID and Title steps ---
+    textbox.on("submit", (value: string) => {
+      const trimmed = (value ?? "").trim();
+      const currentStep = steps[currentStepIdx];
+
+      if (currentStep === "id") {
+        // Validate ID
+        if (!trimmed) {
+          statusLine.setContent("{red-fg}ID cannot be empty{/red-fg}");
+          this.screen.render();
+          textbox.focus();
+          return;
+        }
+        if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$|^[a-z0-9]$/.test(trimmed)) {
+          statusLine.setContent("{red-fg}ID must be kebab-case (lowercase letters, numbers, hyphens){/red-fg}");
+          this.screen.render();
+          textbox.focus();
+          return;
+        }
+        // Check duplicate
+        const existing = loadQuest(this.projectRoot, trimmed);
+        if (existing) {
+          statusLine.setContent(`{red-fg}Quest "${trimmed}" already exists (${existing.status}){/red-fg}`);
+          this.screen.render();
+          textbox.focus();
+          return;
+        }
+        questId = trimmed;
+        advanceOrFinish();
+      } else if (currentStep === "title") {
+        if (!trimmed) {
+          statusLine.setContent("{red-fg}Title cannot be empty{/red-fg}");
+          this.screen.render();
+          textbox.focus();
+          return;
+        }
+        questTitle = trimmed;
+        advanceOrFinish();
+      }
+    });
+
+    textbox.on("cancel", () => {
+      goBack();
+    });
+
+    // --- Textarea submit/cancel for Goal step ---
+    textarea.key(["enter"], () => {
+      const val = (textarea.getValue() ?? "").trim();
+      if (!val) {
+        statusLine.setContent("{red-fg}Goal cannot be empty{/red-fg}");
+        this.screen.render();
+        return;
+      }
+      questGoal = val;
+      advanceOrFinish();
+    });
+
+    textarea.key(["escape"], () => {
+      goBack();
+    });
+
+    // --- Select list for Priority, Difficulty, HITL ---
+    selectList.on("select item", (_item: any, index: number) => {
+      // This fires on mouse click or manual select event
+    });
+
+    selectList.key(["enter", "space"], () => {
+      const currentStep = steps[currentStepIdx];
+      const idx = (selectList as any).selected ?? 0;
+
+      if (currentStep === "priority") {
+        questPriority = (VALID_PRIORITIES as readonly string[])[idx] as Priority;
+        advanceOrFinish();
+      } else if (currentStep === "difficulty") {
+        questDifficulty = (VALID_DIFFICULTIES as readonly string[])[idx] as Difficulty;
+        advanceOrFinish();
+      } else if (currentStep === "hitl") {
+        questHitl = (VALID_HITL_MODES as readonly string[])[idx] as QuestHitlMode;
+        advanceOrFinish();
+      }
+    });
+
+    selectList.key(["escape"], () => {
+      goBack();
+    });
+
+    // Start at step 0
+    showStep(steps[0]);
+  }
+
+  /**
+   * Finalize quest creation: save to store, show confirmation, reload list.
+   */
+  private finishCreateQuest(
+    id: string,
+    title: string,
+    goal: string,
+    priority: Priority,
+    difficulty: Difficulty,
+    hitlMode: QuestHitlMode,
+    modal: Widgets.BoxElement,
+    content: Widgets.BoxElement,
+    statusLine: Widgets.BoxElement
+  ): void {
+    try {
+      const baseBranch = this.config.baseBranch;
+      const quest = createBlankQuest(id, title, goal, baseBranch, {
+        priority,
+        difficulty,
+        hitlMode,
+      });
+
+      saveQuest(this.projectRoot, quest);
+
+      // Show confirmation briefly
+      content.setContent(
+        `{bold}{green-fg}\u2714 Quest created!{/green-fg}{/bold}\n\n` +
+        `  {white-fg}${id}{/white-fg} — ${escapeBlessedTags(title)}\n` +
+        `  Priority: ${priority}  |  Difficulty: ${difficulty}  |  HITL: ${hitlMode}\n` +
+        `  Branch: quest/${id}  |  Base: ${baseBranch}`
+      );
+      statusLine.setContent("{gray-fg}Returning to quest list...{/gray-fg}");
+      this.screen.render();
+
+      // After a brief delay, reload and return to picker
+      setTimeout(() => {
+        modal.destroy();
+        this.creatingQuest = false;
+        this.loadQuests();
+        // Select the newly created quest
+        const newIdx = this.items.findIndex(
+          (item) => item.type === "quest" && item.summary.quest.id === id
+        );
+        if (newIdx >= 0) this.selectedIndex = newIdx;
+        this.refreshAll();
+        this.questList.focus();
+        this.screen.render();
+      }, 1500);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      content.setContent(
+        `{bold}{red-fg}\u2718 Failed to create quest{/red-fg}{/bold}\n\n` +
+        `  ${escapeBlessedTags(msg)}`
+      );
+      statusLine.setContent("{gray-fg}Press Esc to return{/gray-fg}");
+      this.screen.render();
+
+      const escHandler = () => {
+        modal.destroy();
+        this.creatingQuest = false;
+        this.questList.focus();
+        this.screen.render();
+      };
+      modal.key(["escape"], escHandler);
+    }
   }
 
   // -----------------------------------------------------------------------
@@ -535,6 +964,7 @@ export class QuestPicker {
   private refreshStatusBar(): void {
     let line1 = ` {bold}Keys:{/bold}`;
     line1 += `  {gray-fg}Enter{/gray-fg} select`;
+    line1 += `  {gray-fg}C{/gray-fg} create`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
