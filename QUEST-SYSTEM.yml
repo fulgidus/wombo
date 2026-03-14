@@ -431,7 +431,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-6
     title: "Genesis — project-level inception"
-    status: pending
+    status: done
     tasks:
 
       - id: p6-genesis-planner-definition
@@ -442,10 +442,11 @@ phases:
           high-level goals, existing quests.
           Produces: quest definitions with goals, ordering, dependencies.
           Runs multi-step with broader exploration budget than quest planner.
-        status: pending
+        status: done
         effort: PT12H
         files:
           - src/templates/genesis-planner-agent.md (new)
+          - src/lib/genesis-planner.ts (new)
 
       - id: p6-genesis-cli
         title: "CLI + TUI for genesis"
@@ -455,11 +456,14 @@ phases:
           Launches genesis planner agent.
           Shows proposed quests in review TUI.
           Approve = creates quests, each can then be planned individually.
-        status: pending
+        status: done
         effort: PT10H
         depends_on: [p6-genesis-planner-definition, p5-plan-review-tui]
         files:
           - src/commands/genesis.ts (new)
+          - src/lib/tui-genesis-review.ts (new)
+          - src/commands/tui.ts
+          - src/lib/tui-quest-picker.ts
           - src/index.ts
 
   # ─────────────────────────────────────────────────────────────────────────
