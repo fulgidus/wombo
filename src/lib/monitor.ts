@@ -39,7 +39,7 @@
 
 import type { ChildProcess } from "node:child_process";
 import { isProcessRunning } from "./launcher.js";
-import { mkdirSync, appendFileSync, existsSync } from "node:fs";
+import { mkdirSync, appendFileSync, existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { TokenCollector, type UsageRecord } from "./token-collector.js";
 import { UsageStore } from "./token-usage.js";
@@ -348,13 +348,17 @@ export interface MonitorCallbacks {
 
 interface MonitoredProcess {
   featureId: string;
-  process: ChildProcess;
+  process: ChildProcess | null;
+  /** Explicit PID — used for reconnected processes where no ChildProcess handle exists */
+  pid: number;
   stdout: string;
   stderr: string;
   sessionId: string | null;
   done: boolean;
   lineBuffer: string;
   sawFinalStop: boolean;
+  /** True when this entry was created by reconnectProcess() (PID-only, no ChildProcess) */
+  reconnected: boolean;
 }
 
 /**
@@ -420,12 +424,14 @@ export class ProcessMonitor {
     const monitored: MonitoredProcess = {
       featureId,
       process: child,
+      pid: child.pid!,
       stdout: "",
       stderr: "",
       sessionId: null,
       done: false,
       lineBuffer: "",
       sawFinalStop: false,
+      reconnected: false,
     };
 
     this.pushActivity(featureId, "-- agent process started");
@@ -515,6 +521,103 @@ export class ProcessMonitor {
     this.processes.set(featureId, monitored);
   }
 
+  /**
+   * Reconnect to a running agent process by PID.
+   *
+   * Creates a "virtual" MonitoredProcess entry with no ChildProcess handle.
+   * This is used when resuming a wave where agents (typically interactive
+   * mux-based agents) are still alive but the parent monitor was stopped.
+   *
+   * Since there are no stdio pipes to read from, this method:
+   *   - Loads historical activity from the existing log file (last N lines)
+   *   - Starts a PID polling interval to detect process death
+   *   - When the PID dies, fires onComplete or onError callbacks based on
+   *     whether the agent's worktree has commits (determined by the caller)
+   *
+   * The polling loop detects PID death and marks the entry as done, which
+   * allows the resume.ts polling loop to handle verification/re-launch.
+   */
+  reconnectProcess(featureId: string, pid: number, sessionId?: string | null): void {
+    const monitored: MonitoredProcess = {
+      featureId,
+      process: null,
+      pid,
+      stdout: "",
+      stderr: "",
+      sessionId: sessionId ?? null,
+      done: false,
+      lineBuffer: "",
+      sawFinalStop: false,
+      reconnected: true,
+    };
+
+    this.pushActivity(featureId, `-- reconnected to running process (PID ${pid})`);
+    this.writeLog(featureId, `\n[wombo] Reconnected to PID ${pid} at ${new Date().toISOString()}\n`);
+
+    // Load historical activity from the log file so the TUI has context
+    this._loadHistoricalActivity(featureId);
+
+    // Start a polling interval to detect PID death.
+    // When the PID dies, mark as done and fire the appropriate callback.
+    // The resume.ts polling loop will handle verification/re-launch.
+    const pollInterval = setInterval(() => {
+      if (!isProcessRunning(pid)) {
+        clearInterval(pollInterval);
+        monitored.done = true;
+        this.pushActivity(featureId, `-- reconnected process exited (PID ${pid})`);
+        this.writeLog(featureId, `\n[wombo] Reconnected process PID ${pid} exited at ${new Date().toISOString()}\n`);
+        // Fire onComplete — the resume.ts polling loop checks branchHasChanges
+        // and will downgrade to onError/failed if no commits were made.
+        this.callbacks.onComplete?.(featureId);
+      }
+    }, 2000);
+
+    // Ensure the interval doesn't hold the process alive if everything else is done
+    if (pollInterval.unref) {
+      pollInterval.unref();
+    }
+
+    this.processes.set(featureId, monitored);
+  }
+
+  /**
+   * Load recent lines from the log file into the activity buffer.
+   * Gives the TUI context about what the agent was doing before the monitor
+   * was stopped.
+   */
+  private _loadHistoricalActivity(featureId: string): void {
+    const logFile = resolve(this.logDir, `${featureId}.log`);
+    if (!existsSync(logFile)) return;
+
+    try {
+      const content = readFileSync(logFile, "utf-8");
+      const lines = content.split("\n").filter((l) => l.trim());
+      // Take last N lines to avoid flooding the activity buffer
+      const recentLines = lines.slice(-50);
+
+      for (const line of recentLines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // Try parsing as JSON event to extract structured activity
+        try {
+          const event = JSON.parse(trimmed) as OpenCodeEvent;
+          const logLine = formatEventForLog(event);
+          if (logLine) {
+            this.pushActivity(featureId, logLine);
+          }
+        } catch {
+          // Not JSON — add as raw log line (skip [wombo] meta lines)
+          if (!trimmed.startsWith("[wombo]")) {
+            this.pushActivity(featureId, `[log] ${trimmed.slice(0, 120)}`);
+          }
+        }
+      }
+    } catch {
+      // Non-critical — log file may be unreadable
+    }
+  }
+
   getSessionId(featureId: string): string | null {
     return this.processes.get(featureId)?.sessionId ?? null;
   }
@@ -527,7 +630,7 @@ export class ProcessMonitor {
     const m = this.processes.get(featureId);
     if (!m) return false;
     if (m.done) return false;
-    return isProcessRunning(m.process.pid!);
+    return isProcessRunning(m.pid);
   }
 
   allDone(): boolean {
@@ -552,12 +655,20 @@ export class ProcessMonitor {
    * gracefully (e.g., save partial work, close files). The process map
    * entry is deleted immediately — any subsequent events from the dying
    * process are ignored.
+   *
+   * For reconnected processes (no ChildProcess handle), uses
+   * `process.kill(pid, 'SIGTERM')` directly.
    */
   remove(featureId: string): void {
     const m = this.processes.get(featureId);
     if (m && !m.done) {
       try {
-        m.process.kill("SIGTERM");
+        if (m.process) {
+          m.process.kill("SIGTERM");
+        } else {
+          // Reconnected process — no ChildProcess handle, use PID directly
+          process.kill(m.pid, "SIGTERM");
+        }
       } catch {}
     }
     this.processes.delete(featureId);
@@ -570,10 +681,19 @@ export class ProcessMonitor {
    * This is the primary teardown path. After killAll(), the parent
    * process saves wave state and exits. Agents can be re-launched
    * later via `woco resume`.
+   *
+   * Reconnected processes are NOT killed — they are independent agents
+   * (typically in mux sessions) that should survive the parent's exit.
+   * They are simply removed from the monitor map so polling stops.
    */
   killAll(): void {
-    for (const id of this.processes.keys()) {
-      this.remove(id);
+    for (const [id, m] of this.processes.entries()) {
+      if (m.reconnected) {
+        // Don't kill reconnected processes — just stop monitoring
+        this.processes.delete(id);
+      } else {
+        this.remove(id);
+      }
     }
   }
 

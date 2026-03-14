@@ -156,6 +156,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   // Triage agents by current state
   let toRelaunch: AgentState[] = [];
   let toVerify: AgentState[] = [];
+  let stillAlive: AgentState[] = [];
 
   for (const agent of state.agents) {
     switch (agent.status) {
@@ -165,7 +166,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       case "resolving_conflict":
         // Was in-flight when we stopped — check if PID is still alive
         if (agent.pid && isProcessRunning(agent.pid)) {
-          if (fmt === "text") console.log(`  ${agent.feature_id}: still running (PID ${agent.pid}), leaving alone`);
+          if (fmt === "text") console.log(`  ${agent.feature_id}: still running (PID ${agent.pid})`);
+          stillAlive.push(agent);
         } else {
           // Process is dead — check if worktree exists with meaningful changes.
           // Use worktreeExists (not worktreeReady) because node_modules may be
@@ -378,7 +380,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   // Re-launch agents
   const maxConcurrent = opts.maxConcurrent ?? state.max_concurrent;
   const toLaunchNow = toRelaunch.slice(0, maxConcurrent);
-  if (toLaunchNow.length === 0) {
+  if (toLaunchNow.length === 0 && stillAlive.length === 0) {
     outputMessage(fmt, "No agents need (re)launching.", {
       wave_id: state.wave_id,
       triage: {
@@ -420,7 +422,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
   }
 
   if (fmt === "text") {
-    console.log(`\nRe-launching ${toLaunchNow.length} agent(s)...\n`);
+    const parts: string[] = [];
+    if (toLaunchNow.length > 0) parts.push(`re-launching ${toLaunchNow.length}`);
+    if (stillAlive.length > 0) parts.push(`reconnecting ${stillAlive.length}`);
+    console.log(`\n${parts.join(", ")} agent(s)...\n`);
     printDashboard(state);
   }
   const model = opts.model ?? state.model ?? undefined;
@@ -577,6 +582,13 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     process.on("SIGINT", () => gracefulShutdown("SIGINT"));
     process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
     process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
+
+    // Reconnect to agents that are still alive — register them in the monitor
+    // so the TUI shows their activity and the polling loop detects their death.
+    for (const agent of stillAlive) {
+      monitor.reconnectProcess(agent.feature_id, agent.pid!, agent.session_id);
+      if (fmt === "text") console.log(`  ${agent.feature_id}: reconnected to PID ${agent.pid}`);
+    }
 
     await Promise.all(
       toLaunchNow.map((agent) => {
