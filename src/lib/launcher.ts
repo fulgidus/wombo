@@ -9,6 +9,39 @@
  *
  * Supports both dmux (preferred) and tmux (fallback) via the multiplexer
  * abstraction layer. The active backend is determined by config.agent.multiplexer.
+ *
+ * ## Agent Process Lifecycle (audit: wave-detach-audit)
+ *
+ * **Headless mode** (`launchHeadless`, `retryHeadless`, `launchConflictResolver`):
+ *   - Agents are spawned with `detached: false` — they are child processes of
+ *     the wombo parent and will be terminated when the parent exits.
+ *   - `unref()` is NOT called — the child holds the parent's event loop alive,
+ *     which is required for the ProcessMonitor to receive stdout/stderr events.
+ *   - `stdio` is `["pipe", "pipe", "pipe"]` — stdout is piped for JSON event
+ *     parsing by ProcessMonitor. This further ties the child to the parent.
+ *   - **Consequence**: If the parent is killed (SIGKILL, crash, OOM), headless
+ *     agents die immediately with no state saved. The SIGINT/SIGTERM handlers
+ *     in launch.ts and resume.ts mitigate this for graceful shutdowns by
+ *     calling `monitor.killAll()` and `saveState()` before exiting.
+ *   - **Recovery**: `woco resume` detects dead-but-productive agents (worktree
+ *     exists with commits) and runs build verification on their output, or
+ *     re-launches agents that died without producing code.
+ *
+ * **Interactive mode** (`launchInteractive`):
+ *   - Agents run inside dmux/tmux sessions, which are independent of the
+ *     parent process. They survive parent death naturally.
+ *   - The `process` field in LaunchResult is `null as any` — no direct
+ *     ChildProcess handle exists. PID is obtained via `muxGetPanePid()`.
+ *
+ * **Design rationale for `detached: false`**:
+ *   Headless agents MUST have their stdout piped to the parent for real-time
+ *   JSON event parsing (session ID extraction, completion detection, activity
+ *   tracking). Using `detached: true` + `unref()` would allow agents to
+ *   outlive the parent, but the piped stdio streams would break when the
+ *   parent exits, potentially causing agent crashes or lost output. The
+ *   current design trades survivability for reliable monitoring. If agent
+ *   persistence across parent restarts is needed, the interactive (mux)
+ *   mode should be used instead.
  */
 
 import { spawn, execSync, type ChildProcess } from "node:child_process";
@@ -134,6 +167,11 @@ function agentEnv(
 
 /**
  * Launch agent in headless mode with JSON output.
+ *
+ * The child process is spawned with `detached: false` — it is tied to the
+ * parent process and will die when the parent exits. This is intentional:
+ * stdout must be piped for ProcessMonitor to parse JSON events in real-time.
+ * See module-level documentation for the full lifecycle analysis.
  */
 export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
@@ -169,6 +207,9 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
 
 /**
  * Resume a headless session with a retry message (build errors).
+ *
+ * Same lifecycle as `launchHeadless` — spawned with `detached: false`,
+ * piped stdio, no `unref()`. The child is tied to the parent process.
  */
 export function retryHeadless(opts: RetryOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
@@ -228,6 +269,11 @@ export interface ConflictResolverOptions {
  * By default uses the specialized "merge-resolver-agent" definition, which
  * has minimal context and is focused solely on conflict resolution. Falls back
  * to the generalist agent if no merge-resolver-agent is available.
+ *
+ * Same lifecycle as `launchHeadless` — spawned with `detached: false`,
+ * piped stdio, no `unref()`. Note: conflict resolver processes are NOT
+ * added to the ProcessMonitor (to avoid infinite recursion with
+ * handleBuildVerification). They are awaited directly via process.on('exit').
  */
 export function launchConflictResolver(opts: ConflictResolverOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
@@ -269,6 +315,14 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
 
 /**
  * Launch agent in a terminal multiplexer session (dmux or tmux) for interactive use.
+ *
+ * Unlike headless mode, the agent runs inside a multiplexer session that is
+ * fully independent of the parent process. The session survives parent death,
+ * SIGINT, and crashes. The trade-off is that there is no direct ChildProcess
+ * handle — monitoring is limited to checking the pane PID and session existence.
+ *
+ * The returned `process` field is `null as any` because the agent is managed
+ * by the multiplexer, not by Node's child_process module.
  */
 export function launchInteractive(opts: LaunchOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);

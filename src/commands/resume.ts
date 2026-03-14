@@ -7,6 +7,24 @@
  *   - Agents in "running"/"installing" whose PID is dead → re-check or re-launch
  *   - Agents in "queued" → launch them
  *   - Agents in terminal states (verified/failed/merged) → leave alone
+ *
+ * ## Agent Recovery (audit: wave-detach-audit)
+ *
+ * This is the primary recovery mechanism for agents that died when the parent
+ * process was terminated (gracefully via SIGINT, or ungracefully via SIGKILL/crash).
+ *
+ * Recovery triage for each agent:
+ *   - PID still alive → leave it running (another wombo instance may still be active)
+ *   - PID dead + worktree has commits → run build verification on existing work
+ *   - PID dead + no commits → reset to "queued" for a fresh re-launch
+ *   - "completed" → verify build
+ *   - "verified" → attempt merge
+ *   - "failed" with retries remaining + worktree has commits → re-verify
+ *   - "failed" with retries remaining + no commits → re-launch
+ *   - "failed" with retries exhausted → leave alone (user can `woco retry`)
+ *
+ * This design means no agent work is permanently lost unless the worktree
+ * itself is destroyed (e.g., by `woco cleanup`).
  */
 
 import type { WomboConfig } from "../config.js";
@@ -537,6 +555,9 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     });
 
     // Handle graceful shutdown
+    // Audit (wave-detach-audit): Same pattern as launch.ts — see launch.ts
+    // SIGINT handler for detailed lifecycle documentation. Agents are
+    // non-detached children; killAll() gives them SIGTERM before exit.
     const tuiRef = { current: null as WomboTUI | null };
     process.on("SIGINT", () => {
       if (tuiRef.current) tuiRef.current.stop();
@@ -570,8 +591,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
         interactive: false,
         config,
         onQuit: () => {
+          // Audit (wave-detach-audit): Same killAll() + saveState pattern as
+          // launch.ts onQuit. See launch.ts for full lifecycle documentation.
           for (const agent of state.agents) {
-            if (agent.status === "running") {
+            if (agent.status === "running" || agent.status === "resolving_conflict") {
               updateAgent(state, agent.feature_id, { activity: "interrupted" });
             }
           }
