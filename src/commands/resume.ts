@@ -594,7 +594,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           // Audit (wave-detach-audit): Same killAll() + saveState pattern as
           // launch.ts onQuit. See launch.ts for full lifecycle documentation.
           for (const agent of state.agents) {
-            if (agent.status === "running") {
+            if (agent.status === "running" || agent.status === "resolving_conflict") {
               updateAgent(state, agent.feature_id, { activity: "interrupted" });
             }
           }
