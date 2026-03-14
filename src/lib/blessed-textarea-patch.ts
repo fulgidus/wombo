@@ -151,9 +151,11 @@ function patchedListener(this: any, ch: string, key: any): void {
   if (key.name === "return") return; // blessed internal — ignore
 
   if (key.name === "enter") {
-    // Textbox: Enter submits — handled by textbox's own override which runs
-    // before this listener. If we reach here in a textbox, bail out.
-    if (this.type === "textbox") return;
+    // Textbox: Enter submits (replaces the textbox _listener we overwrote)
+    if (this.type === "textbox") {
+      this._done(null, this.value);
+      return;
+    }
 
     // Textarea: Insert newline at cursor position
     this.value =
