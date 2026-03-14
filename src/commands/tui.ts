@@ -60,6 +60,8 @@ import type { WishlistAction } from "../lib/tui-wishlist.js";
 import { deleteItem as deleteWishlistItem } from "../lib/wishlist-store.js";
 import type { WishlistItem } from "../lib/wishlist-store.js";
 import { runQuestWizardAsync } from "../lib/tui-quest-wizard.js";
+import { projectExists } from "../lib/project-store.js";
+import { runOnboardingAsync } from "../lib/tui-onboarding.js";
 import { cmdLaunch } from "./launch.js";
 import type { LaunchCommandOptions } from "./launch.js";
 import { cmdResume } from "./resume.js";
@@ -116,6 +118,15 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   // Apply concurrency override from CLI if provided
   if (opts.maxConcurrent !== undefined) {
     session.maxConcurrent = opts.maxConcurrent;
+  }
+
+  // First-run detection: if no project.yml exists, run onboarding wizard
+  if (!projectExists(projectRoot)) {
+    const profile = await runOnboardingAsync({ projectRoot, config });
+    if (!profile) {
+      process.exit(0);
+    }
+    process.stdout.write('\x1B[2J\x1B[H');
   }
 
   // Main TUI loop:
@@ -236,6 +247,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         // User pressed W to browse wishlist
         await handleWishlistFlow(projectRoot, config, opts);
         // After wishlist (promote, back, or quit), loop back to quest picker
+        process.stdout.write("\x1B[2J\x1B[H");
+        continue;
+      }
+
+      if (questAction.type === "onboarding") {
+        // User pressed O to open onboarding wizard (edit mode)
+        await runOnboardingAsync({ projectRoot, config });
+        // After onboarding, loop back to quest picker
         process.stdout.write("\x1B[2J\x1B[H");
         continue;
       }
@@ -389,6 +408,10 @@ function showQuestPicker(
 
       onWishlist: () => {
         resolve({ type: "wishlist" });
+      },
+
+      onOnboarding: () => {
+        resolve({ type: "onboarding" });
       },
 
       onQuit: () => {
