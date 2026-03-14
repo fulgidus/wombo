@@ -1,0 +1,20 @@
+id: token-tui
+title: Token usage display in TUI
+description: "Show token usage in the TUI. Options (pick what fits best): 1) Add a usage summary line to the Task
+  Browser detail pane (right side) showing tokens consumed by the selected task. 2) Add a dedicated usage view
+  accessible via a keybind (e.g. U) from the Task Browser. 3) Show per-quest totals in the Quest Picker. At minimum,
+  show per-task usage in the detail pane."
+status: backlog
+completion: 0
+difficulty: medium
+priority: medium
+depends_on:
+  - token-aggregate
+effort: PT1H30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

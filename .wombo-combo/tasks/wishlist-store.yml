@@ -1,0 +1,18 @@
+id: wishlist-store
+title: Wishlist storage schema and CRUD
+description: "Create lib/wishlist-store.ts with: 1) WishlistItem type (id, text, created_at, tags[]). 2) Storage in
+  .wombo-combo/wishlist.yml. 3) CRUD functions: loadWishlist(), addItem(text), deleteItem(id), listItems(). Keep it
+  simple — flat YAML array."
+status: backlog
+completion: 0
+difficulty: easy
+priority: medium
+depends_on: []
+effort: PT45M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

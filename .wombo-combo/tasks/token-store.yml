@@ -1,0 +1,20 @@
+id: token-store
+title: Token usage storage schema and write pipeline
+description: "Persist UsageRecord entries from token-parse. 1) Storage file: .wombo-combo/usage.jsonl (one JSON object
+  per line — append-friendly, no need to parse entire file to add). 2) Functions: appendUsageRecord(record),
+  loadAllUsage(): UsageRecord[]. 3) Auto-rotate or cap file size if it grows too large (optional, add a note for
+  future). 4) Wire into ProcessMonitor so records are written as agents emit step_finish events."
+status: backlog
+completion: 0
+difficulty: easy
+priority: medium
+depends_on:
+  - token-parse
+effort: PT45M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

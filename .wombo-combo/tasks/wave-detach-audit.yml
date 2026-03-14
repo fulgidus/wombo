@@ -1,0 +1,19 @@
+id: wave-detach-audit
+title: Audit agent process lifecycle on monitor teardown
+description: "Investigate whether agents spawned via child_process.spawn survive when the WomboTUI (wave monitor) screen
+  is destroyed. Check: 1) Are agents spawned with detached:true and unref()? If not, they die with the parent. 2) Does
+  ProcessMonitor.stop() kill child processes? 3) Document findings and identify what needs changing. Key files:
+  lib/launcher.ts, lib/monitor.ts, lib/tui.ts."
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on: []
+effort: PT30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

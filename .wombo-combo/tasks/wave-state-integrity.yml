@@ -1,0 +1,20 @@
+id: wave-state-integrity
+title: Ensure wave state file integrity on monitor exit
+description: "When the user quits the wave monitor (B key or Q from monitor), verify the state file
+  (.wombo-combo/state.json) is written correctly and not left in a partial/corrupt state. Add proper cleanup hooks:
+  flush pending state writes before destroying the screen. Test by killing the monitor mid-wave and checking state.json
+  is valid."
+status: backlog
+completion: 0
+difficulty: easy
+priority: high
+depends_on:
+  - wave-detach-audit
+effort: PT30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

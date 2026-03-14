@@ -1,19 +1,17 @@
 id: token-tracking
 title: Token consumption tracking and reporting
-description: "Track LLM token usage across all agent runs. Requirements: 1) Parse token usage from agent output events
-  (opencode emits usage data in step_finish events). 2) Storage schema in .wombo-combo/usage.yml or usage.json — record
-  per-run entries with: task_id, quest_id (if any), model, provider, harness (opencode/claude/gemini/etc.),
-  input_tokens, output_tokens, cache_read, cache_write, timestamp. 3) Aggregate reporting: total tokens, by task, by
-  quest, by model, by provider, by harness, by time period. 4) CLI command: woco usage [--by
-  task|quest|model|provider|harness] [--since <date>] [--format table|json]. 5) TUI integration: show token usage
-  summary in task browser detail pane and/or a dedicated usage view. Start with opencode harness, design for
-  extensibility to other harnesses."
+description: "Integration and polish for the token tracking system. After all prerequisite tasks (parse, store,
+  aggregate, CLI, TUI), this task covers: 1) End-to-end test — launch a wave, verify usage records are written,
+  run woco usage and confirm output. 2) Add harness extensibility notes for future claude/gemini support. 3)
+  Document the usage command in README or help text."
 status: backlog
 completion: 0
-difficulty: hard
+difficulty: easy
 priority: medium
-depends_on: []
-effort: PT6H
+depends_on:
+  - token-cli
+  - token-tui
+effort: PT30M
 started_at: null
 ended_at: null
 constraints: []

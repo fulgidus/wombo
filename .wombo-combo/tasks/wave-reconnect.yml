@@ -1,0 +1,20 @@
+id: wave-reconnect
+title: Reconnect to running agents and resume log tailing
+description: "When re-entering the wave monitor after previously quitting while agents were running: 1) Detect running
+  agent processes from state file PIDs. 2) Re-attach stdout/stderr streams for log tailing. 3) Resume the ProcessMonitor
+  polling loop. 4) If a process died while monitor was closed, detect via kill(pid, 0) and update state accordingly. Key
+  files: lib/monitor.ts, lib/tui.ts, commands/tui.ts."
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - wave-state-integrity
+effort: PT1H30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

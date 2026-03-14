@@ -1,0 +1,19 @@
+id: wishlist-tui
+title: Wishlist TUI overlay view
+description: "Create a TUI overlay (blessed.box popup or dedicated view) for the wishlist. Accessible via W key from
+  Quest Picker and Task Browser. Features: scrollable list of items, A to add new item (textarea input), D/X to delete
+  selected item. Show item text and created_at timestamp. Close with Escape or W toggle."
+status: backlog
+completion: 0
+difficulty: medium
+priority: medium
+depends_on:
+  - wishlist-store
+effort: PT1H30M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

@@ -1,0 +1,20 @@
+id: token-aggregate
+title: Token usage aggregation logic
+description: "Build aggregation functions over stored UsageRecord data. 1) aggregateBy(field): group and sum tokens by
+  task_id, quest_id, model, provider, harness. 2) filterByDateRange(since, until). 3) totalUsage(): grand totals. 4)
+  Return structured results suitable for both CLI table output and TUI display. Put in lib/token-aggregate.ts or extend
+  token-collector.ts."
+status: backlog
+completion: 0
+difficulty: medium
+priority: medium
+depends_on:
+  - token-store
+effort: PT1H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

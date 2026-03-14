@@ -1,0 +1,20 @@
+id: token-cli
+title: "CLI command: woco usage"
+description: "Add 'usage' command to index.ts. Options: --by task|quest|model|provider|harness (default: total), --since
+  <ISO date>, --until <ISO date>, --format table|json (default: table). Table output: aligned columns showing group key,
+  input tokens, output tokens, cache read, cache write, total. JSON output: raw aggregation result. Register in help
+  text and schema."
+status: backlog
+completion: 0
+difficulty: easy
+priority: medium
+depends_on:
+  - token-aggregate
+effort: PT45M
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

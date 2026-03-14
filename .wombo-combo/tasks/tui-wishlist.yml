@@ -1,16 +1,15 @@
 id: tui-wishlist
 title: Wishlist/idea jotter in TUI
-description: "Add a scratchpad/wishlist feature to the TUI where users can jot down ideas at any time. Ideas are stored
-  persistently and can later be promoted into quests (via genesis/planning) or errands. Needs: 1) A storage file
-  (.wombo-combo/wishlist.yml) with simple id/text/created_at entries. 2) A TUI overlay or view accessible via a keybind
-  (e.g. W) from both Quest Picker and Task Browser. 3) Ability to add, delete, and promote wishlist items. Promotion to
-  errand should pre-fill the errand description prompt."
+description: Integration and polish for the wishlist feature. Wire W key into Quest Picker and Task Browser status bars,
+  verify end-to-end flow (add idea → view list → promote to errand/quest), handle edge cases (empty list, long text
+  wrapping, special characters in YAML).
 status: backlog
 completion: 0
-difficulty: medium
+difficulty: easy
 priority: medium
-depends_on: []
-effort: PT3H
+depends_on:
+  - wishlist-promote
+effort: PT30M
 started_at: null
 ended_at: null
 constraints: []
