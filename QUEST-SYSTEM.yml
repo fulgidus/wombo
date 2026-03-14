@@ -469,7 +469,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-7
     title: "Context reduction & specialist subagents"
-    status: pending
+    status: done
     tasks:
 
       - id: p7-scout-subagent
@@ -477,9 +477,9 @@ phases:
         description: >
           A lightweight agent/tool that takes a natural language query and
           returns relevant file paths + function signatures (no source code).
-          Uses jcodemunch-style indexing. Returns a manifest, not content.
+          Uses regex-based symbol extraction. Returns a manifest, not content.
           Used by planners and executing agents to find relevant code cheaply.
-        status: pending
+        status: done
         effort: PT8H
         files:
           - src/lib/subagents/scout.ts (new)
@@ -490,37 +490,40 @@ phases:
           .wombo-combo/quests/<id>/knowledge.md — seeded by planner with
           architectural decisions, API contracts, shared types.
           Read-only for executing agents. Injected into their context.
-          Prevents N agents from independently discovering the same info.
-        status: pending
+          Knowledge Contributions section instructs agents to document
+          findings for the shared cache.
+        status: done
         effort: PT4H
         depends_on: [p0-quest-storage]
         files:
-          - src/lib/quest.ts
           - src/lib/prompt.ts
 
       - id: p7-scoped-file-manifest
         title: "File manifest per task — minimal context injection"
         description: >
-          Planner predicts which files each task touches. At launch, only
-          those files are injected into the agent's initial context.
-          Drastically reduces token usage vs dumping the whole codebase.
-        status: pending
+          Planner predicts which files each task touches (references field).
+          At launch, a Predicted File Manifest section is injected into the
+          agent prompt, deduplicated with Key Files to Explore. fileManifest
+          field added to QuestPromptContext for additional planner-predicted
+          files beyond task references.
+        status: done
         effort: PT6H
         depends_on: [p5-planner-execution]
         files:
           - src/lib/prompt.ts
-          - src/lib/launcher.ts
 
       - id: p7-prompt-compression
         title: "Prompt compression utilities"
         description: >
           Strip comments from injected source, collapse whitespace,
           abbreviate constraint format. Measurably reduce token count
-          in agent prompts without losing semantic content.
-        status: pending
+          in agent prompts without losing semantic content. Integrated
+          into prompt.ts for constraint/forbidden list compression.
+        status: done
         effort: PT4H
         files:
           - src/lib/prompt-compress.ts (new)
+          - src/lib/prompt.ts
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SUMMARY
