@@ -99,8 +99,9 @@ import {
   consolePreflightConfirm,
 } from "../lib/preflight.js";
 import { loadQuest, loadQuestKnowledge } from "../lib/quest-store.js";
-import { resolveQuestConfig, applyQuestConstraintsToTask } from "../lib/quest.js";
+import { resolveQuestConfig, applyQuestConstraintsToTask, type QuestHitlMode } from "../lib/quest.js";
 import { questBranchExists, createQuestBranch } from "../lib/worktree.js";
+import { getPendingQuestions, cleanupAll as cleanupHitl, submitAnswer, type HitlQuestion } from "../lib/hitl-channel.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -240,7 +241,8 @@ export async function launchSingleHeadless(
   config: WomboConfig,
   model?: string,
   agentResolutions?: Map<string, AgentResolution>,
-  questContext?: QuestPromptContext
+  questContext?: QuestPromptContext,
+  hitlMode?: string
 ): Promise<void> {
   updateAgent(state, agent.feature_id, {
     status: "installing",
@@ -287,7 +289,7 @@ export async function launchSingleHeadless(
     }
 
     // Generate prompt
-    const prompt = generatePrompt(feature, state.base_branch, config, questContext);
+    const prompt = generatePrompt(feature, state.base_branch, config, questContext, hitlMode as QuestHitlMode | undefined);
 
     // Write specialized agent to worktree if applicable
     const resolution = agentResolutions?.get(feature.id);
@@ -311,6 +313,8 @@ export async function launchSingleHeadless(
       model,
       config,
       agentName,
+      hitlMode,
+      projectRoot,
     });
 
     updateAgent(state, agent.feature_id, {
@@ -348,7 +352,8 @@ export async function handleBuildVerification(
   config: WomboConfig,
   model?: string,
   monitor?: ProcessMonitor,
-  tddOpts?: FullVerificationOptions
+  tddOpts?: FullVerificationOptions,
+  hitlMode?: string
 ): Promise<void> {
   try {
     printAgentUpdate(agent, "verifying build...");
@@ -416,6 +421,8 @@ export async function handleBuildVerification(
             buildErrors: errorSummary,
             model,
             config,
+            hitlMode,
+            projectRoot,
           });
 
           updateAgent(state, agent.feature_id, {
@@ -801,7 +808,8 @@ export function handleRetry(
   agent: AgentState,
   monitor: ProcessMonitor,
   config: WomboConfig,
-  model?: string
+  model?: string,
+  hitlMode?: string
 ): void {
   if (!agent.session_id) {
     // Agent crashed before establishing a session (e.g. SQLite race condition).
@@ -825,6 +833,8 @@ export function handleRetry(
     buildErrors: agent.error,
     model,
     config,
+    hitlMode,
+    projectRoot,
   });
 
   updateAgent(state, agent.feature_id, {
@@ -848,7 +858,8 @@ export async function launchNextQueued(
   config: WomboConfig,
   model?: string,
   agentResolutions?: Map<string, AgentResolution>,
-  questContext?: QuestPromptContext
+  questContext?: QuestPromptContext,
+  hitlMode?: string
 ): Promise<void> {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
@@ -857,7 +868,7 @@ export async function launchNextQueued(
     const next = ready[0];
     const feature = featureMap.get(next.feature_id);
     if (feature) {
-      await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions, questContext);
+      await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions, questContext, hitlMode);
     }
   }
 }
@@ -879,7 +890,8 @@ export async function launchAllReady(
   config: WomboConfig,
   model?: string,
   agentResolutions?: Map<string, AgentResolution>,
-  questContext?: QuestPromptContext
+  questContext?: QuestPromptContext,
+  hitlMode?: string
 ): Promise<void> {
   const active = activeAgents(state);
   const ready = readyToLaunchAgents(state);
@@ -906,7 +918,7 @@ export async function launchAllReady(
       }
     }
 
-    await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions, questContext);
+    await launchSingleHeadless(projectRoot, state, next, feature, monitor, config, model, agentResolutions, questContext, hitlMode);
     // Stagger between launches to avoid SQLite race conditions
     if (i < toLaunch.length - 1) {
       await new Promise((r) => setTimeout(r, LAUNCH_STAGGER_MS));
@@ -981,7 +993,8 @@ async function launchWaveHeadless(
   features: Feature[],
   opts: LaunchCommandOptions,
   agentResolutions?: Map<string, AgentResolution>,
-  questContext?: QuestPromptContext
+  questContext?: QuestPromptContext,
+  hitlMode?: string
 ): Promise<void> {
   const { config, model } = opts;
   const fmt = opts.outputFmt ?? "text";
@@ -1001,16 +1014,16 @@ async function launchWaveHeadless(
 
       // Run build verification — fire-and-forget
       const agent = state.agents.find((a) => a.feature_id === featureId)!;
-      handleBuildVerification(projectRoot, state, agent, featureMap.get(featureId)!, config, model, monitor)
+      handleBuildVerification(projectRoot, state, agent, featureMap.get(featureId)!, config, model, monitor, undefined, hitlMode)
         .then(() => {
           // After verification/merge, try to launch dependency-ready agents
           // Multiple queued agents may now be unblocked
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext)
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext, hitlMode)
             .catch((err) => wtLog(featureId, `LAUNCH ERROR: ${err.message}`));
         })
         .catch((err) => {
           wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext)
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext, hitlMode)
             .catch((err2) => wtLog(featureId, `LAUNCH ERROR: ${err2.message}`));
         });
     },
@@ -1025,7 +1038,7 @@ async function launchWaveHeadless(
         saveState(projectRoot, state);
 
         // Retry
-        handleRetry(projectRoot, state, agent, monitor, config, model);
+        handleRetry(projectRoot, state, agent, monitor, config, model, hitlMode);
       } else {
         updateAgent(state, featureId, {
           status: "failed",
@@ -1043,7 +1056,7 @@ async function launchWaveHeadless(
       }
 
       // Try to launch dependency-ready agents
-      launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext)
+      launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext, hitlMode)
         .catch((err) => wtLog(featureId, `LAUNCH ERROR: ${err.message}`));
     },
     onOutput: (_featureId, _data) => {
@@ -1098,6 +1111,14 @@ async function launchWaveHeadless(
         saveState(projectRoot, state);
         // The polling loop will call launchAllReady() and pick this up
       },
+      onAnswer: (agentId: string, questionId: string, answerText: string) => {
+        try {
+          submitAnswer(projectRoot, agentId, questionId, answerText);
+          wtLog(agentId, `HITL answer submitted: "${answerText.slice(0, 80)}${answerText.length > 80 ? "..." : ""}"`);
+        } catch (err: any) {
+          wtLog(agentId, `HITL answer error: ${err.message}`);
+        }
+      },
     });
     tuiRef.current.start();
   };
@@ -1133,7 +1154,8 @@ async function launchWaveHeadless(
       config,
       model,
       agentResolutions,
-      questContext
+      questContext,
+      hitlMode
     );
     // Brief delay between spawns so each agent's DB migration settles
     if (i < tolaunch.length - 1) {
@@ -1200,12 +1222,12 @@ async function launchWaveHeadless(
           });
           saveState(projectRoot, state);
           try {
-            await handleBuildVerification(projectRoot, state, agent, featureMap.get(agent.feature_id)!, config, model, monitor);
+            await handleBuildVerification(projectRoot, state, agent, featureMap.get(agent.feature_id)!, config, model, monitor, undefined, hitlMode);
           } catch (err: any) {
             wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
           }
         }
-        await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext);
+        await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext, hitlMode);
       }
     }
 
@@ -1247,10 +1269,22 @@ async function launchWaveHeadless(
     }
 
     // After recovering stuck agents, try launching any that are now ready
-    await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext);
+    await launchAllReady(projectRoot, state, featureMap, monitor, config, model, agentResolutions, questContext, hitlMode);
 
     // Persist state periodically
     saveState(projectRoot, state);
+
+    // Poll for HITL questions from agents and forward to TUI
+    if (hitlMode && hitlMode !== "yolo") {
+      try {
+        const pendingQuestions = getPendingQuestions(projectRoot);
+        if (tuiRef.current && pendingQuestions.length > 0) {
+          tuiRef.current.setPendingQuestions(pendingQuestions);
+        }
+      } catch {
+        // Non-fatal — HITL dir may not exist yet
+      }
+    }
 
     // Update TUI state reference (or print dashboard in --no-tui mode)
     if (tuiRef.current) {
@@ -1283,6 +1317,13 @@ async function launchWaveHeadless(
 
   // Print final dashboard after TUI is closed
   if (fmt === "text") printDashboard(state);
+
+  // Clean up HITL files
+  try {
+    cleanupHitl(projectRoot);
+  } catch {
+    // Non-fatal
+  }
 
   // Dump full logs for failed agents (post-mortem)
   dumpFailedAgentLogs(projectRoot, state, fmt);
@@ -1322,7 +1363,8 @@ async function launchWaveInteractive(
   features: Feature[],
   opts: LaunchCommandOptions,
   agentResolutions?: Map<string, AgentResolution>,
-  questContext?: QuestPromptContext
+  questContext?: QuestPromptContext,
+  hitlMode?: string
 ): Promise<void> {
   const { config, model } = opts;
   const fmt = opts.outputFmt ?? "text";
@@ -1357,7 +1399,8 @@ async function launchWaveInteractive(
           featureMap.get(agent.feature_id)!,
           state.base_branch,
           config,
-          questContext
+          questContext,
+          hitlMode as QuestHitlMode | undefined
         );
 
         // Write specialized agent to worktree if applicable
@@ -1489,6 +1532,9 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       console.log("");
     }
   }
+
+  // Extract HITL mode from quest (defaults to undefined / yolo for non-quest waves)
+  const hitlMode = questId ? loadQuest(projectRoot, questId)?.hitlMode : undefined;
 
   // Ensure portless proxy is running (if enabled) to prevent port collisions
   if (config.portless.enabled) {
@@ -1823,8 +1869,8 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
   // Launch agents up to max_concurrent
   if (opts.interactive) {
-    await launchWaveInteractive(projectRoot, state, selected, opts, agentResolutions, questContext);
+    await launchWaveInteractive(projectRoot, state, selected, opts, agentResolutions, questContext, hitlMode);
   } else {
-    await launchWaveHeadless(projectRoot, state, selected, opts, agentResolutions, questContext);
+    await launchWaveHeadless(projectRoot, state, selected, opts, agentResolutions, questContext, hitlMode);
   }
 }

@@ -29,7 +29,7 @@ import {
 } from "../lib/agent-registry.js";
 import { patchImportedAgent } from "../lib/templates.js";
 import { loadQuest, loadQuestKnowledge } from "../lib/quest-store.js";
-import { resolveQuestConfig } from "../lib/quest.js";
+import { resolveQuestConfig, type QuestHitlMode } from "../lib/quest.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -139,10 +139,12 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
   // Reconstruct quest context from wave state (if quest-scoped)
   let questContext: QuestPromptContext | undefined;
   let effectiveConfig = config;
+  let hitlMode: string | undefined;
   if (state.quest_id) {
     const quest = loadQuest(projectRoot, state.quest_id);
     if (quest) {
       effectiveConfig = resolveQuestConfig(config, quest);
+      hitlMode = quest.hitlMode;
       const knowledge = loadQuestKnowledge(projectRoot, state.quest_id);
       questContext = {
         questId: quest.id,
@@ -165,7 +167,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
       }
     }
 
-    const prompt = generatePrompt(feature, state.base_branch, effectiveConfig, questContext);
+    const prompt = generatePrompt(feature, state.base_branch, effectiveConfig, questContext, hitlMode as QuestHitlMode | undefined);
     launchInteractive({
       worktreePath: agent.worktree,
       featureId: feature.id,
@@ -206,7 +208,7 @@ export async function cmdRetry(opts: RetryCommandOptions): Promise<void> {
     }
 
     const monitor = new ProcessMonitor(projectRoot);
-    await launchSingleHeadless(projectRoot, state, agent, feature, monitor, effectiveConfig, opts.model, agentResolutions, questContext);
+    await launchSingleHeadless(projectRoot, state, agent, feature, monitor, effectiveConfig, opts.model, agentResolutions, questContext, hitlMode);
 
     // Re-read agent after launch to get PID
     const updatedAgent = state.agents.find((a) => a.feature_id === opts.featureId);

@@ -67,7 +67,8 @@ import {
 import { patchImportedAgent } from "../lib/templates.js";
 import { writeAgentToWorktree } from "../lib/agent-registry.js";
 import { loadQuest, loadQuestKnowledge } from "../lib/quest-store.js";
-import { resolveQuestConfig } from "../lib/quest.js";
+import { resolveQuestConfig, type QuestHitlMode } from "../lib/quest.js";
+import { getPendingQuestions, cleanupAll as cleanupHitl, submitAnswer, type HitlQuestion } from "../lib/hitl-channel.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -107,10 +108,12 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
   // Reconstruct quest context from wave state (if quest-scoped)
   let questContext: QuestPromptContext | undefined;
+  let hitlMode: string | undefined;
   if (state.quest_id) {
     const quest = loadQuest(projectRoot, state.quest_id);
     if (quest) {
       config = resolveQuestConfig(config, quest);
+      hitlMode = quest.hitlMode;
       const knowledge = loadQuestKnowledge(projectRoot, state.quest_id);
       questContext = {
         questId: quest.id,
@@ -436,7 +439,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             }
           }
 
-          const prompt = generatePrompt(feature, state.base_branch, config, questContext);
+          const prompt = generatePrompt(feature, state.base_branch, config, questContext, hitlMode as QuestHitlMode | undefined);
           const result = launchInteractive({
             worktreePath: agent.worktree,
             featureId: feature.id,
@@ -489,11 +492,11 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
         const agent = state.agents.find((a) => a.feature_id === featureId)!;
         const feature = featureMap.get(featureId)!;
-        handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor)
-          .then(() => launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext))
+        handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor, undefined, hitlMode)
+          .then(() => launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode))
           .catch((err) => {
             wtLog(featureId, `BUILD VERIFICATION UNHANDLED ERROR: ${err.message}`);
-            launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext);
+            launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
           });
       },
       onError: (featureId, error) => {
@@ -506,7 +509,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             activity: "retrying...",
           });
           saveState(projectRoot, state);
-          handleRetry(projectRoot, state, agent, monitor, config, model);
+          handleRetry(projectRoot, state, agent, monitor, config, model, hitlMode);
         } else {
           updateAgent(state, featureId, {
             status: "failed",
@@ -523,7 +526,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             saveState(projectRoot, state);
           }
         }
-        launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext);
+        launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
       },
       onActivity: (featureId, activity) => {
         updateAgent(state, featureId, {
@@ -554,7 +557,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       toLaunchNow.map((agent) => {
         const feature = featureMap.get(agent.feature_id);
         if (!feature) return Promise.resolve();
-        return launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, model, agentResolutions, questContext);
+        return launchSingleHeadless(projectRoot, state, agent, feature, monitor, config, model, agentResolutions, questContext, hitlMode);
       })
     );
 
@@ -595,6 +598,14 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           });
           saveState(projectRoot, state);
         },
+        onAnswer: (agentId: string, questionId: string, answerText: string) => {
+          try {
+            submitAnswer(projectRoot, agentId, questionId, answerText);
+            wtLog(agentId, `HITL answer submitted: "${answerText.slice(0, 80)}${answerText.length > 80 ? "..." : ""}"`);
+          } catch (err: any) {
+            wtLog(agentId, `HITL answer error: ${err.message}`);
+          }
+        },
       });
       tuiRef.current.start();
     } else {
@@ -633,7 +644,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
               saveState(projectRoot, state);
             }
 
-            launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext);
+            launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
             continue;
           }
           // Check if the agent actually made any commits
@@ -663,16 +674,29 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             saveState(projectRoot, state);
             const feature = featureMap.get(agent.feature_id)!;
             try {
-              await handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor);
+              await handleBuildVerification(projectRoot, state, agent, feature, config, model, monitor, undefined, hitlMode);
             } catch (err: any) {
               wtLog(agent.feature_id, `POLL VERIFY ERROR: ${err.message}`);
             }
           }
-          launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext);
+          launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
         }
       }
 
       saveState(projectRoot, state);
+
+      // Poll for HITL questions from agents and forward to TUI
+      if (hitlMode && hitlMode !== "yolo") {
+        try {
+          const pendingQuestions = getPendingQuestions(projectRoot);
+          if (tuiRef.current && pendingQuestions.length > 0) {
+            tuiRef.current.setPendingQuestions(pendingQuestions);
+          }
+        } catch {
+          // Non-fatal — HITL dir may not exist yet
+        }
+      }
+
       if (tuiRef.current) {
         tuiRef.current.updateState(state);
       } else if (opts.noTui) {
@@ -695,6 +719,13 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
       // Dump full logs for failed agents (post-mortem)
       dumpFailedAgentLogs(projectRoot, state, fmt);
+    }
+
+    // Clean up HITL files
+    try {
+      cleanupHitl(projectRoot);
+    } catch {
+      // Non-fatal
     }
 
     // Auto-export wave history
