@@ -77,7 +77,54 @@ export interface TestDetectionConfig {
   sourceExtensions: string[];
   /** Additional filename patterns to exclude (beyond built-in exclusions) */
   excludePatterns: string[];
+  /** File extensions that are inherently non-testable (config, docs, data) */
+  nonTestableExtensions?: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Non-Testable File Detection
+// ---------------------------------------------------------------------------
+
+/**
+ * File extensions that are inherently non-testable.
+ * These files contain configuration, documentation, data, or metadata
+ * that do not produce runtime code and should not require tests.
+ */
+export const NON_TESTABLE_EXTENSIONS: readonly string[] = [
+  // Documentation
+  ".md",
+  ".mdx",
+  ".txt",
+  ".rst",
+  // Configuration
+  ".json",
+  ".yml",
+  ".yaml",
+  ".toml",
+  ".ini",
+  ".env",
+  ".env.example",
+  ".env.local",
+  // CSS / Styling (no logic)
+  ".css",
+  // Assets / images
+  ".svg",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".ico",
+  ".webp",
+  // Build / project config
+  ".lock",
+  ".editorconfig",
+  ".gitignore",
+  ".gitattributes",
+  ".npmignore",
+  ".prettierrc",
+  ".prettierignore",
+  ".eslintignore",
+];
 
 // ---------------------------------------------------------------------------
 // Defaults
@@ -253,6 +300,12 @@ export function isExcludedFile(
     return { excluded: true, reason: "Type declaration file (*.d.ts)" };
   }
 
+  // Non-testable file types (config, docs, assets, etc.)
+  const nonTestableCheck = isNonTestableFile(filePath, config);
+  if (nonTestableCheck.nonTestable) {
+    return { excluded: true, reason: nonTestableCheck.reason };
+  }
+
   // Check additional exclude patterns
   for (const pattern of config.excludePatterns) {
     if (filePath.includes(pattern) || name === pattern) {
@@ -399,6 +452,51 @@ export function isTypesOnlyFile(absPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Check if a file is inherently non-testable based on its extension or name.
+ *
+ * Non-testable files include:
+ *   - Documentation (.md, .mdx, .txt)
+ *   - Configuration (.json, .yml, .yaml, .toml)
+ *   - Assets (.svg, .png, .jpg, etc.)
+ *   - Build/project config (.gitignore, .prettierrc, etc.)
+ *   - Lockfiles (.lock)
+ *
+ * These files do not contain runtime logic and should never require tests.
+ */
+export function isNonTestableFile(
+  filePath: string,
+  config: TestDetectionConfig = DEFAULT_TEST_DETECTION_CONFIG
+): { nonTestable: boolean; reason?: string } {
+  const name = basename(filePath);
+  const extensions = config.nonTestableExtensions ?? NON_TESTABLE_EXTENSIONS;
+
+  // Check against non-testable extensions
+  for (const ext of extensions) {
+    if (name.endsWith(ext)) {
+      return { nonTestable: true, reason: `Non-testable file type (${ext})` };
+    }
+  }
+
+  // Check for common non-testable filenames (without extensions or special names)
+  const nonTestableNames = [
+    "LICENSE",
+    "CHANGELOG",
+    "CONTRIBUTING",
+    "AUTHORS",
+    "Makefile",
+    "Dockerfile",
+    ".dockerignore",
+    "Procfile",
+    "Vagrantfile",
+  ];
+  if (nonTestableNames.includes(name)) {
+    return { nonTestable: true, reason: `Non-testable file (${name})` };
+  }
+
+  return { nonTestable: false };
 }
 
 // ---------------------------------------------------------------------------

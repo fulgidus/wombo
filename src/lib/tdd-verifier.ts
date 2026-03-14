@@ -17,6 +17,7 @@ import { runTests, type TestRunResult } from "./test-runner.js";
 import {
   detectTests,
   renderTestDetectionReport,
+  isNonTestableFile,
   type TestDetectionReport,
 } from "./test-detection.js";
 
@@ -58,6 +59,24 @@ export interface TddVerificationResult {
   summary: string;
   /** Whether strict mode was used */
   strictMode: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Non-Testable Change Detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Check if ALL files in a test detection report are excluded (non-testable).
+ * When this is true, the TDD verification can short-circuit with a pass
+ * since there are no testable source files to verify.
+ */
+export function isNonTestableChangeOnly(
+  report: TestDetectionReport
+): boolean {
+  // No source files changed at all
+  if (report.sourceFiles.length === 0) return true;
+  // Every source file is excluded
+  return report.sourceFiles.every((f) => f.excluded);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,7 +221,11 @@ function buildSummary(
   if (testDetection) {
     const { missingTests, coveredCount, testableCount, coveragePercent } =
       testDetection;
-    if (missingTests.length > 0) {
+
+    // Check if all changes are non-testable (docs, config, etc.)
+    if (isNonTestableChangeOnly(testDetection)) {
+      parts.push("Detection: All changed files are non-testable (docs/config/types)");
+    } else if (missingTests.length > 0) {
       const label = strictMode ? "FAIL" : "WARN";
       parts.push(
         `Coverage: ${coveredCount}/${testableCount} files (${coveragePercent}) — ` +
