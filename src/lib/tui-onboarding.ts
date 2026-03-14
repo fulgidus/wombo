@@ -36,11 +36,14 @@ import type { WomboConfig } from "../config.js";
 import { resolveAgentBin } from "../config.js";
 import { buildScoutIndex, formatScoutTree } from "./subagents/scout.js";
 import type { ScoutIndex } from "./subagents/scout.js";
-import { ProgressScreen } from "./tui-progress.js";
+import { ProgressScreen, showConfirm } from "./tui-progress.js";
 import {
   createBlankProfile,
+  loadProject,
   normalizeProfile,
+  projectExists,
   PROFILE_SECTIONS,
+  saveProject,
   type ProfileSection,
   type ProjectProfile,
   type ProjectType,
@@ -2238,4 +2241,658 @@ export function structureRawInputs(raw: RawInputs): ProjectProfile {
   // genesis_count already defaults to 0 from createBlankProfile()
 
   return profile;
+}
+
+// ---------------------------------------------------------------------------
+// collectInputs — multi-step wizard that collects all RawInputs
+// ---------------------------------------------------------------------------
+
+/**
+ * Step definitions for the collectInputs wizard.
+ * Each step collects one field of RawInputs.
+ */
+interface InputStep {
+  /** RawInputs field this step populates */
+  field: keyof RawInputs;
+  /** Step header label */
+  label: string;
+  /** Prompt text shown below the label */
+  prompt: string;
+  /** Whether this step uses a textarea (multi-line) instead of a textbox */
+  multiline?: boolean;
+  /** Whether this step uses a selection list instead of text input */
+  selection?: boolean;
+  /** Selection list items (only if selection === true) */
+  selectionItems?: string[];
+  /** Whether the field can be left empty */
+  optional?: boolean;
+}
+
+const INPUT_STEPS: InputStep[] = [
+  {
+    field: "type",
+    label: "Project Type",
+    prompt: "Is this a new project or an existing codebase?",
+    selection: true,
+    selectionItems: [
+      "  {green-fg}\u25CF{/green-fg}  brownfield  {gray-fg}-- Existing codebase (will auto-scan){/gray-fg}",
+      "  {cyan-fg}\u25CF{/cyan-fg}  greenfield  {gray-fg}-- New project from scratch{/gray-fg}",
+    ],
+  },
+  {
+    field: "name",
+    label: "Project Name",
+    prompt: "What is the name of this project?",
+  },
+  {
+    field: "description",
+    label: "Project Description",
+    prompt: "Brief description of the project (optional)",
+    optional: true,
+  },
+  {
+    field: "vision",
+    label: "Vision",
+    prompt: "What is the long-term vision for this project? (optional)",
+    multiline: true,
+    optional: true,
+  },
+  {
+    field: "objectives",
+    label: "Objectives",
+    prompt: "List your project objectives, one per line.\nOptionally prefix with [high], [medium], or [low] for priority.",
+    multiline: true,
+    optional: true,
+  },
+  {
+    field: "techStack",
+    label: "Tech Stack",
+    prompt: "Describe your tech stack.\nUse \"runtime:\", \"language:\", \"frameworks:\", \"tools:\" prefixes.",
+    multiline: true,
+    optional: true,
+  },
+  {
+    field: "conventions",
+    label: "Conventions",
+    prompt: "Describe your project conventions.\nUse \"commits:\", \"branches:\", \"testing:\", \"coding_style:\", \"naming:\" prefixes.",
+    multiline: true,
+    optional: true,
+  },
+  {
+    field: "rules",
+    label: "Rules",
+    prompt: "List your project rules, one per line. (optional)",
+    multiline: true,
+    optional: true,
+  },
+];
+
+/**
+ * Run a multi-step blessed wizard that collects all RawInputs fields.
+ *
+ * Steps:
+ *   1. Project type (selection: brownfield / greenfield)
+ *   2. Project name (single-line textbox)
+ *   3. Description (single-line textbox, optional)
+ *   4. Vision (multi-line textarea, optional)
+ *   5. Objectives (multi-line textarea, optional)
+ *   6. Tech Stack (multi-line textarea, optional)
+ *   7. Conventions (multi-line textarea, optional)
+ *   8. Rules (multi-line textarea, optional)
+ *
+ * Returns the collected RawInputs, or null if the user cancelled (Ctrl+C or
+ * Esc on the first step).
+ *
+ * @param screen — Optional existing blessed screen to reuse.
+ * @returns RawInputs or null if cancelled.
+ */
+export function collectInputs(
+  screen?: Widgets.Screen,
+): Promise<RawInputs | null> {
+  return new Promise<RawInputs | null>((resolve) => {
+    const ownsScreen = !screen;
+    const scr =
+      screen ??
+      blessed.screen({
+        smartCSR: true,
+        title: "wombo-combo -- Onboarding",
+        fullUnicode: true,
+      });
+
+    // Collected data
+    const data: Record<string, string> = {
+      type: "brownfield",
+      name: "",
+      description: "",
+      vision: "",
+      objectives: "",
+      techStack: "",
+      conventions: "",
+      rules: "",
+    };
+
+    let currentStepIdx = 0;
+
+    // -----------------------------------------------------------------------
+    // Cleanup
+    // -----------------------------------------------------------------------
+
+    const destroyScreen = () => {
+      if (!ownsScreen) return;
+      scr.destroy();
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.removeAllListeners("keypress");
+          process.stdin.removeAllListeners("data");
+          if (typeof process.stdin.setRawMode === "function") {
+            process.stdin.setRawMode(false);
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      process.stdout.write("\x1B[2J\x1B[H");
+    };
+
+    // -----------------------------------------------------------------------
+    // Layout
+    // -----------------------------------------------------------------------
+
+    const container = blessed.box({
+      parent: scr,
+      top: "center",
+      left: "center",
+      width: "70%",
+      height: "80%",
+      tags: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "magenta" },
+        fg: "white",
+        bg: "black",
+      },
+      label: " {magenta-fg}Project Onboarding{/magenta-fg} ",
+      shadow: true,
+    });
+
+    // Content area (step header)
+    const content = blessed.box({
+      parent: container,
+      top: 0,
+      left: 1,
+      right: 1,
+      height: 4,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Single-line textbox
+    const textbox = blessed.textbox({
+      parent: container,
+      top: 4,
+      left: 1,
+      right: 1,
+      height: 3,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "magenta" } },
+      },
+      inputOnFocus: true,
+      hidden: true,
+    });
+
+    // Multi-line textarea
+    const textarea = blessed.textarea({
+      parent: container,
+      top: 4,
+      left: 1,
+      right: 1,
+      height: "100%-9",
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "magenta" } },
+      },
+      inputOnFocus: true,
+      hidden: true,
+    });
+
+    // Selection list (for type step)
+    const selectList = blessed.list({
+      parent: container,
+      top: 4,
+      left: 1,
+      right: 1,
+      height: "100%-9",
+      tags: true,
+      keys: true,
+      vi: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        selected: { bg: "blue", fg: "white", bold: true },
+        item: { fg: "white" },
+        bg: "black",
+      },
+      hidden: true,
+    });
+
+    // Status line at bottom
+    const statusLine = blessed.box({
+      parent: container,
+      bottom: 0,
+      left: 1,
+      right: 1,
+      height: 1,
+      tags: true,
+      style: { fg: "gray", bg: "black" },
+    });
+
+    // Allow Ctrl+C to bail out
+    scr.key(["C-c"], () => {
+      container.destroy();
+      destroyScreen();
+      resolve(null);
+    });
+
+    // -----------------------------------------------------------------------
+    // Step rendering
+    // -----------------------------------------------------------------------
+
+    function currentStep(): InputStep {
+      return INPUT_STEPS[currentStepIdx];
+    }
+
+    function showStep(): void {
+      const step = currentStep();
+      const stepLabel = `Step ${currentStepIdx + 1}/${INPUT_STEPS.length}`;
+
+      // Hide all input widgets
+      textbox.hide();
+      textarea.hide();
+      selectList.hide();
+
+      content.setContent(
+        `{bold}${stepLabel} -- ${step.label}{/bold}\n` +
+        `{gray-fg}${step.prompt}{/gray-fg}\n` +
+        `{gray-fg}${currentStepIdx === 0 ? "Esc to cancel" : "Esc to go back"}{/gray-fg}`
+      );
+
+      if (step.selection) {
+        // Selection list step
+        selectList.setItems((step.selectionItems ?? []) as any);
+        const typeIdx = data.type === "brownfield" ? 0 : 1;
+        selectList.select(typeIdx);
+        selectList.show();
+        selectList.focus();
+        statusLine.setContent("{gray-fg}Select an option{/gray-fg}");
+      } else if (step.multiline) {
+        // Multi-line textarea step
+        textarea.setValue(data[step.field] || "");
+        textarea.show();
+        textarea.focus();
+        statusLine.setContent(
+          step.optional
+            ? "{gray-fg}Ctrl+S to save and continue | Leave empty to skip{/gray-fg}"
+            : "{gray-fg}Ctrl+S to save and continue{/gray-fg}"
+        );
+      } else {
+        // Single-line textbox step
+        textbox.setValue(data[step.field] || "");
+        textbox.show();
+        textbox.focus();
+        statusLine.setContent(
+          step.optional
+            ? "{gray-fg}Enter to continue | Leave empty to skip{/gray-fg}"
+            : "{gray-fg}Enter to continue{/gray-fg}"
+        );
+      }
+
+      scr.render();
+    }
+
+    // -----------------------------------------------------------------------
+    // Navigation
+    // -----------------------------------------------------------------------
+
+    function goBack(): void {
+      if (currentStepIdx <= 0) {
+        container.destroy();
+        destroyScreen();
+        resolve(null);
+        return;
+      }
+      currentStepIdx--;
+      showStep();
+    }
+
+    function advance(): void {
+      currentStepIdx++;
+      if (currentStepIdx >= INPUT_STEPS.length) {
+        // All steps completed — build RawInputs and resolve
+        const result: RawInputs = {
+          name: data.name,
+          description: data.description,
+          type: data.type,
+          vision: data.vision,
+          objectives: data.objectives,
+          techStack: data.techStack,
+          conventions: data.conventions,
+          rules: data.rules,
+        };
+        container.destroy();
+        destroyScreen();
+        resolve(result);
+        return;
+      }
+      showStep();
+    }
+
+    // -----------------------------------------------------------------------
+    // Input handlers — Selection list (type step)
+    // -----------------------------------------------------------------------
+
+    selectList.key(["enter", "space"], () => {
+      if (!currentStep().selection) return;
+      const idx = (selectList as any).selected ?? 0;
+      data.type = idx === 0 ? "brownfield" : "greenfield";
+      advance();
+    });
+
+    selectList.key(["escape"], () => {
+      goBack();
+    });
+
+    // -----------------------------------------------------------------------
+    // Input handlers — Single-line textbox
+    // -----------------------------------------------------------------------
+
+    textbox.on("submit", (value: string) => {
+      const step = currentStep();
+      if (step.selection || step.multiline) return;
+
+      const trimmed = (value ?? "").trim();
+      if (!trimmed && !step.optional) {
+        statusLine.setContent("{red-fg}This field cannot be empty{/red-fg}");
+        scr.render();
+        textbox.focus();
+        return;
+      }
+      data[step.field] = trimmed;
+      advance();
+    });
+
+    textbox.on("cancel", () => {
+      goBack();
+    });
+
+    // -----------------------------------------------------------------------
+    // Input handlers — Multi-line textarea
+    // -----------------------------------------------------------------------
+
+    // Ctrl+S to save textarea content and advance
+    scr.key(["C-s"], () => {
+      const step = currentStep();
+      if (!step.multiline) return;
+
+      const value = textarea.getValue() ?? "";
+      const trimmed = value.trim();
+      if (!trimmed && !step.optional) {
+        statusLine.setContent("{red-fg}This field cannot be empty{/red-fg}");
+        scr.render();
+        return;
+      }
+      data[step.field] = trimmed;
+      advance();
+    });
+
+    textarea.key(["escape"], () => {
+      goBack();
+    });
+
+    // -----------------------------------------------------------------------
+    // Start
+    // -----------------------------------------------------------------------
+
+    showStep();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// runOnboardingAsync — main orchestrator for the full onboarding flow
+// ---------------------------------------------------------------------------
+
+/**
+ * Main exported onboarding orchestrator.
+ *
+ * This function is called from `commands/tui.ts` to run the full onboarding
+ * flow. It handles both **create mode** (first run, no project.yml exists)
+ * and **edit mode** (project.yml already exists).
+ *
+ * **Create mode** (no project.yml):
+ *   1. `collectInputs()` — multi-step wizard to gather raw inputs.
+ *   2. `structureRawInputs()` — parse raw text into a ProjectProfile.
+ *   3. If brownfield, run scout and set `codebase_summary`.
+ *   4. Show `ProgressScreen` and offer LLM synthesis via `showConfirm()`.
+ *   5. If yes, run `runLlmSynthesis()` with a ProgressScreen spinner.
+ *   6. `reviewSections()` — section-by-section approval.
+ *   7. If approved, `saveProject()`, show success, offer genesis via
+ *      `showConfirm()`.
+ *   8. Return the final profile.
+ *
+ * **Edit mode** (project.yml exists):
+ *   1. `loadProject()` — load the existing profile.
+ *   2. Loop: `showSectionMenu()` — let user pick sections to edit or
+ *      re-run LLM synthesis.
+ *   3. On edit: `editSingleSection()`, then `saveProject()`.
+ *   4. On resynthesize: run `runLlmSynthesis()`, then `saveProject()`.
+ *   5. On back: break loop and return the profile.
+ *
+ * @param opts.projectRoot — Absolute path to the project root directory.
+ * @param opts.config — The WomboConfig for resolving agent binary.
+ * @param opts.screen — Optional existing blessed screen to reuse.
+ * @returns The completed/updated ProjectProfile, or null if cancelled.
+ */
+export async function runOnboardingAsync(opts: {
+  projectRoot: string;
+  config: WomboConfig;
+  screen?: Widgets.Screen;
+}): Promise<ProjectProfile | null> {
+  const { projectRoot, config } = opts;
+
+  try {
+    // -----------------------------------------------------------------------
+    // Edit mode: project.yml already exists
+    // -----------------------------------------------------------------------
+
+    if (projectExists(projectRoot)) {
+      const profile = loadProject(projectRoot);
+      if (!profile) {
+        // File exists but couldn't be loaded — treat as corrupted, fall
+        // through to create mode would be confusing. Show error and return null.
+        const ps = new ProgressScreen("Error");
+        ps.start();
+        ps.showError("Could not load existing project profile.");
+        await ps.waitForDismiss(3000);
+        ps.destroy();
+        return null;
+      }
+
+      // Edit loop: show section menu until user presses back
+      let workingProfile = profile;
+
+      while (true) {
+        const menuAction = await showSectionMenu(workingProfile);
+
+        if (menuAction.action === "back") {
+          // User is done editing — return the current profile
+          return workingProfile;
+        }
+
+        if (menuAction.action === "edit") {
+          // Edit a specific section
+          const updated = await editSingleSection(
+            workingProfile,
+            menuAction.section,
+          );
+          // Save after each edit
+          saveProject(projectRoot, updated);
+          workingProfile = updated;
+          continue;
+        }
+
+        if (menuAction.action === "resynthesize") {
+          // Re-run LLM synthesis
+          const ps = new ProgressScreen(
+            "LLM Synthesis",
+            workingProfile.name || projectRoot,
+          );
+          ps.start();
+          ps.setStatus("Enhancing profile with AI...");
+
+          const enhanced = await runLlmSynthesis(
+            workingProfile,
+            config,
+            projectRoot,
+            (msg) => ps.setStatus(msg),
+          );
+
+          ps.showSuccess("LLM synthesis complete.");
+          await ps.waitForDismiss(1500);
+          ps.destroy();
+
+          // Save the enhanced profile
+          saveProject(projectRoot, enhanced);
+          workingProfile = enhanced;
+          continue;
+        }
+      }
+    }
+
+    // -----------------------------------------------------------------------
+    // Create mode: no project.yml exists
+    // -----------------------------------------------------------------------
+
+    // 1. Collect raw inputs from the multi-step wizard
+    const rawInputs = await collectInputs();
+    if (!rawInputs) {
+      // User cancelled
+      return null;
+    }
+
+    // 2. Structure the raw inputs into a ProjectProfile
+    let profile = structureRawInputs(rawInputs);
+
+    // 3. If brownfield, run scout and set codebase_summary
+    if (profile.type === "brownfield") {
+      const ps = new ProgressScreen(
+        "Codebase Scout",
+        projectRoot,
+      );
+      ps.start();
+      ps.setStatus("Scanning codebase structure...");
+
+      const scoutSummary = await runBrownfieldScout(projectRoot);
+
+      if (scoutSummary) {
+        profile.codebase_summary = scoutSummary;
+        const lineCount = scoutSummary.split("\n").length;
+        ps.showSuccess(`Scout complete — ${lineCount} lines of structure.`);
+      } else {
+        ps.showInfo("Scout found no codebase structure.");
+      }
+
+      await ps.waitForDismiss(1500);
+      ps.destroy();
+    }
+
+    // 4. Offer LLM synthesis
+    const wantsLlm = await showConfirm(
+      "LLM Synthesis",
+      "Enhance profile with AI?",
+    );
+
+    if (wantsLlm) {
+      // 5. Run LLM synthesis with ProgressScreen spinner
+      const ps = new ProgressScreen(
+        "LLM Synthesis",
+        profile.name || projectRoot,
+      );
+      ps.start();
+      ps.setStatus("Enhancing profile with AI...");
+
+      profile = await runLlmSynthesis(
+        profile,
+        config,
+        projectRoot,
+        (msg) => ps.setStatus(msg),
+      );
+
+      ps.showSuccess("LLM synthesis complete.");
+      await ps.waitForDismiss(1500);
+      ps.destroy();
+    }
+
+    // 6. Section-by-section review
+    const reviewResult = await reviewSections(profile);
+
+    if (!reviewResult.approved) {
+      // User cancelled the review
+      return null;
+    }
+
+    profile = reviewResult.approved;
+
+    // 7. Save the profile
+    saveProject(projectRoot, profile);
+
+    // Show success message
+    const successPs = new ProgressScreen("Onboarding Complete");
+    successPs.start();
+    successPs.showSuccess(
+      `Project profile saved for "${profile.name || "(unnamed)"}"`,
+    );
+    await successPs.waitForDismiss(1500);
+    successPs.destroy();
+
+    // 8. Offer to run genesis
+    const wantsGenesis = await showConfirm(
+      "Genesis Planner",
+      "Run genesis planner to create initial quests?",
+    );
+
+    if (wantsGenesis) {
+      // Return the profile — the caller (tui.ts) will handle genesis
+      // We signal this via the profile having genesis_count === 0
+      // and the caller can check for this condition.
+      // Note: We don't run genesis here because genesis requires the full
+      // TUI flow (GenesisReview, quest creation, etc.) which is handled
+      // by the main TUI loop in commands/tui.ts.
+      //
+      // The profile is returned with a sentinel: we store a flag so the
+      // caller knows genesis was requested. We use a convention of setting
+      // _genesisRequested on the profile object (not persisted).
+      (profile as any)._genesisRequested = true;
+    }
+
+    return profile;
+  } finally {
+    // Clean up stdin on exit
+    if (process.stdin.isTTY) {
+      try {
+        process.stdin.removeAllListeners("keypress");
+        process.stdin.removeAllListeners("data");
+        if (typeof process.stdin.setRawMode === "function") {
+          process.stdin.setRawMode(false);
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+  }
 }
