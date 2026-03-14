@@ -44,6 +44,7 @@ export type QuestPickerAction =
   | { type: "plan"; questId: string }
   | { type: "genesis" }
   | { type: "errand" }
+  | { type: "wishlist" }
   | { type: "quit" };
 
 export interface QuestPickerOptions {
@@ -53,6 +54,7 @@ export interface QuestPickerOptions {
   onPlan?: (questId: string) => void;
   onGenesis?: () => void;
   onErrand?: () => void;
+  onWishlist?: () => void;
   onQuit: () => void;
 }
 
@@ -118,6 +120,7 @@ export class QuestPicker {
   private onPlan?: (questId: string) => void;
   private onGenesis?: () => void;
   private onErrand?: () => void;
+  private onWishlist?: () => void;
   private onQuit: () => void;
 
   /** "All Tasks" + quest summaries */
@@ -132,6 +135,7 @@ export class QuestPicker {
     this.onPlan = opts.onPlan;
     this.onGenesis = opts.onGenesis;
     this.onErrand = opts.onErrand;
+    this.onWishlist = opts.onWishlist;
     this.onQuit = opts.onQuit;
 
     this.loadQuests();
@@ -310,6 +314,11 @@ export class QuestPicker {
     this.screen.key(["e"], () => {
       this.triggerErrand();
     });
+
+    // W -- wishlist browser
+    this.screen.key(["w"], () => {
+      this.triggerWishlist();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -383,6 +392,14 @@ export class QuestPicker {
 
     this.destroy();
     this.onErrand();
+  }
+
+  private triggerWishlist(): void {
+    if (this.creatingQuest) return;
+    if (!this.onWishlist) return;
+
+    this.destroy();
+    this.onWishlist();
   }
 
   // -----------------------------------------------------------------------
@@ -1029,6 +1046,7 @@ export class QuestPicker {
     line1 += `  {gray-fg}P{/gray-fg} plan`;
     line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
+    line1 += `  {gray-fg}W{/gray-fg} wishlist`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
     const item = this.items[this.selectedIndex];
