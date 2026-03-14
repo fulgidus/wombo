@@ -34,6 +34,8 @@ import { VALID_PRIORITIES, VALID_DIFFICULTIES } from "./task-schema.js";
 import type { Priority, Difficulty } from "./tasks.js";
 import { loadTasks, getDoneTaskIds, loadArchive } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
+import { loadUsageRecords, totalUsage, groupBy as groupUsageBy } from "./token-usage.js";
+import type { UsageTotals } from "./token-usage.js";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -92,6 +94,29 @@ function escapeBlessedTags(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Token Usage Formatting Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a token count with k/M suffixes for compact display.
+ */
+function formatTokenCount(n: number): string {
+  if (n === 0) return "0";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+/**
+ * Format a cost value as a dollar string.
+ */
+function formatCost(cost: number): string {
+  if (cost === 0) return "$0.00";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------------------
 // Quest summary for display
 // ---------------------------------------------------------------------------
 
@@ -126,6 +151,10 @@ export class QuestPicker {
   private items: Array<{ type: "all" } | { type: "quest"; summary: QuestSummary }> = [];
   private selectedIndex: number = 0;
   private totalTaskCount: number = 0;
+  /** Per-quest token usage totals (loaded from usage.jsonl) */
+  private questUsage: Map<string, UsageTotals> = new Map();
+  /** Overall usage totals across all records */
+  private overallUsage: UsageTotals | null = null;
 
   constructor(opts: QuestPickerOptions) {
     this.projectRoot = opts.projectRoot;
@@ -263,6 +292,29 @@ export class QuestPicker {
         type: "quest" as const,
         summary: { quest, totalTasks, doneTasks, completionPct },
       });
+    }
+
+    // Load token usage data
+    this.reloadUsage();
+  }
+
+  /**
+   * Reload token usage data from the JSONL file and build per-quest aggregates.
+   */
+  private reloadUsage(): void {
+    try {
+      const records = loadUsageRecords(this.projectRoot);
+      if (records.length > 0) {
+        this.questUsage = groupUsageBy(records, "quest_id");
+        this.overallUsage = totalUsage(records);
+      } else {
+        this.questUsage = new Map();
+        this.overallUsage = null;
+      }
+    } catch {
+      // Non-critical — usage display is optional
+      this.questUsage = new Map();
+      this.overallUsage = null;
     }
   }
 
@@ -923,8 +975,29 @@ export class QuestPicker {
         "",
         `  Total: {white-fg}${this.totalTaskCount}{/white-fg} tasks`,
         "",
-        "  Press {bold}Enter{/bold} to open the full task browser.",
       ];
+
+      // Overall token usage
+      if (this.overallUsage) {
+        const u = this.overallUsage;
+        lines.push("{bold}{yellow-fg}Overall Token Usage:{/yellow-fg}{/bold}");
+        lines.push(`  Input:      {cyan-fg}${formatTokenCount(u.input_tokens)}{/cyan-fg}`);
+        lines.push(`  Output:     {cyan-fg}${formatTokenCount(u.output_tokens)}{/cyan-fg}`);
+        if (u.cache_read > 0) {
+          lines.push(`  Cache read: {gray-fg}${formatTokenCount(u.cache_read)}{/gray-fg}`);
+        }
+        if (u.reasoning_tokens > 0) {
+          lines.push(`  Reasoning:  {magenta-fg}${formatTokenCount(u.reasoning_tokens)}{/magenta-fg}`);
+        }
+        lines.push(`  Total:      {white-fg}${formatTokenCount(u.total_tokens)}{/white-fg}`);
+        if (u.total_cost > 0) {
+          lines.push(`  Cost:       {yellow-fg}${formatCost(u.total_cost)}{/yellow-fg}`);
+        }
+        lines.push(`  Steps:      ${u.record_count}`);
+        lines.push("");
+      }
+
+      lines.push("  Press {bold}Enter{/bold} to open the full task browser.");
       this.detailBox.setContent(lines.join("\n"));
       this.detailBox.setLabel(" All Tasks ");
       return;
@@ -1032,7 +1105,26 @@ export class QuestPicker {
     lines.push(`  Created: ${quest.created_at.slice(0, 10)}`);
     if (quest.started_at) lines.push(`  Started: ${quest.started_at.slice(0, 10)}`);
     if (quest.ended_at) lines.push(`  Ended:   ${quest.ended_at.slice(0, 10)}`);
+    lines.push("");
 
+    // Token usage
+    const usage = this.questUsage.get(quest.id);
+    if (usage) {
+      lines.push("{bold}{yellow-fg}Token Usage:{/yellow-fg}{/bold}");
+      lines.push(`  Input:      {cyan-fg}${formatTokenCount(usage.input_tokens)}{/cyan-fg}`);
+      lines.push(`  Output:     {cyan-fg}${formatTokenCount(usage.output_tokens)}{/cyan-fg}`);
+      if (usage.cache_read > 0) {
+        lines.push(`  Cache read: {gray-fg}${formatTokenCount(usage.cache_read)}{/gray-fg}`);
+      }
+      if (usage.reasoning_tokens > 0) {
+        lines.push(`  Reasoning:  {magenta-fg}${formatTokenCount(usage.reasoning_tokens)}{/magenta-fg}`);
+      }
+      lines.push(`  Total:      {white-fg}${formatTokenCount(usage.total_tokens)}{/white-fg}`);
+      if (usage.total_cost > 0) {
+        lines.push(`  Cost:       {yellow-fg}${formatCost(usage.total_cost)}{/yellow-fg}`);
+      }
+      lines.push(`  Steps:      ${usage.record_count}`);
+    }
     this.detailBox.setContent(lines.join("\n"));
     this.detailBox.setLabel(` ${quest.id} `);
   }

@@ -43,6 +43,10 @@ import type { TUISession, SortField } from "./tui-session.js";
 import { saveTUISession } from "./tui-session.js";
 import type { WomboConfig } from "../config.js";
 import { WishlistOverlay } from "./tui-wishlist.js";
+import { UsageOverlay } from "./tui-usage-overlay.js";
+import { loadUsageRecords, totalUsage, groupBy as groupUsageBy } from "./token-usage.js";
+import type { UsageTotals } from "./token-usage.js";
+import type { UsageRecord } from "./token-collector.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -140,6 +144,29 @@ function escapeBlessedTags(text: string): string {
 }
 
 const SORT_FIELDS: SortField[] = ["priority", "status", "name", "effort", "stream"];
+
+// ---------------------------------------------------------------------------
+// Token Usage Formatting Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Format a token count with k/M suffixes for compact display.
+ */
+function formatTokenCount(n: number): string {
+  if (n === 0) return "0";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+/**
+ * Format a cost value as a dollar string.
+ */
+function formatCost(cost: number): string {
+  if (cost === 0) return "$0.00";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
 
 // ---------------------------------------------------------------------------
 // Task Graph Builder
@@ -285,6 +312,12 @@ export class TaskBrowser {
   private hasRunningWave: boolean = false;
   /** Active wishlist overlay (null when closed) */
   private wishlistOverlay: WishlistOverlay | null = null;
+  /** Active usage overlay (null when closed) */
+  private usageOverlay: UsageOverlay | null = null;
+  /** Per-task token usage totals (loaded from usage.jsonl) */
+  private taskUsage: Map<string, UsageTotals> = new Map();
+  /** Overall usage totals across all records */
+  private overallUsage: UsageTotals | null = null;
 
   constructor(opts: TaskBrowserOptions) {
     this.projectRoot = opts.projectRoot;
@@ -447,6 +480,30 @@ export class TaskBrowser {
     const validIds = new Set(this.allTasks.map((t) => t.id));
     for (const id of this.selected) {
       if (!validIds.has(id)) this.selected.delete(id);
+    }
+
+    // Load token usage data
+    this.reloadUsage();
+  }
+
+  /**
+   * Reload token usage data from the JSONL file and build per-task aggregates.
+   */
+  private reloadUsage(): void {
+    try {
+      const records = loadUsageRecords(this.projectRoot);
+      if (records.length > 0) {
+        const byTask = groupUsageBy(records, "task_id");
+        this.taskUsage = byTask;
+        this.overallUsage = totalUsage(records);
+      } else {
+        this.taskUsage = new Map();
+        this.overallUsage = null;
+      }
+    } catch {
+      // Non-critical — usage display is optional
+      this.taskUsage = new Map();
+      this.overallUsage = null;
     }
   }
 
@@ -615,6 +672,11 @@ export class TaskBrowser {
     this.screen.key(["w"], () => {
       this.toggleWishlist();
     });
+
+    // u — toggle usage overlay
+    this.screen.key(["u"], () => {
+      this.toggleUsage();
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -776,6 +838,30 @@ export class TaskBrowser {
       {
         onClose: () => {
           this.wishlistOverlay = null;
+          this.taskList.focus();
+          this.refreshStatusBar();
+          this.screen.render();
+        },
+      }
+    );
+  }
+
+  private toggleUsage(): void {
+    // Close if already open
+    if (this.usageOverlay && !this.usageOverlay.isDestroyed()) {
+      this.usageOverlay.close();
+      this.usageOverlay = null;
+      this.taskList.focus();
+      this.screen.render();
+      return;
+    }
+
+    this.usageOverlay = new UsageOverlay(
+      this.screen,
+      this.projectRoot,
+      {
+        onClose: () => {
+          this.usageOverlay = null;
           this.taskList.focus();
           this.refreshStatusBar();
           this.screen.render();
@@ -980,6 +1066,26 @@ export class TaskBrowser {
       lines.push(`{bold}Agent:{/bold} ${escapeBlessedTags(t.agent_type)}`);
     }
 
+    // Token usage
+    const usage = this.taskUsage.get(t.id);
+    if (usage) {
+      lines.push("");
+      lines.push("{bold}{yellow-fg}Token Usage:{/yellow-fg}{/bold}");
+      lines.push(`  Input:      {cyan-fg}${formatTokenCount(usage.input_tokens)}{/cyan-fg}`);
+      lines.push(`  Output:     {cyan-fg}${formatTokenCount(usage.output_tokens)}{/cyan-fg}`);
+      if (usage.cache_read > 0) {
+        lines.push(`  Cache read: {gray-fg}${formatTokenCount(usage.cache_read)}{/gray-fg}`);
+      }
+      if (usage.reasoning_tokens > 0) {
+        lines.push(`  Reasoning:  {magenta-fg}${formatTokenCount(usage.reasoning_tokens)}{/magenta-fg}`);
+      }
+      lines.push(`  Total:      {white-fg}${formatTokenCount(usage.total_tokens)}{/white-fg}`);
+      if (usage.total_cost > 0) {
+        lines.push(`  Cost:       {yellow-fg}${formatCost(usage.total_cost)}{/yellow-fg}`);
+      }
+      lines.push(`  Steps:      ${usage.record_count}`);
+    }
+
     // Constraints
     if (t.constraints.length > 0) {
       lines.push("{bold}Constraints:{/bold}");
@@ -1011,6 +1117,7 @@ export class TaskBrowser {
       line1 += `  {gray-fg}E{/gray-fg} errand`;
     }
     line1 += `  {gray-fg}W{/gray-fg} wishlist`;
+    line1 += `  {gray-fg}U{/gray-fg} usage`;
     line1 += `  {gray-fg}O{/gray-fg} sort`;
 
     if (selCount > 0) {
