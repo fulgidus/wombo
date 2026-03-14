@@ -170,6 +170,12 @@ export interface LaunchCommandOptions {
   questId?: string;
   // Output
   outputFmt?: OutputFormat;
+  /**
+   * When true, pressing Q in the monitor detaches (returns to caller) instead
+   * of killing agents and exiting. Used by cmdTui so the user can switch
+   * between the monitor and task browser while agents keep running.
+   */
+  detachOnQuit?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1105,6 +1111,12 @@ async function launchWaveHeadless(
   });
 
   // Create the TUI — it will auto-refresh and show activity from the monitor
+  //
+  // Detach support: When the user presses Q in the monitor TUI, we no longer
+  // kill agents and exit. Instead, we set a `detached` flag and let the
+  // monitoring loop exit naturally. The caller (cmdTui) then loops back to
+  // the task browser, which shows a "running wave" indicator.
+  let detached = false;
   const tuiRef = { current: null as WomboTUI | null };
   const startTUI = () => {
     tuiRef.current = new WomboTUI({
@@ -1114,19 +1126,27 @@ async function launchWaveHeadless(
       interactive: false,
       config,
       onQuit: () => {
-          // Audit (wave-detach-audit): This is the TUI quit path — equivalent
-          // to the SIGINT handler. Kills all agents, saves state, and exits.
-          // Agents are non-detached children, so they die when we exit anyway,
-          // but explicit killAll() gives them SIGTERM for graceful shutdown.
-          for (const agent of state.agents) {
-            if (agent.status === "running" || agent.status === "resolving_conflict") {
-            updateAgent(state, agent.feature_id, { activity: "interrupted" });
+          if (opts.detachOnQuit) {
+            // Detach from the wave monitor — agents keep running in the background.
+            // The monitoring loop checks `detached` and exits, returning control
+            // to the caller (cmdTui main loop).
+            flushState(projectRoot, state);
+            // Null out the TUI ref so the monitoring loop stops trying to update
+            // the destroyed screen during remaining poll iterations.
+            tuiRef.current = null;
+            detached = true;
+          } else {
+            // Standalone mode — kill agents and exit (traditional behavior).
+            for (const agent of state.agents) {
+              if (agent.status === "running" || agent.status === "resolving_conflict") {
+                updateAgent(state, agent.feature_id, { activity: "interrupted" });
+              }
+            }
+            monitor.killAll();
+            flushState(projectRoot, state);
+            if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
+            process.exit(0);
           }
-        }
-        monitor.killAll();
-        flushState(projectRoot, state);
-        if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
-        process.exit(0);
       },
       onBeforeDestroy: () => {
         // Flush state to disk before the blessed screen is destroyed.
@@ -1236,7 +1256,7 @@ async function launchWaveHeadless(
   // Background monitoring loop — checks for dead processes and launches queued
   const POLL_INTERVAL = 5000;
   let dashboardCounter = 0;
-  while (!isWaveComplete(state)) {
+  while (!isWaveComplete(state) && !detached) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL));
 
     // Check for completed processes that weren't caught by event handlers
@@ -1362,6 +1382,14 @@ async function launchWaveHeadless(
         }
       }
     }
+  }
+
+  // If user detached (pressed Q while agents are still running), save state
+  // and return without doing post-wave cleanup. The caller (cmdTui) will
+  // loop back to the task browser, showing the running wave indicator.
+  if (detached) {
+    flushState(projectRoot, state);
+    return;
   }
 
   // Wave complete — keep TUI open for post-mortem browsing
