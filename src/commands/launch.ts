@@ -24,6 +24,7 @@ import { loadFeatures, selectFeatures, parseDurationMinutes, saveFeatures } from
 import {
   loadState,
   saveState,
+  flushState,
   createWaveState,
   createAgentState,
   updateAgent,
@@ -1123,9 +1124,15 @@ async function launchWaveHeadless(
           }
         }
         monitor.killAll();
-        saveState(projectRoot, state);
+        flushState(projectRoot, state);
         if (fmt === "text") console.log("State saved. Use 'woco resume' to continue.");
         process.exit(0);
+      },
+      onBeforeDestroy: () => {
+        // Flush state to disk before the blessed screen is destroyed.
+        // This is called from TUI.stop() which runs before screen.destroy(),
+        // ensuring state.json is complete even if process.exit() follows.
+        flushState(projectRoot, state);
       },
       onRetry: (featureId: string) => {
         const agent = state.agents.find((a) => a.feature_id === featureId);
@@ -1179,7 +1186,7 @@ async function launchWaveHeadless(
       }
     }
     monitor.killAll();
-    saveState(projectRoot, state);
+    flushState(projectRoot, state);
     if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
     process.exit(0);
   });
