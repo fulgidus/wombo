@@ -34,6 +34,7 @@ import { VALID_PRIORITIES, VALID_DIFFICULTIES } from "./task-schema.js";
 import type { Priority, Difficulty } from "./tasks.js";
 import { loadTasks, getDoneTaskIds, loadArchive } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
+import { WishlistOverlay } from "./tui-wishlist.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -124,6 +125,8 @@ export class QuestPicker {
   private items: Array<{ type: "all" } | { type: "quest"; summary: QuestSummary }> = [];
   private selectedIndex: number = 0;
   private totalTaskCount: number = 0;
+  /** Active wishlist overlay (null when closed) */
+  private wishlistOverlay: WishlistOverlay | null = null;
 
   constructor(opts: QuestPickerOptions) {
     this.projectRoot = opts.projectRoot;
@@ -291,6 +294,11 @@ export class QuestPicker {
       this.toggleQuestActive();
     });
 
+    // W -- toggle wishlist overlay
+    this.screen.key(["w"], () => {
+      this.toggleWishlist();
+    });
+
     // C -- create new quest
     this.screen.key(["c"], () => {
       this.showCreateQuestModal();
@@ -383,6 +391,32 @@ export class QuestPicker {
 
     this.destroy();
     this.onErrand();
+  }
+
+  private toggleWishlist(): void {
+    if (this.creatingQuest) return;
+
+    // Close if already open
+    if (this.wishlistOverlay && !this.wishlistOverlay.isDestroyed()) {
+      this.wishlistOverlay.close();
+      this.wishlistOverlay = null;
+      this.questList.focus();
+      this.screen.render();
+      return;
+    }
+
+    this.wishlistOverlay = new WishlistOverlay(
+      this.screen,
+      this.projectRoot,
+      {
+        onClose: () => {
+          this.wishlistOverlay = null;
+          this.questList.focus();
+          this.refreshStatusBar();
+          this.screen.render();
+        },
+      }
+    );
   }
 
   // -----------------------------------------------------------------------
@@ -1029,6 +1063,7 @@ export class QuestPicker {
     line1 += `  {gray-fg}P{/gray-fg} plan`;
     line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
+    line1 += `  {gray-fg}W{/gray-fg} wishlist`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
     const item = this.items[this.selectedIndex];
