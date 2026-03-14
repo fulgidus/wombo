@@ -27,13 +27,19 @@
  *   if (profile) saveProject(projectRoot, profile);
  */
 
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import blessed from "neo-blessed";
 import type { Widgets } from "neo-blessed";
+import { parse as parseYaml } from "yaml";
+import type { WomboConfig } from "../config.js";
+import { resolveAgentBin } from "../config.js";
 import { buildScoutIndex, formatScoutTree } from "./subagents/scout.js";
 import type { ScoutIndex } from "./subagents/scout.js";
 import { ProgressScreen } from "./tui-progress.js";
 import {
   createBlankProfile,
+  normalizeProfile,
   type ProjectProfile,
   type ProjectType,
   type ProjectObjective,
@@ -67,6 +73,349 @@ export async function runBrownfieldScout(projectRoot: string): Promise<string> {
     });
   } catch {
     return "";
+  }
+}
+
+// ---------------------------------------------------------------------------
+// runLlmSynthesis — LLM agent enhancement of raw profile
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract text content from the JSON event stream produced by the agent.
+ * Looks for "text" type events and concatenates their part.text fields.
+ * Non-JSON lines are included as-is (plain text fallback).
+ */
+function extractTextFromJsonEvents(rawOutput: string): string {
+  const lines = rawOutput.split("\n");
+  const textParts: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    try {
+      const event = JSON.parse(trimmed);
+      if (event.type === "text" && event.part?.text) {
+        textParts.push(event.part.text);
+      }
+    } catch {
+      // Not JSON — might be plain text output, include it
+      textParts.push(trimmed);
+    }
+  }
+
+  return textParts.join("");
+}
+
+/**
+ * Extract YAML content from fenced code blocks in agent output.
+ * Returns the content of the last ```yaml ... ``` block found, or null.
+ */
+function extractYamlFromFencedBlocks(text: string): string | null {
+  const pattern = /```ya?ml\s*\n([\s\S]*?)```/gi;
+  let lastMatch: string | null = null;
+  let m: RegExpExecArray | null;
+
+  while ((m = pattern.exec(text)) !== null) {
+    lastMatch = m[1];
+  }
+
+  return lastMatch?.trim() ?? null;
+}
+
+/**
+ * Format a ProjectProfile as a markdown document for the LLM prompt.
+ * Includes all raw profile data so the agent can enhance it.
+ */
+function formatProfileAsMarkdown(profile: ProjectProfile): string {
+  const sections: string[] = [];
+
+  sections.push("# Current Project Profile\n");
+
+  // Identity
+  sections.push("## Identity\n");
+  if (profile.name) sections.push(`- **Name:** ${profile.name}`);
+  sections.push(`- **Type:** ${profile.type}`);
+  if (profile.description) sections.push(`- **Description:** ${profile.description}`);
+  sections.push("");
+
+  // Vision
+  if (profile.vision) {
+    sections.push("## Vision\n");
+    sections.push(profile.vision);
+    sections.push("");
+  }
+
+  // Objectives
+  if (profile.objectives.length > 0) {
+    sections.push("## Objectives\n");
+    for (const obj of profile.objectives) {
+      sections.push(`- [${obj.priority}] ${obj.text} (status: ${obj.status})`);
+    }
+    sections.push("");
+  }
+
+  // Tech stack
+  const ts = profile.tech_stack;
+  sections.push("## Tech Stack\n");
+  if (ts.runtime) sections.push(`- **Runtime:** ${ts.runtime}`);
+  if (ts.language) sections.push(`- **Language:** ${ts.language}`);
+  if (ts.frameworks.length > 0) sections.push(`- **Frameworks:** ${ts.frameworks.join(", ")}`);
+  if (ts.tools.length > 0) sections.push(`- **Tools:** ${ts.tools.join(", ")}`);
+  if (ts.notes) sections.push(`- **Notes:** ${ts.notes}`);
+  sections.push("");
+
+  // Conventions
+  const conv = profile.conventions;
+  const convEntries = Object.entries(conv).filter(([, v]) => v && v.trim());
+  if (convEntries.length > 0) {
+    sections.push("## Conventions\n");
+    for (const [key, value] of convEntries) {
+      const label = key.replace(/_/g, " ");
+      sections.push(`- **${label.charAt(0).toUpperCase() + label.slice(1)}:** ${value}`);
+    }
+    sections.push("");
+  }
+
+  // Rules
+  if (profile.rules.length > 0) {
+    sections.push("## Rules\n");
+    for (const rule of profile.rules) {
+      const parts = [`- **[${rule.rigidity}] ${rule.scope}:** ${rule.text}`];
+      if (rule.consequences) parts.push(`  - Consequences: ${rule.consequences}`);
+      if (rule.tags.length > 0) parts.push(`  - Tags: ${rule.tags.join(", ")}`);
+      sections.push(parts.join("\n"));
+    }
+    sections.push("");
+  }
+
+  return sections.join("\n");
+}
+
+/**
+ * Build the full synthesis prompt for the LLM agent.
+ * Includes the raw profile data and optional codebase summary.
+ */
+function buildSynthesisPrompt(profile: ProjectProfile): string {
+  const sections: string[] = [];
+
+  sections.push("# Onboarding Profile Synthesis\n");
+  sections.push(
+    "You are enhancing a raw project profile collected from an onboarding wizard. " +
+    "The user provided rough inputs that need to be refined into a well-structured " +
+    "project profile.\n"
+  );
+
+  // Include all raw profile data
+  sections.push(formatProfileAsMarkdown(profile));
+
+  // Include codebase summary if present
+  if (profile.codebase_summary) {
+    sections.push("## Codebase Summary\n");
+    sections.push("The following is an auto-scanned codebase structure:\n");
+    sections.push("```");
+    sections.push(profile.codebase_summary);
+    sections.push("```\n");
+  }
+
+  // Instructions for the agent
+  sections.push("## Instructions\n");
+  sections.push(
+    "Produce an enhanced YAML profile within a fenced ```yaml code block. " +
+    "The YAML must conform to the ProjectProfile schema with these fields:\n"
+  );
+  sections.push("- **name**: string — Keep as-is unless clearly wrong");
+  sections.push("- **type**: \"greenfield\" | \"brownfield\" — Keep as-is");
+  sections.push("- **description**: string — Improve clarity if needed");
+  sections.push("- **vision**: string — Expand into a compelling long-term vision statement");
+  sections.push(
+    "- **objectives**: array of {id, text, priority, status, quest_ids} — " +
+    "Better-structured objectives with clear priorities (high/medium/low)"
+  );
+  sections.push(
+    "- **tech_stack**: {runtime, language, frameworks, tools, notes} — " +
+    "Infer missing details from the codebase summary if available"
+  );
+  sections.push(
+    "- **conventions**: {commits, branches, testing, coding_style, naming} — " +
+    "Infer from codebase patterns if not provided"
+  );
+  sections.push(
+    "- **rules**: array of {id, text, scope, rigidity, consequences, tags} — " +
+    "Expand rules with proper scope (e.g. 'runtime', 'distribution', 'tui'), " +
+    "rigidity ('hard'/'soft'/'preference'), and meaningful consequences"
+  );
+  sections.push("");
+  sections.push(
+    "Keep the enhanced profile faithful to the user's intent. " +
+    "Do not invent goals or rules the user didn't imply. " +
+    "Preserve existing IDs where possible. " +
+    "Output ONLY the YAML in a single fenced code block."
+  );
+
+  return sections.join("\n");
+}
+
+/**
+ * Spawn an LLM agent to enhance the raw project profile.
+ *
+ * Follows the same agent-spawning pattern as genesis-planner.ts:
+ *   1. resolveAgentBin(config) to get the binary path.
+ *   2. Check existsSync(agentBin), return original profile if not found.
+ *   3. Build a prompt with all raw profile data + codebase_summary.
+ *   4. spawn(agentBin, ['run', '--format', 'json', ...]).
+ *   5. Capture stdout, extract text from JSON events, find YAML.
+ *   6. Normalize parsed result with normalizeProfile.
+ *   7. Return enhanced profile, falling back to original on error.
+ *
+ * @param profile — The raw profile to enhance.
+ * @param config — The WomboConfig for resolving agent binary.
+ * @param projectRoot — Absolute path to the project root.
+ * @param onProgress — Callback to report status to the ProgressScreen.
+ * @returns The enhanced profile, or the original on failure.
+ */
+export async function runLlmSynthesis(
+  profile: ProjectProfile,
+  config: WomboConfig,
+  projectRoot: string,
+  onProgress: (msg: string) => void
+): Promise<ProjectProfile> {
+  try {
+    // 1. Resolve agent binary path
+    onProgress("Resolving agent binary...");
+    const agentBin = resolveAgentBin(config);
+
+    // 2. Check agent binary exists
+    if (!existsSync(agentBin)) {
+      onProgress("Agent binary not found — skipping LLM synthesis");
+      return profile;
+    }
+
+    // 3. Build the synthesis prompt
+    onProgress("Building synthesis prompt...");
+    const prompt = buildSynthesisPrompt(profile);
+
+    // 4. Spawn the agent
+    onProgress("Launching LLM synthesis agent...");
+    const args = [
+      "run",
+      "--format", "json",
+      "--agent", "genesis-planner-agent",
+      "--dir", projectRoot,
+      "--title", "woco: onboarding synthesis",
+      prompt,
+    ];
+
+    const child = spawn(agentBin, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: false,
+      env: {
+        ...process.env,
+        OPENCODE_DIR: projectRoot,
+      },
+    });
+
+    child.stdin?.end();
+
+    // 5. Capture stdout
+    const chunks: Buffer[] = [];
+    let stderrText = "";
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+    });
+
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrText += chunk.toString();
+    });
+
+    // Wait for process to exit with a 5-minute timeout
+    const SYNTHESIS_TIMEOUT_MS = 5 * 60 * 1000;
+    const exitCode = await new Promise<number>((resolve) => {
+      let settled = false;
+
+      const timeout = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          try {
+            child.kill("SIGTERM");
+          } catch {
+            // Best effort
+          }
+          resolve(-1);
+        }
+      }, SYNTHESIS_TIMEOUT_MS);
+
+      child.on("close", (code) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeout);
+          resolve(code ?? 1);
+        }
+      });
+
+      child.on("error", (err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timeout);
+          stderrText += `\nSpawn error: ${err.message}`;
+          resolve(1);
+        }
+      });
+    });
+
+    const rawOutput = Buffer.concat(chunks).toString("utf-8");
+
+    if (exitCode === -1) {
+      onProgress("LLM synthesis timed out — using raw profile");
+      return profile;
+    }
+
+    if (exitCode !== 0 && !rawOutput.trim()) {
+      onProgress("LLM synthesis failed — using raw profile");
+      return profile;
+    }
+
+    // Extract text from JSON event stream
+    onProgress("Parsing LLM synthesis output...");
+    const textContent = extractTextFromJsonEvents(rawOutput);
+
+    // Find YAML in fenced code blocks
+    const yamlStr = extractYamlFromFencedBlocks(textContent);
+
+    if (!yamlStr) {
+      onProgress("No YAML found in LLM output — using raw profile");
+      return profile;
+    }
+
+    // 6. Parse YAML and normalize
+    onProgress("Applying enhanced profile...");
+    const parsed = parseYaml(yamlStr);
+
+    if (!parsed || typeof parsed !== "object") {
+      onProgress("Invalid YAML from LLM — using raw profile");
+      return profile;
+    }
+
+    const enhanced = normalizeProfile(parsed as Record<string, unknown>);
+
+    // Preserve metadata from the original profile
+    enhanced.created_at = profile.created_at;
+    enhanced.updated_at = profile.updated_at;
+    enhanced.genesis_count = profile.genesis_count;
+
+    // Preserve codebase_summary from original if the LLM didn't include it
+    if (!enhanced.codebase_summary && profile.codebase_summary) {
+      enhanced.codebase_summary = profile.codebase_summary;
+    }
+
+    // 7. Return enhanced profile
+    onProgress("LLM synthesis complete");
+    return enhanced;
+  } catch {
+    // Graceful fallback: return original profile on any error
+    onProgress("LLM synthesis error — using raw profile");
+    return profile;
   }
 }
 
