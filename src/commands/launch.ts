@@ -1178,7 +1178,7 @@ async function launchWaveHeadless(
   // If the parent is killed with SIGKILL (uncatchable), agents die immediately
   // with no state save. `woco resume` recovers from this by detecting orphaned
   // worktrees with commits and re-verifying or re-launching as appropriate.
-  process.on("SIGINT", () => {
+  const gracefulShutdown = (signal: string) => {
     if (tuiRef.current) tuiRef.current.stop();
     for (const agent of state.agents) {
       if (agent.status === "running" || agent.status === "resolving_conflict") {
@@ -1187,9 +1187,12 @@ async function launchWaveHeadless(
     }
     monitor.killAll();
     flushState(projectRoot, state);
-    if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
+    if (fmt === "text") console.log(`\nState saved (${signal}). Use 'woco resume' to continue.`);
     process.exit(0);
-  });
+  };
+  process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+  process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
   // Launch initial batch — only agents whose dependencies are already satisfied
   // Stagger launches to avoid SQLite race conditions in agent processes:
