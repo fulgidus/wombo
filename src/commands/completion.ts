@@ -83,6 +83,7 @@ _woco_completions() {
         re) cmd="retry" ;; a) cmd="abort" ;; c) cmd="cleanup" ;;
         h) cmd="history" ;; lo) cmd="logs" ;; t|features) cmd="tasks" ;;
         u) cmd="upgrade" ;; d) cmd="describe" ;; comp) cmd="completion" ;;
+        us) cmd="usage" ;;
     esac
 
     # Flag value completions (context-independent)
@@ -95,13 +96,17 @@ _woco_completions() {
             COMPREPLY=($(compgen -W "backlog planned in_progress blocked in_review done cancelled" -- "$cur")); return ;;
         --output|-o)
             COMPREPLY=($(compgen -W "text json toon" -- "$cur")); return ;;
-        --model|-m|--top-priority|--quickest-wins|--max-concurrent|--max-retries|--tail|--base-branch|--tag|--release|--tasks|--features|--fields|--desc|--description|--effort|--depends-on|--title)
+        --by)
+            COMPREPLY=($(compgen -W "task quest model provider harness" -- "$cur")); return ;;
+        --format)
+            COMPREPLY=($(compgen -W "table json" -- "$cur")); return ;;
+        --model|-m|--top-priority|--quickest-wins|--max-concurrent|--max-retries|--tail|--base-branch|--tag|--release|--tasks|--features|--fields|--desc|--description|--effort|--depends-on|--title|--since|--until)
             return ;;  # free-form / numeric — no completions, let readline handle it
     esac
 
     # No command yet → complete commands
     if [[ -z "$cmd" ]]; then
-        COMPREPLY=($(compgen -W "init i launch l resume r status s verify v merge m retry re abort a cleanup c history h logs lo tasks t upgrade u describe d completion comp version help" -- "$cur"))
+        COMPREPLY=($(compgen -W "init i launch l resume r status s verify v merge m retry re abort a cleanup c history h logs lo tasks t usage us upgrade u describe d completion comp version help" -- "$cur"))
         return
     fi
 
@@ -155,7 +160,7 @@ _woco_completions() {
 
     # describe → command names (for introspection)
     if [[ "$cmd" == "describe" ]]; then
-        COMPREPLY=($(compgen -W "init launch resume status verify merge retry abort cleanup history logs tasks upgrade describe completion version help" -- "$cur"))
+        COMPREPLY=($(compgen -W "init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help" -- "$cur"))
         return
     fi
 
@@ -181,6 +186,8 @@ _woco_completions() {
             COMPREPLY=($(compgen -W "--dry-run" -- "$cur")) ;;
         history)
             COMPREPLY=($(compgen -W "--output -o" -- "$cur")) ;;
+        usage)
+            COMPREPLY=($(compgen -W "--by --since --until --format --output -o" -- "$cur")) ;;
         logs)
             COMPREPLY=($(compgen -W "--tail --follow -f --output -o" -- "$cur")) ;;
         upgrade)
@@ -233,6 +240,8 @@ _woco() {
             'lo:→ logs'
             'tasks:Manage tasks file (t)'
             't:→ tasks'
+            'usage:Show token usage stats (us)'
+            'us:→ usage'
             'upgrade:Check for updates (u)'
             'u:→ upgrade'
             'describe:Emit JSON schema (d)'
@@ -254,6 +263,7 @@ _woco() {
         s) cmd=status ;; v) cmd=verify ;; m) cmd=merge ;;
         re) cmd=retry ;; a) cmd=abort ;; c) cmd=cleanup ;;
         h) cmd=history ;; lo) cmd=logs ;; t|features) cmd=tasks ;;
+        us) cmd=usage ;;
         u) cmd=upgrade ;; d) cmd=describe ;; comp) cmd=completion ;;
     esac
 
@@ -263,6 +273,8 @@ _woco() {
         --difficulty)  compadd trivial easy medium hard very_hard; return ;;
         --status)      compadd backlog planned in_progress blocked in_review done cancelled; return ;;
         --output|-o)   compadd text json toon; return ;;
+        --by)          compadd task quest model provider harness; return ;;
+        --format)      compadd table json; return ;;
     esac
 
     # tasks → subcommands
@@ -330,7 +342,7 @@ _woco() {
 
     # describe → command names
     if [[ "$cmd" == "describe" ]]; then
-        compadd -- init launch resume status verify merge retry abort cleanup history logs tasks upgrade describe completion version help
+        compadd -- init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help
         return
     fi
 
@@ -346,6 +358,7 @@ _woco() {
         abort)    compadd -- --requeue --output -o ;;
         cleanup)  compadd -- --dry-run ;;
         history)  compadd -- --output -o ;;
+        usage)    compadd -- --by --since --until --format --output -o ;;
         logs)     compadd -- --tail --follow -f --output -o ;;
         upgrade)  compadd -- --check --tag --release --force ;;
     esac
@@ -422,6 +435,8 @@ for cmd in woco
     complete -c $cmd -n '__fish_use_subcommand' -a 'lo'         -d '→ logs'
     complete -c $cmd -n '__fish_use_subcommand' -a 'tasks'      -d 'Manage tasks'
     complete -c $cmd -n '__fish_use_subcommand' -a 't'          -d '→ tasks'
+    complete -c $cmd -n '__fish_use_subcommand' -a 'usage'      -d 'Token usage stats'
+    complete -c $cmd -n '__fish_use_subcommand' -a 'us'         -d '→ usage'
     complete -c $cmd -n '__fish_use_subcommand' -a 'upgrade'    -d 'Check for updates'
     complete -c $cmd -n '__fish_use_subcommand' -a 'u'          -d '→ upgrade'
     complete -c $cmd -n '__fish_use_subcommand' -a 'describe'   -d 'Emit JSON schema'
@@ -457,7 +472,7 @@ for cmd in woco
     complete -c $cmd -n '__fish_seen_subcommand_from completion comp' -a 'bash zsh fish'
 
     # --- describe subcommand ---
-    complete -c $cmd -n '__fish_seen_subcommand_from describe d' -a 'init launch resume status verify merge retry abort cleanup history logs tasks upgrade describe completion version help'
+    complete -c $cmd -n '__fish_seen_subcommand_from describe d' -a 'init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help'
 
     # --- Flags: init ---
     complete -c $cmd -n '__fish_seen_subcommand_from init i' -l force -d 'Force overwrite'
@@ -527,6 +542,14 @@ for cmd in woco
     # --- Flags: history ---
     complete -c $cmd -n '__fish_seen_subcommand_from history h' -l output -d 'Output format' -xa 'text json toon'
     complete -c $cmd -n '__fish_seen_subcommand_from history h' -s o      -d 'Output format' -xa 'text json toon'
+
+    # --- Flags: usage ---
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l by     -d 'Group by field' -xa 'task quest model provider harness'
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l since  -d 'Start date (ISO)' -x
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l until  -d 'End date (ISO)' -x
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l format -d 'Output format' -xa 'table json'
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l output -d 'Output format' -xa 'text json toon'
+    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -s o      -d 'Output format' -xa 'text json toon'
 
     # --- Flags: logs ---
     complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l tail   -d 'Show last N lines' -x

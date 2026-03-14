@@ -23,6 +23,7 @@
  *   woco logs <feature-id> [--tail N] [--follow]      (alias: lo)
  *   woco cleanup                                      (alias: c)
  *   woco history [wave-id] [--output json]            (alias: h)
+ *   woco usage [--by <key>] [--since <date>] [--until <date>] [--format table|json]  (alias: us)
  *   woco tasks list [--status <s>] [--priority <p>]   (alias: t ls)
  *   woco tasks add <id> <title> [options]             (alias: t a)
  *   woco tasks set-status <task-id> <status>          (alias: t ss)
@@ -106,6 +107,7 @@ import { cmdTasksGraph } from "./commands/tasks/graph.js";
 import { cmdTui } from "./commands/tui.js";
 import { handleQuestSubcommand } from "./commands/quest.js";
 import { cmdGenesis } from "./commands/genesis.js";
+import { cmdUsage, type UsageGroupBy } from "./commands/usage.js";
 
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
@@ -183,6 +185,14 @@ export interface CLIArgs {
   genesisConstraints?: string[];
   /** Skip TUI review (--no-tui for genesis) */
   genesisNoTui?: boolean;
+  /** Usage command: group by field (--by) */
+  usageBy?: UsageGroupBy;
+  /** Usage command: start date filter (--since) */
+  usageSince?: string;
+  /** Usage command: end date filter (--until) */
+  usageUntil?: string;
+  /** Usage command: output format (--format table|json) */
+  usageFormat?: "table" | "json";
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +220,7 @@ export const COMMAND_ALIASES: Record<string, string> = {
   d: "describe",
   comp: "completion",
   tui: "tui",
+  us: "usage",
 };
 
 /** Map of short aliases → canonical tasks subcommand names. */
@@ -437,6 +448,20 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.genesisConstraints.push(requireValue(arg));
         break;
 
+      // --- Usage-specific options ---
+      case "--by":
+        result.usageBy = requireValue(arg) as UsageGroupBy;
+        break;
+      case "--since":
+        result.usageSince = requireValue(arg);
+        break;
+      case "--until":
+        result.usageUntil = requireValue(arg);
+        break;
+      case "--format":
+        result.usageFormat = requireValue(arg) as "table" | "json";
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -475,6 +500,7 @@ Commands:                        (alias)
   logs                           (lo)    Pretty-print agent logs for a feature
   cleanup                        (c)     Remove all wave worktrees and multiplexer sessions
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
+  usage                          (us)    Show token usage statistics (--by, --since, --until, --format)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
   quest                          (q)     Manage quests (scoped missions; see below)
   genesis                        (g)     Run genesis planner (project-level decomposition into quests)
@@ -550,6 +576,12 @@ Logs Options:
   --tail N                 Show only the last N lines
   --follow, -f             Stream new output as it arrives (like tail -f)
 
+Usage Options:
+  --by <key>               Group by: task, quest, model, provider, harness (default: total)
+  --since <ISO date>       Filter records from this date (inclusive)
+  --until <ISO date>       Filter records until this date (inclusive)
+  --format <fmt>           Output format: table (default), json
+
 Aliases (every command has a short form):
   woco i                         woco init
   woco l --all-ready             woco launch --all-ready
@@ -593,6 +625,11 @@ Examples:
   woco history
   woco history wave-2026-03-12-420
   woco history --output json
+  woco usage                              # show total token usage
+  woco usage --by task                    # group by task
+  woco usage --by model --format json     # group by model, JSON output
+  woco usage --since 2026-01-01           # filter by start date
+  woco usage --since 2026-01-01 --until 2026-03-01  # date range
   woco describe                           # list all commands as JSON
   woco describe launch                    # describe a specific command
   woco describe tasks add                 # describe a subcommand
@@ -876,6 +913,18 @@ async function main(): Promise<void> {
         projectRoot: PROJECT_ROOT,
         config,
         waveId: args.featureId,
+        outputFmt: args.outputFmt,
+      });
+      break;
+
+    case "usage":
+      await cmdUsage({
+        projectRoot: PROJECT_ROOT,
+        config,
+        by: args.usageBy,
+        since: args.usageSince,
+        until: args.usageUntil,
+        usageFormat: args.usageFormat ?? "table",
         outputFmt: args.outputFmt,
       });
       break;
