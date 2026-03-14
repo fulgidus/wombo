@@ -110,6 +110,25 @@ function escapeBlessedTags(text: string): string {
   return text.replace(/\{/g, "｛").replace(/\}/g, "｝");
 }
 
+/**
+ * Format a token count with k/M suffixes for compact display.
+ */
+function formatTokenCount(n: number): string {
+  if (n === 0) return "0";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+/**
+ * Format a cost value as a dollar string.
+ */
+function formatCost(cost: number): string {
+  if (cost === 0) return "$0.00";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
 function elapsed(startedAt: string | null): string {
   if (!startedAt) return "-";
   const start = new Date(startedAt).getTime();
@@ -590,6 +609,17 @@ export class WomboTUI {
       line1 += `  {gray-fg}│{/gray-fg}  Model: {yellow-fg}${s.model}{/yellow-fg}`;
     }
 
+    // Token usage from the live TokenCollector
+    const allRecords = this.monitor.tokenCollector.getAllRecords();
+    if (allRecords.length > 0) {
+      const totalTokens = allRecords.reduce((sum, r) => sum + r.total_tokens, 0);
+      const totalCostVal = allRecords.reduce((sum, r) => sum + r.cost, 0);
+      line1 += `  {gray-fg}│{/gray-fg}  {yellow-fg}${formatTokenCount(totalTokens)} tok{/yellow-fg}`;
+      if (totalCostVal > 0) {
+        line1 += ` {yellow-fg}${formatCost(totalCostVal)}{/yellow-fg}`;
+      }
+    }
+
     let line2 = ` Progress: {green-fg}${done}{/green-fg}/{white-fg}${total}{/white-fg}`;
     if (counts.running > 0)
       line2 += `  {blue-fg}${counts.running} running{/blue-fg}`;
@@ -653,8 +683,14 @@ export class WomboTUI {
       const retries =
         a.retries > 0 ? ` {yellow-fg}↻${a.retries}{/yellow-fg}` : "";
 
+      // Per-agent token usage (from live TokenCollector)
+      const summary = this.monitor.tokenCollector.getSummary(a.feature_id);
+      const tokenInfo = summary
+        ? ` {yellow-fg}${formatTokenCount(summary.total_tokens)}{/yellow-fg}`
+        : "";
+
       items.push(
-        ` ${fid} ${st}${pbar}${act}${retries} {gray-fg}${el}{/gray-fg}`
+        ` ${fid} ${st}${pbar}${act}${retries}${tokenInfo} {gray-fg}${el}{/gray-fg}`
       );
     }
 
