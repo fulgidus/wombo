@@ -42,6 +42,7 @@ import type { WomboConfig } from "../config.js";
 export type QuestPickerAction =
   | { type: "select"; questId: string | null }
   | { type: "plan"; questId: string }
+  | { type: "genesis" }
   | { type: "quit" };
 
 export interface QuestPickerOptions {
@@ -49,6 +50,7 @@ export interface QuestPickerOptions {
   config: WomboConfig;
   onSelect: (questId: string | null) => void;
   onPlan?: (questId: string) => void;
+  onGenesis?: () => void;
   onQuit: () => void;
 }
 
@@ -112,6 +114,7 @@ export class QuestPicker {
   private config: WomboConfig;
   private onSelect: (questId: string | null) => void;
   private onPlan?: (questId: string) => void;
+  private onGenesis?: () => void;
   private onQuit: () => void;
 
   /** "All Tasks" + quest summaries */
@@ -124,6 +127,7 @@ export class QuestPicker {
     this.config = opts.config;
     this.onSelect = opts.onSelect;
     this.onPlan = opts.onPlan;
+    this.onGenesis = opts.onGenesis;
     this.onQuit = opts.onQuit;
 
     this.loadQuests();
@@ -292,6 +296,11 @@ export class QuestPicker {
     this.screen.key(["p"], () => {
       this.planQuest();
     });
+
+    // G -- genesis (project-level decomposition)
+    this.screen.key(["g"], () => {
+      this.triggerGenesis();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -349,6 +358,14 @@ export class QuestPicker {
 
     this.destroy();
     this.onPlan(quest.id);
+  }
+
+  private triggerGenesis(): void {
+    if (this.creatingQuest) return;
+    if (!this.onGenesis) return;
+
+    this.destroy();
+    this.onGenesis();
   }
 
   // -----------------------------------------------------------------------
@@ -992,6 +1009,7 @@ export class QuestPicker {
     line1 += `  {gray-fg}Enter{/gray-fg} select`;
     line1 += `  {gray-fg}C{/gray-fg} create`;
     line1 += `  {gray-fg}P{/gray-fg} plan`;
+    line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 

@@ -105,6 +105,7 @@ import { cmdTasksShow } from "./commands/tasks/show.js";
 import { cmdTasksGraph } from "./commands/tasks/graph.js";
 import { cmdTui } from "./commands/tui.js";
 import { handleQuestSubcommand } from "./commands/quest.js";
+import { cmdGenesis } from "./commands/genesis.js";
 
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
@@ -176,6 +177,12 @@ export interface CLIArgs {
   hitlMode?: QuestHitlMode;
   /** Quest ID to scope a launch to (--quest <id>) */
   questId?: string;
+  /** Tech stack description for genesis (--tech-stack) */
+  techStack?: string;
+  /** Constraints for genesis (--constraint, can be repeated) */
+  genesisConstraints?: string[];
+  /** Skip TUI review (--no-tui for genesis) */
+  genesisNoTui?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -198,6 +205,7 @@ export const COMMAND_ALIASES: Record<string, string> = {
   t: "tasks",
   features: "tasks", // backward-compat full-word alias
   q: "quest",
+  g: "genesis",
   u: "upgrade",
   d: "describe",
   comp: "completion",
@@ -420,6 +428,15 @@ export function parseArgs(argv: string[]): CLIArgs {
         result.questId = requireValue(arg);
         break;
 
+      // --- Genesis-specific options ---
+      case "--tech-stack":
+        result.techStack = requireValue(arg);
+        break;
+      case "--constraint":
+        if (!result.genesisConstraints) result.genesisConstraints = [];
+        result.genesisConstraints.push(requireValue(arg));
+        break;
+
       // --- Positional (feature-id, title for add, etc.) ---
       default:
         if (!arg.startsWith("-")) {
@@ -460,6 +477,7 @@ Commands:                        (alias)
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
   quest                          (q)     Manage quests (scoped missions; see below)
+  genesis                        (g)     Run genesis planner (project-level decomposition into quests)
   tui                                    Interactive TUI: browse tasks, select, launch, monitor
   upgrade                        (u)     Check for updates and upgrade wombo-combo
   describe                       (d)     Emit JSON schema or TOON legend (--output toon)
@@ -485,7 +503,14 @@ Quest Subcommands:               (alias)
   quest activate <id>            (a)     Activate a quest (creates branch, sets status to active)
   quest pause <id>               (p)     Pause an active/planning quest
   quest complete <id>            (co)    Complete quest (merges branch into base; --force to skip merge)
-  quest abandon <id>             (ab)    Abandon quest without merging (--force to delete branch)
+  quest abandon <id>              (ab)    Abandon quest without merging (--force to delete branch)
+
+Genesis Options:
+  --tech-stack <text>      Describe the tech stack (e.g., "React, Node, Postgres")
+  --constraint <text>      Add a constraint (can be repeated: --constraint "..." --constraint "...")
+  --model <model>          Model override for the genesis planner agent
+  --no-tui                 Skip interactive review, auto-approve all quests
+  --dry-run                Show proposed quests without creating them
 
 Selection Options (for launch):
   --top-priority N         Select top N tasks by priority
@@ -576,6 +601,10 @@ Examples:
   woco quest list
   woco quest activate auth
   woco quest complete auth
+  woco genesis "Build a SaaS dashboard with auth, billing, and analytics"
+  woco genesis "Modernize the frontend" --tech-stack "React, TypeScript, Tailwind"
+  woco g "Add multi-tenant support" --constraint "No breaking changes" --constraint "Keep backward compat"
+  woco genesis "..." --dry-run
 `);
 }
 
@@ -883,6 +912,20 @@ async function main(): Promise<void> {
         force: args.force,
         outputFmt: args.outputFmt,
         fields: args.fields,
+      });
+      break;
+
+    case "genesis":
+      await cmdGenesis({
+        projectRoot: PROJECT_ROOT,
+        config,
+        vision: args.featureId,  // first positional arg is the vision text
+        techStack: args.techStack,
+        constraints: args.genesisConstraints,
+        model: args.model,
+        dryRun: args.dryRun,
+        noTui: args.noTui,
+        outputFmt: args.outputFmt,
       });
       break;
 
