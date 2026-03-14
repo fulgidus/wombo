@@ -43,6 +43,7 @@ import type { TUISession, SortField } from "./tui-session.js";
 import { saveTUISession } from "./tui-session.js";
 import type { WomboConfig } from "../config.js";
 import { WishlistOverlay } from "./tui-wishlist.js";
+import { UsageOverlay } from "./tui-usage-overlay.js";
 import { loadUsageRecords, totalUsage, groupBy as groupUsageBy } from "./token-usage.js";
 import type { UsageTotals } from "./token-usage.js";
 import type { UsageRecord } from "./token-collector.js";
@@ -311,6 +312,8 @@ export class TaskBrowser {
   private hasRunningWave: boolean = false;
   /** Active wishlist overlay (null when closed) */
   private wishlistOverlay: WishlistOverlay | null = null;
+  /** Active usage overlay (null when closed) */
+  private usageOverlay: UsageOverlay | null = null;
   /** Per-task token usage totals (loaded from usage.jsonl) */
   private taskUsage: Map<string, UsageTotals> = new Map();
   /** Overall usage totals across all records */
@@ -669,6 +672,11 @@ export class TaskBrowser {
     this.screen.key(["w"], () => {
       this.toggleWishlist();
     });
+
+    // u — toggle usage overlay
+    this.screen.key(["u"], () => {
+      this.toggleUsage();
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -830,6 +838,30 @@ export class TaskBrowser {
       {
         onClose: () => {
           this.wishlistOverlay = null;
+          this.taskList.focus();
+          this.refreshStatusBar();
+          this.screen.render();
+        },
+      }
+    );
+  }
+
+  private toggleUsage(): void {
+    // Close if already open
+    if (this.usageOverlay && !this.usageOverlay.isDestroyed()) {
+      this.usageOverlay.close();
+      this.usageOverlay = null;
+      this.taskList.focus();
+      this.screen.render();
+      return;
+    }
+
+    this.usageOverlay = new UsageOverlay(
+      this.screen,
+      this.projectRoot,
+      {
+        onClose: () => {
+          this.usageOverlay = null;
           this.taskList.focus();
           this.refreshStatusBar();
           this.screen.render();
@@ -1085,6 +1117,7 @@ export class TaskBrowser {
       line1 += `  {gray-fg}E{/gray-fg} errand`;
     }
     line1 += `  {gray-fg}W{/gray-fg} wishlist`;
+    line1 += `  {gray-fg}U{/gray-fg} usage`;
     line1 += `  {gray-fg}O{/gray-fg} sort`;
 
     if (selCount > 0) {
