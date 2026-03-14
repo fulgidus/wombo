@@ -54,6 +54,7 @@ import type { GenesisResult, ProposedQuest } from "../lib/genesis-planner.js";
 import { createBlankQuest } from "../lib/quest.js";
 import { runErrandPlanner, applyErrandPlan } from "../lib/errand-planner.js";
 import type { ErrandSpec } from "../lib/errand-planner.js";
+import { ProgressScreen, showConfirm } from "../lib/tui-progress.js";
 import { WishlistPicker } from "../lib/tui-wishlist.js";
 import type { WishlistAction } from "../lib/tui-wishlist.js";
 import { deleteItem as deleteWishlistItem } from "../lib/wishlist-store.js";
@@ -147,26 +148,34 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       // When the wave completes, cmdResume returns and we loop back.
       // When the user detaches (Q while agents running), cmdResume also
       // returns and we fall through to the browser with running wave indicator.
-      console.log(
-        `Active wave detected: ${existingState!.wave_id}. Resuming...`
-      );
-      try {
-        await cmdResume({
-          projectRoot,
-          config,
-          maxConcurrent: opts.maxConcurrent,
-          model: opts.model,
-          interactive: false,
-          noTui: false,
-          autoPush: opts.autoPush ?? false,
-          baseBranch: opts.baseBranch,
-          maxRetries: opts.maxRetries,
-          detachOnQuit: true,
-        });
-      } catch (err: any) {
-        // Don't crash -- show error and loop back
-        console.error(`\nResume error: ${err.message}\n`);
-        await sleep(2000);
+      {
+        const ps = new ProgressScreen("Resuming Wave", existingState!.wave_id);
+        ps.start();
+        ps.setStatus("Reconnecting to active wave...");
+        try {
+          // Brief flash before cmdResume takes over the screen
+          await sleep(500);
+          ps.destroy();
+          await cmdResume({
+            projectRoot,
+            config,
+            maxConcurrent: opts.maxConcurrent,
+            model: opts.model,
+            interactive: false,
+            noTui: false,
+            autoPush: opts.autoPush ?? false,
+            baseBranch: opts.baseBranch,
+            maxRetries: opts.maxRetries,
+            detachOnQuit: true,
+          });
+        } catch (err: any) {
+          // Don't crash -- show error and loop back
+          const errPs = new ProgressScreen("Resume Error");
+          errPs.start();
+          errPs.showError(`Resume error: ${err.message}`);
+          await errPs.waitForDismiss(3000);
+          errPs.destroy();
+        }
       }
       // After resume returns, don't auto-resume again — let the user
       // browse tasks and use Tab to switch back to the monitor if needed.
@@ -285,8 +294,11 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
           detachOnQuit: true,
         });
       } catch (err: any) {
-        console.error(`\nResume error: ${err.message}\n`);
-        await sleep(2000);
+        const ps = new ProgressScreen("Resume Error");
+        ps.start();
+        ps.showError(`Resume error: ${err.message}`);
+        await ps.waitForDismiss(3000);
+        ps.destroy();
       }
       process.stdout.write("\x1B[2J\x1B[H");
       // Don't auto-resume — let user browse tasks and Tab to monitor
@@ -324,8 +336,11 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         await cmdLaunch(launchOpts);
       } catch (err: any) {
         // Don't crash -- show error and loop back
-        console.error(`\nLaunch error: ${err.message}\n`);
-        await sleep(2000);
+        const ps = new ProgressScreen("Launch Error");
+        ps.start();
+        ps.showError(`Launch error: ${err.message}`);
+        await ps.waitForDismiss(3000);
+        ps.destroy();
       }
 
       // Clear terminal before showing picker/browser again
@@ -390,7 +405,7 @@ function showQuestPicker(
 
 /**
  * Run the quest planner agent, then show the plan review TUI.
- * Handles the full flow: spinner → planner → review → approve/cancel.
+ * Handles the full flow: progress screen → planner → review → approve/cancel.
  */
 async function handlePlanFlow(
   projectRoot: string,
@@ -400,8 +415,11 @@ async function handlePlanFlow(
 ): Promise<void> {
   const quest = loadQuest(projectRoot, questId);
   if (!quest) {
-    console.error(`\nQuest "${questId}" not found.\n`);
-    await sleep(2000);
+    const ps = new ProgressScreen("Error");
+    ps.start();
+    ps.showError(`Quest "${questId}" not found.`);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
 
@@ -410,18 +428,10 @@ async function handlePlanFlow(
   quest.status = "planning";
   saveQuest(projectRoot, quest);
 
-  // Show a planning spinner on the terminal (no blessed screen here)
-  console.log(`\n  Planning quest: ${quest.title} (${quest.id})`);
-  console.log(`  Running quest planner agent...\n`);
-
-  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
-  let spinIdx = 0;
-  let lastProgress = "";
-  const spinTimer = setInterval(() => {
-    const ch = spinChars[spinIdx % spinChars.length];
-    spinIdx++;
-    process.stdout.write(`\r  ${ch} ${lastProgress}`);
-  }, 120);
+  // Show progress screen with spinner
+  const ps = new ProgressScreen("Quest Planner", `${quest.title} (${quest.id})`);
+  ps.start();
+  ps.setStatus("Running quest planner agent...");
 
   let planResult: PlanResult;
 
@@ -429,44 +439,38 @@ async function handlePlanFlow(
     planResult = await runQuestPlanner(quest, projectRoot, config, {
       model: opts.model,
       onProgress: (msg) => {
-        lastProgress = msg;
+        ps.setStatus(msg);
       },
     });
   } catch (err: any) {
-    clearInterval(spinTimer);
-    process.stdout.write("\r" + " ".repeat(80) + "\r");
-    console.error(`\n  Planner error: ${err.message}\n`);
-    // Revert quest status
+    ps.showError(`Planner error: ${err.message}`);
     quest.status = prevStatus;
     saveQuest(projectRoot, quest);
-    await sleep(3000);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
-
-  clearInterval(spinTimer);
-  process.stdout.write("\r" + " ".repeat(80) + "\r");
 
   if (!planResult.success && planResult.tasks.length === 0) {
-    // Total failure — no tasks produced
-    console.error(`\n  Planner failed: ${planResult.error ?? "No tasks produced"}\n`);
+    ps.showError(`Planner failed: ${planResult.error ?? "No tasks produced"}`);
     quest.status = prevStatus;
     saveQuest(projectRoot, quest);
-    await sleep(3000);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
 
-  console.log(`  Planner produced ${planResult.tasks.length} tasks.`);
+  // Show results briefly before switching to plan review
+  ps.showSuccess(`Planner produced ${planResult.tasks.length} tasks.`);
   if (planResult.issues.length > 0) {
     const errors = planResult.issues.filter((i) => i.level === "error").length;
     const warnings = planResult.issues.filter((i) => i.level === "warning").length;
-    if (errors > 0) console.log(`  ${errors} validation error(s).`);
-    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+    if (errors > 0) ps.addLine(`  {red-fg}${errors} validation error(s){/red-fg}`);
+    if (warnings > 0) ps.addLine(`  {yellow-fg}${warnings} validation warning(s){/yellow-fg}`);
   }
-  console.log(`  Opening plan review...\n`);
-  await sleep(1000);
-
-  // Clear terminal before showing the plan review TUI
-  process.stdout.write("\x1B[2J\x1B[H");
+  ps.addLine("  Opening plan review...");
+  await ps.waitForDismiss(1500);
+  ps.destroy();
 
   // Show the plan review TUI
   const reviewAction = await showPlanReview(
@@ -479,14 +483,16 @@ async function handlePlanFlow(
     // User cancelled — revert quest status
     quest.status = prevStatus;
     saveQuest(projectRoot, quest);
-    console.log(`\n  Plan discarded. Quest "${questId}" reverted to "${prevStatus}".\n`);
-    await sleep(1500);
+    const ps2 = new ProgressScreen("Plan Cancelled");
+    ps2.start();
+    ps2.showInfo(`Plan discarded. Quest "${questId}" reverted to "${prevStatus}".`);
+    await ps2.waitForDismiss(2000);
+    ps2.destroy();
     return;
   }
 
   // User approved — apply the plan
   try {
-    // Update planResult with only the accepted tasks
     const approvedResult: PlanResult = {
       ...planResult,
       tasks: reviewAction.tasks,
@@ -494,18 +500,22 @@ async function handlePlanFlow(
     };
 
     const tasks = applyPlanToQuest(approvedResult, quest, projectRoot, config);
-    console.log(`\n  Plan approved! Created ${tasks.length} tasks.`);
-    console.log(`  Quest "${questId}" is now active.`);
+    const ps2 = new ProgressScreen("Plan Approved");
+    ps2.start();
+    ps2.showSuccess(`Created ${tasks.length} tasks. Quest "${questId}" is now active.`);
     if (reviewAction.knowledge) {
-      console.log(`  Saved knowledge file (${reviewAction.knowledge.length} chars).`);
+      ps2.addLine(`  Saved knowledge file (${reviewAction.knowledge.length} chars).`);
     }
-    console.log();
-    await sleep(2000);
+    await ps2.waitForDismiss(2500);
+    ps2.destroy();
   } catch (err: any) {
-    console.error(`\n  Failed to apply plan: ${err.message}\n`);
+    const ps2 = new ProgressScreen("Plan Error");
+    ps2.start();
+    ps2.showError(`Failed to apply plan: ${err.message}`);
     quest.status = prevStatus;
     saveQuest(projectRoot, quest);
-    await sleep(3000);
+    await ps2.waitForDismiss(3000);
+    ps2.destroy();
   }
 }
 
@@ -516,7 +526,7 @@ async function handlePlanFlow(
 /**
  * Run the genesis planner: take a vision string, run the genesis planner
  * agent, then show the genesis review TUI.
- * Handles the full flow: spinner → planner → review → create quests.
+ * Handles the full flow: progress screen → planner → review → create quests.
  */
 async function handleGenesisFlow(
   projectRoot: string,
@@ -525,27 +535,21 @@ async function handleGenesisFlow(
   vision: string
 ): Promise<void> {
   if (!vision) {
-    console.log("\n  No vision provided. Returning to quest picker.\n");
-    await sleep(1500);
+    const ps = new ProgressScreen("Genesis");
+    ps.start();
+    ps.showInfo("No vision provided. Returning to quest picker.");
+    await ps.waitForDismiss(2000);
+    ps.destroy();
     return;
   }
 
   // Gather existing quest IDs so the planner can avoid duplicates
   const existingQuestIds = listQuestIds(projectRoot);
 
-  // Show a planning spinner on the terminal
-  console.log();
-  console.log(`  Running genesis planner agent...`);
-  console.log();
-
-  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
-  let spinIdx = 0;
-  let lastProgress = "";
-  const spinTimer = setInterval(() => {
-    const ch = spinChars[spinIdx % spinChars.length];
-    spinIdx++;
-    process.stdout.write(`\r  ${ch} ${lastProgress}`);
-  }, 120);
+  // Show progress screen with spinner
+  const ps = new ProgressScreen("Genesis Planner");
+  ps.start();
+  ps.setStatus("Running genesis planner agent...");
 
   let genesisResult: GenesisResult;
 
@@ -554,46 +558,44 @@ async function handleGenesisFlow(
       existingQuestIds,
       model: opts.model,
       onProgress: (msg) => {
-        lastProgress = msg;
+        ps.setStatus(msg);
       },
     });
   } catch (err: any) {
-    clearInterval(spinTimer);
-    process.stdout.write("\r" + " ".repeat(80) + "\r");
-    console.error(`\n  Genesis planner error: ${err.message}\n`);
-    await sleep(3000);
+    ps.showError(`Genesis planner error: ${err.message}`);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
-
-  clearInterval(spinTimer);
-  process.stdout.write("\r" + " ".repeat(80) + "\r");
 
   if (!genesisResult.success && genesisResult.quests.length === 0) {
-    // Total failure — no quests produced
-    console.error(`\n  Genesis planner failed: ${genesisResult.error ?? "No quests produced"}\n`);
-    await sleep(3000);
+    ps.showError(`Genesis planner failed: ${genesisResult.error ?? "No quests produced"}`);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
 
-  console.log(`  Genesis planner produced ${genesisResult.quests.length} quests.`);
+  // Show results briefly before switching to genesis review
+  ps.showSuccess(`Genesis planner produced ${genesisResult.quests.length} quests.`);
   if (genesisResult.issues.length > 0) {
     const errors = genesisResult.issues.filter((i) => i.level === "error").length;
     const warnings = genesisResult.issues.filter((i) => i.level === "warning").length;
-    if (errors > 0) console.log(`  ${errors} validation error(s).`);
-    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+    if (errors > 0) ps.addLine(`  {red-fg}${errors} validation error(s){/red-fg}`);
+    if (warnings > 0) ps.addLine(`  {yellow-fg}${warnings} validation warning(s){/yellow-fg}`);
   }
-  console.log(`  Opening genesis review...\n`);
-  await sleep(1000);
-
-  // Clear terminal before showing the genesis review TUI
-  process.stdout.write("\x1B[2J\x1B[H");
+  ps.addLine("  Opening genesis review...");
+  await ps.waitForDismiss(1500);
+  ps.destroy();
 
   // Show the genesis review TUI
   const reviewAction = await showGenesisReview(genesisResult);
 
   if (reviewAction.type === "cancel") {
-    console.log(`\n  Genesis plan discarded.\n`);
-    await sleep(1500);
+    const ps2 = new ProgressScreen("Genesis Cancelled");
+    ps2.start();
+    ps2.showInfo("Genesis plan discarded.");
+    await ps2.waitForDismiss(2000);
+    ps2.destroy();
     return;
   }
 
@@ -618,20 +620,22 @@ async function handleGenesisFlow(
     created.push(quest.id);
   }
 
-  console.log(`\n  Genesis plan approved! Created ${created.length} quests:`);
-  for (const id of created) {
-    console.log(`    - ${id}`);
-  }
+  // Show approval result
+  const ps2 = new ProgressScreen("Genesis Approved");
+  ps2.start();
+  const questList = created.map((id) => `    - ${id}`).join("\n");
+  ps2.showSuccess(`Created ${created.length} quests.`);
+  ps2.addLine(questList);
 
   // Save knowledge if the planner produced any (attach to the first quest)
   const knowledge = reviewAction.knowledge;
   if (knowledge && created.length > 0) {
     saveQuestKnowledge(projectRoot, created[0], knowledge);
-    console.log(`  Saved knowledge file (${knowledge.length} chars) to quest "${created[0]}".`);
+    ps2.addLine(`  Saved knowledge file (${knowledge.length} chars) to quest "${created[0]}".`);
   }
 
-  console.log();
-  await sleep(2000);
+  await ps2.waitForDismiss(2500);
+  ps2.destroy();
 }
 
 // ---------------------------------------------------------------------------
@@ -652,24 +656,18 @@ async function handleErrandFlow(
   spec: ErrandSpec
 ): Promise<void> {
   if (!spec.description) {
-    console.log("\n  No description provided. Returning.\n");
-    await sleep(1500);
+    const ps = new ProgressScreen("Errand");
+    ps.start();
+    ps.showInfo("No description provided. Returning.");
+    await ps.waitForDismiss(2000);
+    ps.destroy();
     return;
   }
 
-  // Show a planning spinner on the terminal
-  console.log();
-  console.log(`  Running errand planner...`);
-  console.log();
-
-  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
-  let spinIdx = 0;
-  let lastProgress = "";
-  const spinTimer = setInterval(() => {
-    const ch = spinChars[spinIdx % spinChars.length];
-    spinIdx++;
-    process.stdout.write(`\r  ${ch} ${lastProgress}`);
-  }, 120);
+  // Show progress screen with spinner
+  const ps = new ProgressScreen("Errand Planner");
+  ps.start();
+  ps.setStatus("Running errand planner...");
 
   let planResult: PlanResult;
 
@@ -677,40 +675,36 @@ async function handleErrandFlow(
     planResult = await runErrandPlanner(spec, projectRoot, config, {
       model: opts.model,
       onProgress: (msg) => {
-        lastProgress = msg;
+        ps.setStatus(msg);
       },
     });
   } catch (err: any) {
-    clearInterval(spinTimer);
-    process.stdout.write("\r" + " ".repeat(80) + "\r");
-    console.error(`\n  Errand planner error: ${err.message}\n`);
-    await sleep(3000);
+    ps.showError(`Errand planner error: ${err.message}`);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
-
-  clearInterval(spinTimer);
-  process.stdout.write("\r" + " ".repeat(80) + "\r");
 
   if (!planResult.success && planResult.tasks.length === 0) {
-    console.error(`\n  Errand planner failed: ${planResult.error ?? "No tasks produced"}\n`);
-    await sleep(3000);
+    ps.showError(`Errand planner failed: ${planResult.error ?? "No tasks produced"}`);
+    await ps.waitForDismiss(3000);
+    ps.destroy();
     return;
   }
 
-  console.log(`  Errand planner produced ${planResult.tasks.length} task(s).`);
+  const desc = spec.description;
+
+  // Show results briefly before switching to plan review
+  ps.showSuccess(`Errand planner produced ${planResult.tasks.length} task(s).`);
   if (planResult.issues.length > 0) {
     const errors = planResult.issues.filter((i) => i.level === "error").length;
     const warnings = planResult.issues.filter((i) => i.level === "warning").length;
-    if (errors > 0) console.log(`  ${errors} validation error(s).`);
-    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+    if (errors > 0) ps.addLine(`  {red-fg}${errors} validation error(s){/red-fg}`);
+    if (warnings > 0) ps.addLine(`  {yellow-fg}${warnings} validation warning(s){/yellow-fg}`);
   }
-  console.log(`  Opening plan review...\n`);
-  await sleep(1000);
-
-  // Clear terminal before showing the plan review TUI
-  process.stdout.write("\x1B[2J\x1B[H");
-
-  const desc = spec.description;
+  ps.addLine("  Opening plan review...");
+  await ps.waitForDismiss(1500);
+  ps.destroy();
 
   // Reuse the plan review TUI (it works for any set of proposed tasks)
   const reviewAction = await showPlanReview(
@@ -720,8 +714,11 @@ async function handleErrandFlow(
   );
 
   if (reviewAction.type === "cancel") {
-    console.log(`\n  Errand plan discarded.\n`);
-    await sleep(1500);
+    const ps2 = new ProgressScreen("Errand Cancelled");
+    ps2.start();
+    ps2.showInfo("Errand plan discarded.");
+    await ps2.waitForDismiss(2000);
+    ps2.destroy();
     return;
   }
 
@@ -734,15 +731,19 @@ async function handleErrandFlow(
     };
 
     const tasks = applyErrandPlan(approvedResult, projectRoot, config);
-    console.log(`\n  Errand approved! Created ${tasks.length} task(s):`);
-    for (const t of tasks) {
-      console.log(`    - ${t.id}: ${t.title}`);
-    }
-    console.log();
-    await sleep(2000);
+    const ps2 = new ProgressScreen("Errand Approved");
+    ps2.start();
+    const taskList = tasks.map((t) => `    - ${t.id}: ${t.title}`).join("\n");
+    ps2.showSuccess(`Created ${tasks.length} task(s).`);
+    ps2.addLine(taskList);
+    await ps2.waitForDismiss(2500);
+    ps2.destroy();
   } catch (err: any) {
-    console.error(`\n  Failed to create errand tasks: ${err.message}\n`);
-    await sleep(3000);
+    const ps2 = new ProgressScreen("Errand Error");
+    ps2.start();
+    ps2.showError(`Failed to create errand tasks: ${err.message}`);
+    await ps2.waitForDismiss(3000);
+    ps2.destroy();
   }
 }
 
@@ -813,43 +814,38 @@ function showWishlistPicker(projectRoot: string): Promise<WishlistAction> {
 
 /**
  * After a wishlist item has been promoted, ask the user whether to delete it.
- * Uses a simple readline prompt (no blessed screen is active at this point).
+ * Uses a blessed confirm popup (no readline needed).
  */
 async function maybeDeleteWishlistItem(
   projectRoot: string,
   item: WishlistItem
 ): Promise<void> {
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
   const truncText =
     item.text.length > 50 ? item.text.slice(0, 47) + "..." : item.text;
 
-  const answer = await new Promise<string>((resolve) => {
-    rl.question(
-      `\n  Delete wishlist item "${truncText}"? [y/N] `,
-      (ans) => {
-        rl.close();
-        resolve(ans.trim().toLowerCase());
-      }
-    );
-  });
+  const confirmed = await showConfirm(
+    "Delete Wishlist Item",
+    `Delete "${truncText}" from wishlist?`
+  );
 
-  if (answer === "y" || answer === "yes") {
+  if (confirmed) {
     const deleted = deleteWishlistItem(projectRoot, item.id);
+    const ps = new ProgressScreen("Wishlist");
+    ps.start();
     if (deleted) {
-      console.log(`  Wishlist item deleted.\n`);
+      ps.showSuccess("Wishlist item deleted.");
     } else {
-      console.log(`  Item not found (may have been already deleted).\n`);
+      ps.showInfo("Item not found (may have been already deleted).");
     }
+    await ps.waitForDismiss(1500);
+    ps.destroy();
   } else {
-    console.log(`  Wishlist item kept.\n`);
+    const ps = new ProgressScreen("Wishlist");
+    ps.start();
+    ps.showInfo("Wishlist item kept.");
+    await ps.waitForDismiss(1000);
+    ps.destroy();
   }
-
-  await sleep(1000);
 }
 
 // ---------------------------------------------------------------------------
