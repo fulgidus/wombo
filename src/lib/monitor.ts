@@ -41,6 +41,10 @@ export interface OpenCodeEvent {
       input: number;
       output: number;
       reasoning: number;
+      cache?: {
+        read: number;
+        write: number;
+      };
     };
     state?: {
       status?: string;
