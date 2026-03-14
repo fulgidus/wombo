@@ -22,6 +22,100 @@
  *       }
  *     }
  *   }
+ *
+ * ## Harness Extensibility — Supporting Other Agent Harnesses
+ *
+ * The token tracking system is designed to be harness-agnostic. The
+ * `UsageRecord.harness` field identifies which agent harness produced the
+ * data (e.g., "opencode", "aider", "claude-code", "gemini-cli").
+ *
+ * Currently, only OpenCode's JSON event stream is parsed natively. To add
+ * support for additional harnesses (e.g., Claude Code CLI, Gemini CLI,
+ * Aider), implement a harness-specific event adapter:
+ *
+ * ### Adding a new harness adapter
+ *
+ * 1. **Define the event shape**: Each harness emits events in its own format.
+ *    Create a type describing the harness's token usage output. For example:
+ *
+ *    ```ts
+ *    interface ClaudeCodeUsageEvent {
+ *      type: "usage";
+ *      input_tokens: number;
+ *      output_tokens: number;
+ *      cache_creation_input_tokens: number;
+ *      cache_read_input_tokens: number;
+ *    }
+ *    ```
+ *
+ * 2. **Write a parser**: Create a function similar to `parseUsageFromEvent()`
+ *    that maps the harness-specific event to a `UsageRecord`:
+ *
+ *    ```ts
+ *    function parseClaudeCodeUsage(
+ *      event: ClaudeCodeUsageEvent,
+ *      taskId: string,
+ *      context?: { quest_id?: string | null; model?: string | null }
+ *    ): UsageRecord {
+ *      return {
+ *        task_id: taskId,
+ *        quest_id: context?.quest_id ?? null,
+ *        model: context?.model ?? null,
+ *        provider: "anthropic",
+ *        harness: "claude-code",
+ *        input_tokens: event.input_tokens,
+ *        output_tokens: event.output_tokens,
+ *        cache_read: event.cache_read_input_tokens,
+ *        cache_write: event.cache_creation_input_tokens,
+ *        reasoning_tokens: 0,
+ *        total_tokens: event.input_tokens + event.output_tokens,
+ *        cost: 0, // Claude Code may not report cost directly
+ *        is_final_step: false,
+ *        timestamp: new Date().toISOString(),
+ *      };
+ *    }
+ *    ```
+ *
+ * 3. **Wire into ProcessMonitor**: In `monitor.ts`, detect the harness type
+ *    from the agent config and route events to the appropriate parser. The
+ *    `TokenCollector.ingestEvent()` method currently assumes OpenCode format;
+ *    add a sibling method or extend it with a harness discriminator:
+ *
+ *    ```ts
+ *    collector.ingestHarnessEvent("my-feature", "claude-code", rawEvent);
+ *    ```
+ *
+ * 4. **Register in agent config**: The harness name is set when registering
+ *    an agent with `TokenCollector.registerAgent()`. Ensure the launch
+ *    command passes the correct harness name from the agent definition.
+ *
+ * ### Known harness event formats (for future reference)
+ *
+ * - **OpenCode** (current): JSON-line stream on stdout, `step_finish` events
+ *   with `part.tokens` object. Parsing: `parseUsageFromEvent()` in this file.
+ *
+ * - **Claude Code CLI**: Streams JSON events to stdout when run with
+ *   `--output-format stream-json`. Usage events have type "result" with
+ *   `usage.input_tokens` / `usage.output_tokens` fields. Cost is not
+ *   reported directly — compute from model pricing tables.
+ *
+ * - **Gemini CLI**: May report usage via API response metadata. Token counts
+ *   are in `usageMetadata.promptTokenCount` / `usageMetadata.candidatesTokenCount`.
+ *   No standardized CLI streaming format yet — poll API responses instead.
+ *
+ * - **Aider**: Reports token usage in its output log. Parse from the
+ *   cost/token summary lines emitted at the end of each edit cycle.
+ *
+ * ### Design principles for harness adapters
+ *
+ * - All adapters produce the same `UsageRecord` type — the storage and
+ *   aggregation layers are completely harness-agnostic.
+ * - The `harness` field enables `woco usage --by harness` grouping.
+ * - Adapters should be fail-safe: if parsing fails, skip the event
+ *   silently rather than crashing the monitor.
+ * - Cost normalization is optional — set `cost: 0` if the harness
+ *   doesn't report costs. Users can compute cost from token counts
+ *   and known model pricing.
  */
 
 import type { OpenCodeEvent } from "./monitor.js";
