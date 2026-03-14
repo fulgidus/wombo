@@ -1113,9 +1113,12 @@ async function launchWaveHeadless(
       interactive: false,
       config,
       onQuit: () => {
-        // Same as SIGINT — save state and exit
-        for (const agent of state.agents) {
-          if (agent.status === "running" || agent.status === "resolving_conflict") {
+          // Audit (wave-detach-audit): This is the TUI quit path — equivalent
+          // to the SIGINT handler. Kills all agents, saves state, and exits.
+          // Agents are non-detached children, so they die when we exit anyway,
+          // but explicit killAll() gives them SIGTERM for graceful shutdown.
+          for (const agent of state.agents) {
+            if (agent.status === "running" || agent.status === "resolving_conflict") {
             updateAgent(state, agent.feature_id, { activity: "interrupted" });
           }
         }
@@ -1156,6 +1159,18 @@ async function launchWaveHeadless(
   };
 
   // Handle graceful shutdown
+  //
+  // Audit (wave-detach-audit): This is the critical shutdown path for headless
+  // agents. Because agents are spawned with `detached: false` (see launcher.ts),
+  // they would be killed by the OS when the parent exits anyway. However, calling
+  // `monitor.killAll()` explicitly before `process.exit(0)` ensures:
+  //   1. Each agent gets SIGTERM (not SIGKILL), allowing graceful shutdown
+  //   2. Wave state is saved BEFORE agents die, preserving progress
+  //   3. The TUI is cleanly destroyed before terminal restoration
+  //
+  // If the parent is killed with SIGKILL (uncatchable), agents die immediately
+  // with no state save. `woco resume` recovers from this by detecting orphaned
+  // worktrees with commits and re-verifying or re-launching as appropriate.
   process.on("SIGINT", () => {
     if (tuiRef.current) tuiRef.current.stop();
     for (const agent of state.agents) {

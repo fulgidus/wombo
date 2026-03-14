@@ -8,6 +8,33 @@
  *   - Detect errors and failures
  *   - Write per-agent raw log files for diagnostics
  *   - Maintain per-agent parsed activity log for TUI preview
+ *
+ * ## Process Lifecycle (audit: wave-detach-audit)
+ *
+ * ProcessMonitor manages the lifecycle of headless agent child processes:
+ *
+ * **Normal flow**: Agent stdout → JSON event parsing → callbacks → completion
+ *   1. `addProcess()` registers a ChildProcess and attaches stdout/stderr listeners
+ *   2. Stdout data is parsed line-by-line as JSON events
+ *   3. Callbacks fire: `onSessionId`, `onActivity`, `onComplete`, `onError`
+ *   4. On process exit (code 0 or sawFinalStop), `onComplete` is called
+ *   5. On process exit (non-zero, no final stop), `onError` is called
+ *
+ * **Teardown flow**: Parent quit → `killAll()` → SIGTERM to each child
+ *   1. TUI `onQuit` or SIGINT handler calls `monitor.killAll()`
+ *   2. `killAll()` iterates all processes and calls `remove(featureId)`
+ *   3. `remove()` sends SIGTERM to the child process (if still running)
+ *   4. The process map entry is deleted — no further events are tracked
+ *
+ * **Key behavior**: `remove()` and `killAll()` intentionally kill child
+ * processes. This is correct because headless agents are spawned with
+ * `detached: false` — they are tied to the parent and would die anyway
+ * when the parent exits. Explicitly killing them ensures a clean shutdown
+ * with proper state saving before the parent terminates.
+ *
+ * **Edge case**: If the parent is killed with SIGKILL (not catchable),
+ * child processes die with no cleanup. `woco resume` handles this by
+ * detecting orphaned worktrees with commits and re-verifying/re-launching.
  */
 
 import type { ChildProcess } from "node:child_process";
@@ -490,6 +517,14 @@ export class ProcessMonitor {
     return count;
   }
 
+  /**
+   * Remove a process from monitoring and kill it if still running.
+   *
+   * Sends SIGTERM (not SIGKILL) to allow the agent to handle shutdown
+   * gracefully (e.g., save partial work, close files). The process map
+   * entry is deleted immediately — any subsequent events from the dying
+   * process are ignored.
+   */
   remove(featureId: string): void {
     const m = this.processes.get(featureId);
     if (m && !m.done) {
@@ -500,6 +535,14 @@ export class ProcessMonitor {
     this.processes.delete(featureId);
   }
 
+  /**
+   * Kill all monitored processes. Called during graceful shutdown
+   * (SIGINT, TUI quit) to ensure no orphaned agent processes remain.
+   *
+   * This is the primary teardown path. After killAll(), the parent
+   * process saves wave state and exits. Agents can be re-launched
+   * later via `woco resume`.
+   */
   killAll(): void {
     for (const id of this.processes.keys()) {
       this.remove(id);
