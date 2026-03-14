@@ -3,15 +3,15 @@ title: Promote wishlist items to errands or quests
 description: "Add promotion flow from wishlist TUI: E key on a selected item pre-fills the errand description prompt and
   triggers the errand flow. G key promotes to genesis input. After promotion, optionally delete the wishlist item. Wire
   the callbacks through tui.ts main loop."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: medium
 depends_on:
   - wishlist-store
 effort: PT1H
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:15:17.540Z
 constraints: []
 forbidden: []
 references: []

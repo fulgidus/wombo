@@ -3,14 +3,14 @@ title: Replace F5 sort keybind with laptop-friendly alternative
 description: F5 is used for keyboard backlight on many laptops, making the F5 sort cycling binding unusable without Fn.
   Replace the F5 binding in tui-browser.ts with a more ergonomic key (e.g. R for resort/reorder, or O for order). Keep
   Tab as the primary sort key when no wave is running. Update the status bar legend accordingly.
-status: backlog
+status: done
 completion: 100
 difficulty: trivial
 priority: medium
 depends_on: []
 effort: PT30M
 started_at: null
-ended_at: 2026-03-14T09:50:16.501Z
+ended_at: 2026-03-14T10:17:25.075Z
 constraints: []
 forbidden: []
 references: []

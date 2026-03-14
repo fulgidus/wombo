@@ -1,0 +1,76 @@
+{
+  "wave_id": "wave-2026-03-14-648",
+  "base_branch": "main",
+  "started_at": "2026-03-14T09:48:35.893Z",
+  "exported_at": "2026-03-14T09:54:54.109Z",
+  "model": null,
+  "max_concurrent": 8,
+  "interactive": false,
+  "summary": {
+    "total": 4,
+    "succeeded": 4,
+    "failed": 0,
+    "merged": 4,
+    "verified": 0,
+    "total_retries": 0,
+    "total_duration_ms": 787323
+  },
+  "agents": [
+    {
+      "feature_id": "wave-detach-audit",
+      "branch": "feature/wave-detach-audit",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T09:48:35.895Z",
+      "completed_at": "2026-03-14T09:53:06.596Z",
+      "duration_ms": 270701,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "tui-sort-keybind",
+      "branch": "feature/tui-sort-keybind",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T09:48:36.572Z",
+      "completed_at": "2026-03-14T09:50:16.468Z",
+      "duration_ms": 99896,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "token-parse",
+      "branch": "feature/token-parse",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T09:48:37.254Z",
+      "completed_at": "2026-03-14T09:53:53.758Z",
+      "duration_ms": 316504,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "wishlist-store",
+      "branch": "feature/wishlist-store",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T09:48:37.941Z",
+      "completed_at": "2026-03-14T09:50:18.163Z",
+      "duration_ms": 100222,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    }
+  ]
+}

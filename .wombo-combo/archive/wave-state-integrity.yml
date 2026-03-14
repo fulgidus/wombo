@@ -4,14 +4,14 @@ description: "When the user quits the wave monitor (B key or Q from monitor), ve
   (.wombo-combo/state.json) is written correctly and not left in a partial/corrupt state. Add proper cleanup hooks:
   flush pending state writes before destroying the screen. Test by killing the monitor mid-wave and checking state.json
   is valid."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on: []
 effort: PT30M
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:08:21.823Z
 constraints: []
 forbidden: []
 references: []

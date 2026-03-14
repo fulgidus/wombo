@@ -1,0 +1,90 @@
+{
+  "wave_id": "wave-2026-03-14-663",
+  "base_branch": "main",
+  "started_at": "2026-03-14T10:03:55.100Z",
+  "exported_at": "2026-03-14T10:15:37.292Z",
+  "model": null,
+  "max_concurrent": 8,
+  "interactive": false,
+  "summary": {
+    "total": 5,
+    "succeeded": 5,
+    "failed": 0,
+    "merged": 5,
+    "verified": 0,
+    "total_retries": 0,
+    "total_duration_ms": 2034790
+  },
+  "agents": [
+    {
+      "feature_id": "wave-state-integrity",
+      "branch": "feature/wave-state-integrity",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:03:55.102Z",
+      "completed_at": "2026-03-14T10:08:21.791Z",
+      "duration_ms": 266689,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "wave-reconnect",
+      "branch": "feature/wave-reconnect",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:03:55.779Z",
+      "completed_at": "2026-03-14T10:15:19.106Z",
+      "duration_ms": 683327,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "wishlist-promote",
+      "branch": "feature/wishlist-promote",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:03:56.469Z",
+      "completed_at": "2026-03-14T10:15:17.504Z",
+      "duration_ms": 681035,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "wishlist-tui",
+      "branch": "feature/wishlist-tui",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:03:57.149Z",
+      "completed_at": "2026-03-14T10:07:40.917Z",
+      "duration_ms": 223768,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    },
+    {
+      "feature_id": "token-core",
+      "branch": "feature/token-core",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:03:57.831Z",
+      "completed_at": "2026-03-14T10:06:57.802Z",
+      "duration_ms": 179971,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    }
+  ]
+}

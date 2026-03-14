@@ -4,8 +4,8 @@ description: "End-to-end verification of background wave support. After prerequi
   integrity, and reconnection, this task covers: 1) Handle agents that finish while monitor is closed — detect
   completion on next monitor open and update state/UI. 2) Show a 'running wave detected' indicator in the Task Browser.
   3) Edge cases: all agents finish while closed, mixed success/failure while closed."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on:
@@ -14,7 +14,7 @@ depends_on:
   - wave-reconnect
 effort: PT30M
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:33:55.414Z
 constraints: []
 forbidden: []
 references: []

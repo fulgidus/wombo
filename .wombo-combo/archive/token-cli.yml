@@ -4,15 +4,15 @@ description: "Add 'usage' command to index.ts. Options: --by task|quest|model|pr
   <ISO date>, --until <ISO date>, --format table|json (default: table). Table output: aligned columns showing group key,
   input tokens, output tokens, cache read, cache write, total. JSON output: raw aggregation result. Register in help
   text and schema."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: medium
 depends_on:
   - token-core
 effort: PT45M
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:23:27.320Z
 constraints: []
 forbidden: []
 references: []

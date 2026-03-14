@@ -1,0 +1,34 @@
+{
+  "wave_id": "wave-2026-03-14-694",
+  "base_branch": "main",
+  "started_at": "2026-03-14T10:34:29.028Z",
+  "exported_at": "2026-03-14T10:39:39.602Z",
+  "model": null,
+  "max_concurrent": 8,
+  "interactive": false,
+  "summary": {
+    "total": 1,
+    "succeeded": 1,
+    "failed": 0,
+    "merged": 1,
+    "verified": 0,
+    "total_retries": 0,
+    "total_duration_ms": 304347
+  },
+  "agents": [
+    {
+      "feature_id": "token-tracking",
+      "branch": "feature/token-tracking",
+      "status": "merged",
+      "retries": 0,
+      "max_retries": 2,
+      "build_passed": true,
+      "started_at": "2026-03-14T10:34:29.030Z",
+      "completed_at": "2026-03-14T10:39:33.377Z",
+      "duration_ms": 304347,
+      "error": null,
+      "had_merge_conflict": false,
+      "build_output": null
+    }
+  ]
+}

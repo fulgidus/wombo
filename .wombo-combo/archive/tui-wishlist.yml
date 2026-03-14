@@ -3,8 +3,8 @@ title: Wishlist/idea jotter in TUI
 description: Integration and polish for the wishlist feature. Wire W key into Quest Picker and Task Browser status bars,
   verify end-to-end flow (add idea → view list → promote to errand/quest), handle edge cases (empty list, long text
   wrapping, special characters in YAML).
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: medium
 depends_on:
@@ -12,7 +12,7 @@ depends_on:
   - wishlist-promote
 effort: PT30M
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:25:00.415Z
 constraints: []
 forbidden: []
 references: []

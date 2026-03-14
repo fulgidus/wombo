@@ -1,29 +1,29 @@
 {
-  "wave_id": "wave-2026-03-13-049",
+  "wave_id": "wave-2026-03-14-694",
   "base_branch": "main",
-  "started_at": "2026-03-13T23:49:30.762Z",
-  "updated_at": "2026-03-14T00:01:01.109Z",
+  "started_at": "2026-03-14T10:34:29.028Z",
+  "updated_at": "2026-03-14T10:39:39.599Z",
   "max_concurrent": 8,
   "model": null,
   "interactive": false,
   "agents": [
     {
-      "feature_id": "tdd-red-green-coercion",
-      "branch": "feature/tdd-red-green-coercion",
-      "worktree": "/home/fulgidus/Documents/wombo-combo-worktrees/tdd-red-green-coercion",
-      "session_id": "ses_316650d1dffespdzjLs3PfWdD3",
-      "pid": 589698,
+      "feature_id": "token-tracking",
+      "branch": "feature/token-tracking",
+      "worktree": "/home/fulgidus/Documents/wombo-combo-worktrees/token-tracking",
+      "session_id": "ses_31416915cffeaA1eCO5cj4ROyq",
+      "pid": 918541,
       "status": "merged",
       "activity": "done",
-      "activity_updated_at": "2026-03-14T00:00:56.274Z",
+      "activity_updated_at": "2026-03-14T10:39:31.672Z",
       "retries": 0,
       "max_retries": 2,
-      "started_at": "2026-03-13T23:49:30.763Z",
-      "completed_at": "2026-03-14T00:00:57.745Z",
+      "started_at": "2026-03-14T10:34:29.030Z",
+      "completed_at": "2026-03-14T10:39:33.377Z",
       "build_passed": true,
       "build_output": null,
       "error": null,
-      "effort_estimate_ms": 100800000,
+      "effort_estimate_ms": 1800000,
       "stream_index": null,
       "depends_on": [],
       "depended_on_by": [],
@@ -31,5 +31,6 @@
       "agent_type": null
     }
   ],
-  "schedule_plan": null
+  "schedule_plan": null,
+  "quest_id": null
 }

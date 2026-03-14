@@ -4,8 +4,8 @@ description: "Integration and polish for the token tracking system. After all pr
   aggregate, CLI, TUI), this task covers: 1) End-to-end test — launch a wave, verify usage records are written, run woco
   usage and confirm output. 2) Add harness extensibility notes for future claude/gemini support. 3) Document the usage
   command in README or help text."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: medium
 depends_on:
@@ -13,7 +13,7 @@ depends_on:
   - token-tui
 effort: PT30M
 started_at: null
-ended_at: null
+ended_at: 2026-03-14T10:39:33.417Z
 constraints: []
 forbidden: []
 references: []
