@@ -138,7 +138,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-0
     title: "Foundation — prerequisites and refactoring"
-    status: pending
+    status: done
     tasks:
 
       - id: p0-branch-prefix-rename
@@ -147,7 +147,7 @@ phases:
           Update config default branchPrefix from "feature/" to "task/".
           Update all references in templates, agent prompts, and docs.
           Existing "feature/" branches should still be recognized (backward compat).
-        status: pending
+        status: done
         effort: PT2H
         files:
           - src/config.ts
@@ -161,7 +161,7 @@ phases:
           Create QuestFile interface, QuestStatus type, QuestConstraints type.
           Define the layered constraint merge/override model.
           Add quest template YAML.
-        status: pending
+        status: done
         effort: PT3H
         files:
           - src/lib/quest.ts (new)
@@ -173,7 +173,7 @@ phases:
           Store quests in .wombo-combo/quests/<quest-id>.yml.
           Functions: loadQuest, saveQuest, listQuests, deleteQuest.
           Include quest-scoped knowledge file support.
-        status: pending
+        status: done
         effort: PT3H
         depends_on: [p0-quest-schema]
         files:
@@ -189,7 +189,7 @@ phases:
             - constraints.add: appended to task.constraints
             - constraints.ban: appended to task.forbidden
             - constraints.override: deep-merge replaces specific config fields
-        status: pending
+        status: done
         effort: PT4H
         depends_on: [p0-quest-schema]
         files:
@@ -199,7 +199,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-1
     title: "Quest core — branching, CLI commands"
-    status: pending
+    status: done
     tasks:
 
       - id: p1-quest-branching
@@ -239,13 +239,16 @@ phases:
           When a quest is active, launch uses the quest branch as base,
           applies layered constraints, injects quest context into prompts.
           Task branches use task/ prefix instead of feature/.
-        status: pending
+        status: done
         effort: PT6H
         depends_on: [p1-quest-cli, p0-layered-config]
         files:
           - src/commands/launch.ts
           - src/commands/resume.ts
+          - src/commands/retry.ts
           - src/lib/prompt.ts
+          - src/lib/state.ts
+          - src/index.ts
 
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-2
