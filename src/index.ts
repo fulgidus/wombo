@@ -778,27 +778,31 @@ async function main(): Promise<void> {
       if (args.browser !== undefined) {
         config.browser.enabled = args.browser;
       }
-      await cmdLaunch({
-        projectRoot: PROJECT_ROOT,
-        config,
-        topPriority: args.topPriority,
-        quickestWins: args.quickestWins,
-        priority: args.priority,
-        difficulty: args.difficulty,
-        features: args.tasks,
-        allReady: args.allReady,
-        maxConcurrent: args.maxConcurrent ?? config.defaults.maxConcurrent,
-        model: args.model,
-        interactive: args.interactive,
-        dryRun: args.dryRun,
-        baseBranch: args.baseBranch ?? config.baseBranch,
-        maxRetries: args.maxRetries ?? config.defaults.maxRetries,
-        noTui: args.noTui,
-        autoPush: args.autoPush,
-        outputFmt: args.outputFmt,
-        agent: args.agent,
-        questId: args.questId,
-      });
+      try {
+        await cmdLaunch({
+          projectRoot: PROJECT_ROOT,
+          config,
+          topPriority: args.topPriority,
+          quickestWins: args.quickestWins,
+          priority: args.priority,
+          difficulty: args.difficulty,
+          features: args.tasks,
+          allReady: args.allReady,
+          maxConcurrent: args.maxConcurrent ?? config.defaults.maxConcurrent,
+          model: args.model,
+          interactive: args.interactive,
+          dryRun: args.dryRun,
+          baseBranch: args.baseBranch ?? config.baseBranch,
+          maxRetries: args.maxRetries ?? config.defaults.maxRetries,
+          noTui: args.noTui,
+          autoPush: args.autoPush,
+          outputFmt: args.outputFmt,
+          agent: args.agent,
+          questId: args.questId,
+        });
+      } catch (err: any) {
+        outputError(args.outputFmt ?? "text", err.message);
+      }
       break;
 
     case "resume":
