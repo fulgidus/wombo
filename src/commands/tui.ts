@@ -53,6 +53,10 @@ import { runGenesisPlanner } from "../lib/genesis-planner.js";
 import type { GenesisResult, ProposedQuest } from "../lib/genesis-planner.js";
 import { createBlankQuest } from "../lib/quest.js";
 import { runErrandPlanner, applyErrandPlan } from "../lib/errand-planner.js";
+import { WishlistPicker } from "../lib/tui-wishlist.js";
+import type { WishlistAction } from "../lib/tui-wishlist.js";
+import { deleteItem as deleteWishlistItem } from "../lib/wishlist-store.js";
+import type { WishlistItem } from "../lib/wishlist-store.js";
 import { cmdLaunch } from "./launch.js";
 import type { LaunchCommandOptions } from "./launch.js";
 import { cmdResume } from "./resume.js";
@@ -198,6 +202,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         continue;
       }
 
+      if (questAction.type === "wishlist") {
+        // User pressed W to browse wishlist
+        await handleWishlistFlow(projectRoot, config, opts);
+        // After wishlist (promote, back, or quit), loop back to quest picker
+        process.stdout.write("\x1B[2J\x1B[H");
+        continue;
+      }
+
       selectedQuestId = questAction.questId;
     }
 
@@ -305,6 +317,10 @@ function showQuestPicker(
 
       onErrand: () => {
         resolve({ type: "errand" });
+      },
+
+      onWishlist: () => {
+        resolve({ type: "wishlist" });
       },
 
       onQuit: () => {
@@ -453,29 +469,44 @@ async function handlePlanFlow(
 async function handleGenesisFlow(
   projectRoot: string,
   config: WomboConfig,
-  opts: TUICommandOptions
+  opts: TUICommandOptions,
+  prefill?: string
 ): Promise<void> {
-  // Prompt the user for a project vision via readline (no blessed screen is active)
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  let vision: string;
 
-  const vision = await new Promise<string>((resolve) => {
+  if (prefill) {
+    // Pre-filled from wishlist promotion — show the pre-filled text
     console.log();
     console.log("  ╔══════════════════════════════════════╗");
     console.log("  ║         GENESIS PLANNER              ║");
     console.log("  ╚══════════════════════════════════════╝");
     console.log();
-    console.log("  Describe your project vision. The genesis planner will");
-    console.log("  decompose it into a set of quests.");
+    console.log(`  Pre-filled from wishlist: ${prefill}`);
     console.log();
-    rl.question("  Vision: ", (answer) => {
-      rl.close();
-      resolve(answer.trim());
+    vision = prefill;
+  } else {
+    // Prompt the user for a project vision via readline (no blessed screen is active)
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
     });
-  });
+
+    vision = await new Promise<string>((resolve) => {
+      console.log();
+      console.log("  ╔══════════════════════════════════════╗");
+      console.log("  ║         GENESIS PLANNER              ║");
+      console.log("  ╚══════════════════════════════════════╝");
+      console.log();
+      console.log("  Describe your project vision. The genesis planner will");
+      console.log("  decompose it into a set of quests.");
+      console.log();
+      rl.question("  Vision: ", (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      });
+    });
+  }
 
   if (!vision) {
     console.log("\n  No vision provided. Returning to quest picker.\n");
@@ -601,29 +632,44 @@ async function handleGenesisFlow(
 async function handleErrandFlow(
   projectRoot: string,
   config: WomboConfig,
-  opts: TUICommandOptions
+  opts: TUICommandOptions,
+  prefill?: string
 ): Promise<void> {
-  // Prompt the user for a description via readline (no blessed screen is active)
-  const readline = await import("node:readline");
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+  let description: string;
 
-  const description = await new Promise<string>((resolve) => {
+  if (prefill) {
+    // Pre-filled from wishlist promotion — show the pre-filled text
     console.log();
     console.log("  ╔══════════════════════════════════════╗");
     console.log("  ║           ERRAND PLANNER             ║");
     console.log("  ╚══════════════════════════════════════╝");
     console.log();
-    console.log("  Describe the errand. The planner will explore the");
-    console.log("  codebase and generate tasks for you.");
+    console.log(`  Pre-filled from wishlist: ${prefill}`);
     console.log();
-    rl.question("  Errand: ", (answer) => {
-      rl.close();
-      resolve(answer.trim());
+    description = prefill;
+  } else {
+    // Prompt the user for a description via readline (no blessed screen is active)
+    const readline = await import("node:readline");
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
     });
-  });
+
+    description = await new Promise<string>((resolve) => {
+      console.log();
+      console.log("  ╔══════════════════════════════════════╗");
+      console.log("  ║           ERRAND PLANNER             ║");
+      console.log("  ╚══════════════════════════════════════╝");
+      console.log();
+      console.log("  Describe the errand. The planner will explore the");
+      console.log("  codebase and generate tasks for you.");
+      console.log();
+      rl.question("  Errand: ", (answer) => {
+        rl.close();
+        resolve(answer.trim());
+      });
+    });
+  }
 
   if (!description) {
     console.log("\n  No description provided. Returning.\n");
@@ -716,6 +762,112 @@ async function handleErrandFlow(
     console.error(`\n  Failed to create errand tasks: ${err.message}\n`);
     await sleep(3000);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Wishlist Flow -- Browse + Promote to Errand/Genesis
+// ---------------------------------------------------------------------------
+
+/**
+ * Show the wishlist picker. When the user promotes an item, run the
+ * appropriate flow (errand or genesis) with the item text pre-filled.
+ * After promotion completes, offer to delete the wishlist item.
+ */
+async function handleWishlistFlow(
+  projectRoot: string,
+  config: WomboConfig,
+  opts: TUICommandOptions
+): Promise<void> {
+  const action = await showWishlistPicker(projectRoot);
+
+  if (action.type === "back" || action.type === "quit") {
+    return;
+  }
+
+  if (action.type === "promote-errand") {
+    const item = action.item;
+    await handleErrandFlow(projectRoot, config, opts, item.text);
+    await maybeDeleteWishlistItem(projectRoot, item);
+    return;
+  }
+
+  if (action.type === "promote-genesis") {
+    const item = action.item;
+    await handleGenesisFlow(projectRoot, config, opts, item.text);
+    await maybeDeleteWishlistItem(projectRoot, item);
+    return;
+  }
+}
+
+/**
+ * Show the Wishlist Picker TUI and return a Promise that resolves when the
+ * user takes an action.
+ */
+function showWishlistPicker(projectRoot: string): Promise<WishlistAction> {
+  return new Promise<WishlistAction>((resolve) => {
+    const picker = new WishlistPicker({
+      projectRoot,
+
+      onPromoteErrand: (item) => {
+        resolve({ type: "promote-errand", item });
+      },
+
+      onPromoteGenesis: (item) => {
+        resolve({ type: "promote-genesis", item });
+      },
+
+      onBack: () => {
+        resolve({ type: "back" });
+      },
+
+      onQuit: () => {
+        resolve({ type: "quit" });
+      },
+    });
+
+    picker.start();
+  });
+}
+
+/**
+ * After a wishlist item has been promoted, ask the user whether to delete it.
+ * Uses a simple readline prompt (no blessed screen is active at this point).
+ */
+async function maybeDeleteWishlistItem(
+  projectRoot: string,
+  item: WishlistItem
+): Promise<void> {
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const truncText =
+    item.text.length > 50 ? item.text.slice(0, 47) + "..." : item.text;
+
+  const answer = await new Promise<string>((resolve) => {
+    rl.question(
+      `\n  Delete wishlist item "${truncText}"? [y/N] `,
+      (ans) => {
+        rl.close();
+        resolve(ans.trim().toLowerCase());
+      }
+    );
+  });
+
+  if (answer === "y" || answer === "yes") {
+    const deleted = deleteWishlistItem(projectRoot, item.id);
+    if (deleted) {
+      console.log(`  Wishlist item deleted.\n`);
+    } else {
+      console.log(`  Item not found (may have been already deleted).\n`);
+    }
+  } else {
+    console.log(`  Wishlist item kept.\n`);
+  }
+
+  await sleep(1000);
 }
 
 // ---------------------------------------------------------------------------
