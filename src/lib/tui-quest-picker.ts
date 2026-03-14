@@ -34,7 +34,6 @@ import { VALID_PRIORITIES, VALID_DIFFICULTIES } from "./task-schema.js";
 import type { Priority, Difficulty } from "./tasks.js";
 import { loadTasks, getDoneTaskIds, loadArchive } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
-
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------

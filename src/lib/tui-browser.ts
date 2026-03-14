@@ -42,6 +42,7 @@ import { PRIORITY_ORDER, DIFFICULTY_ORDER } from "./task-schema.js";
 import type { TUISession, SortField } from "./tui-session.js";
 import { saveTUISession } from "./tui-session.js";
 import type { WomboConfig } from "../config.js";
+import { WishlistOverlay } from "./tui-wishlist.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -282,6 +283,8 @@ export class TaskBrowser {
   private hideDone: boolean = false;
   private refreshTimer: ReturnType<typeof setInterval> | null = null;
   private hasRunningWave: boolean = false;
+  /** Active wishlist overlay (null when closed) */
+  private wishlistOverlay: WishlistOverlay | null = null;
 
   constructor(opts: TaskBrowserOptions) {
     this.projectRoot = opts.projectRoot;
@@ -607,6 +610,11 @@ export class TaskBrowser {
       this.destroy();
       this.onErrand();
     });
+
+    // w — toggle wishlist overlay
+    this.screen.key(["w"], () => {
+      this.toggleWishlist();
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -750,6 +758,30 @@ export class TaskBrowser {
     this.buildDisplay();
     this.selectedIndex = Math.min(this.selectedIndex, Math.max(0, this.displayNodes.length - 1));
     this.refresh();
+  }
+
+  private toggleWishlist(): void {
+    // Close if already open
+    if (this.wishlistOverlay && !this.wishlistOverlay.isDestroyed()) {
+      this.wishlistOverlay.close();
+      this.wishlistOverlay = null;
+      this.taskList.focus();
+      this.screen.render();
+      return;
+    }
+
+    this.wishlistOverlay = new WishlistOverlay(
+      this.screen,
+      this.projectRoot,
+      {
+        onClose: () => {
+          this.wishlistOverlay = null;
+          this.taskList.focus();
+          this.refreshStatusBar();
+          this.screen.render();
+        },
+      }
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -978,6 +1010,7 @@ export class TaskBrowser {
     if (this.onErrand) {
       line1 += `  {gray-fg}E{/gray-fg} errand`;
     }
+    line1 += `  {gray-fg}W{/gray-fg} wishlist`;
     line1 += `  {gray-fg}O{/gray-fg} sort`;
 
     if (selCount > 0) {

@@ -156,6 +156,68 @@ export function saveState(projectRoot: string, state: WaveState): void {
   renameSync(tmp, p);
 }
 
+/**
+ * Flush wave state to disk with integrity verification.
+ *
+ * Like saveState(), but reads back the written file and verifies it parses
+ * as valid JSON. This is the "safe shutdown" variant — use it before
+ * process.exit() or screen.destroy() to guarantee the state file is not
+ * left in a partial/corrupt state.
+ *
+ * If the integrity check fails, a second write attempt is made. If that
+ * also fails, the error is logged but not thrown (we're shutting down).
+ *
+ * @returns true if the state was written and verified successfully.
+ */
+export function flushState(projectRoot: string, state: WaveState): boolean {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      saveState(projectRoot, state);
+
+      // Read back and verify JSON integrity
+      const p = statePath(projectRoot);
+      const raw = readFileSync(p, "utf-8");
+      const parsed = JSON.parse(raw) as WaveState;
+
+      // Sanity check: wave_id and agents array must survive the round-trip
+      if (parsed.wave_id !== state.wave_id) {
+        throw new Error(
+          `wave_id mismatch after write: expected "${state.wave_id}", got "${parsed.wave_id}"`
+        );
+      }
+      if (!Array.isArray(parsed.agents) || parsed.agents.length !== state.agents.length) {
+        throw new Error(
+          `agents array mismatch after write: expected ${state.agents.length} agents, got ${Array.isArray(parsed.agents) ? parsed.agents.length : "non-array"}`
+        );
+      }
+
+      return true;
+    } catch (err: any) {
+      if (attempt === 1) {
+        // First failure — retry once
+        try {
+          // Log to stderr so it doesn't corrupt TUI output
+          process.stderr.write(
+            `[wombo] state flush attempt ${attempt} failed: ${err.message} — retrying...\n`
+          );
+        } catch {
+          // stderr may be closed during shutdown
+        }
+      } else {
+        // Second failure — give up but don't throw (we're shutting down)
+        try {
+          process.stderr.write(
+            `[wombo] state flush failed after 2 attempts: ${err.message}\n`
+          );
+        } catch {
+          // stderr may be closed during shutdown
+        }
+      }
+    }
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // State Mutations
 // ---------------------------------------------------------------------------

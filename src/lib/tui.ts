@@ -58,6 +58,13 @@ export interface TUIOptions {
   onRetry?: (featureId: string) => void;
   /** Callback when the user answers an HITL question. */
   onAnswer?: (agentId: string, questionId: string, answerText: string) => void;
+  /**
+   * Callback invoked during stop() BEFORE the blessed screen is destroyed.
+   * Use this to flush pending state writes to disk while the process is
+   * still alive and I/O is still functional. This ensures state.json
+   * integrity even if the process exits immediately after screen.destroy().
+   */
+  onBeforeDestroy?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +150,7 @@ export class WomboTUI {
   private onQuit: () => void;
   private onRetry?: (featureId: string) => void;
   private onAnswer?: (agentId: string, questionId: string, answerText: string) => void;
+  private onBeforeDestroy?: () => void;
   private interactive: boolean;
   private projectRoot: string;
   private config: WomboConfig;
@@ -174,6 +182,7 @@ export class WomboTUI {
     this.onQuit = opts.onQuit;
     this.onRetry = opts.onRetry;
     this.onAnswer = opts.onAnswer;
+    this.onBeforeDestroy = opts.onBeforeDestroy;
     this.interactive = opts.interactive ?? false;
     this.projectRoot = opts.projectRoot;
     this.config = opts.config;
@@ -411,6 +420,15 @@ export class WomboTUI {
     if (this.refreshTimer) {
       clearInterval(this.refreshTimer);
       this.refreshTimer = null;
+    }
+    // Flush pending state writes before destroying the screen.
+    // This ensures state.json integrity even if process.exit() follows.
+    if (this.onBeforeDestroy) {
+      try {
+        this.onBeforeDestroy();
+      } catch {
+        // Best-effort — don't let flush errors prevent screen cleanup
+      }
     }
     this.screen.destroy();
   }

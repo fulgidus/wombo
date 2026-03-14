@@ -42,6 +42,7 @@ import { isProcessRunning } from "./launcher.js";
 import { mkdirSync, appendFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { TokenCollector, type UsageRecord } from "./token-collector.js";
+import { UsageStore } from "./token-usage.js";
 
 // ---------------------------------------------------------------------------
 // Log directory name (configurable would be overkill here)
@@ -368,6 +369,8 @@ export class ProcessMonitor {
   public activityLogs: Map<string, ActivityEntry[]> = new Map();
   /** Token usage collector — parses and accumulates usage from step_finish events */
   public tokenCollector: TokenCollector;
+  /** Token usage store — persists records to .wombo-combo/usage.jsonl */
+  public usageStore: UsageStore;
 
   constructor(projectRoot: string, callbacks: MonitorCallbacks = {}) {
     this.callbacks = callbacks;
@@ -375,7 +378,14 @@ export class ProcessMonitor {
     if (!existsSync(this.logDir)) {
       mkdirSync(this.logDir, { recursive: true });
     }
+    this.usageStore = new UsageStore(projectRoot);
     this.tokenCollector = new TokenCollector((record) => {
+      // Persist to JSONL file for historical tracking
+      try {
+        this.usageStore.append(record);
+      } catch {
+        // Non-critical — don't break agent monitoring if write fails
+      }
       this.callbacks.onUsage?.(record.task_id, record);
     });
   }
@@ -587,3 +597,10 @@ export class ProcessMonitor {
 
 export { TokenCollector, type UsageRecord } from "./token-collector.js";
 export type { UsageSummary, UsageCallback } from "./token-collector.js";
+
+// ---------------------------------------------------------------------------
+// Re-exports from token-usage for convenience
+// ---------------------------------------------------------------------------
+
+export { UsageStore, appendUsageRecord, loadUsageRecords, totalUsage, filterByDateRange, groupBy } from "./token-usage.js";
+export type { UsageTotals, GroupableField } from "./token-usage.js";
