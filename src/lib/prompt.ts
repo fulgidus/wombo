@@ -5,6 +5,7 @@
  *   - Transform a Feature into a structured prompt for the agent
  *   - Include feature spec, subtasks, constraints, forbidden items, references
  *   - Generate the build command and success criteria
+ *   - Inject scoped file manifests and shared knowledge for context reduction
  *   - All project-specific values come from config (no hardcoded Astro references)
  */
 
@@ -13,6 +14,7 @@ import { formatDuration, parseDurationMinutes } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
 import { isPortlessAvailable, portlessUrl } from "./portless.js";
 import type { QuestHitlMode } from "./quest.js";
+import { compressConstraints, compressSource } from "./prompt-compress.js";
 
 // ---------------------------------------------------------------------------
 // Quest Context (optional — passed when launching within a quest)
@@ -33,6 +35,12 @@ export interface QuestPromptContext {
   addedForbidden: string[];
   /** Quest knowledge document (shared architectural notes, API contracts, etc.) */
   knowledge: string | null;
+  /**
+   * Scoped file manifest — files predicted by the planner as relevant to this
+   * task. When provided, injected as a structured "Files You'll Need" section
+   * that gives the agent a head start on exploring the codebase.
+   */
+  fileManifest?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -85,24 +93,26 @@ export function generatePrompt(
     }
   }
 
-  // Constraints
+  // Constraints (compressed to reduce tokens)
   if (feature.constraints.length > 0) {
     sections.push(`\n## Constraints\n`);
     sections.push(
       "You MUST follow these constraints. Violating any is a failure.\n"
     );
-    for (const c of feature.constraints) {
+    const compressed = compressConstraints(feature.constraints);
+    for (const c of compressed) {
       sections.push(`- ${c}`);
     }
   }
 
-  // Forbidden
+  // Forbidden (compressed to reduce tokens)
   if (feature.forbidden.length > 0) {
     sections.push(`\n## Forbidden\n`);
     sections.push(
       "You MUST NOT do any of the following. Violating any is a failure.\n"
     );
-    for (const f of feature.forbidden) {
+    const compressed = compressConstraints(feature.forbidden);
+    for (const f of compressed) {
       sections.push(`- ${f}`);
     }
   }
@@ -115,6 +125,26 @@ export function generatePrompt(
     );
     for (const r of feature.references) {
       sections.push(`- \`${r}\``);
+    }
+  }
+
+  // Scoped file manifest (from planner predictions, if available)
+  if (quest?.fileManifest && quest.fileManifest.length > 0) {
+    // Deduplicate with references (don't show files twice)
+    const refSet = new Set(feature.references.map((r) => r.toLowerCase()));
+    const manifestOnly = quest.fileManifest.filter(
+      (f) => !refSet.has(f.toLowerCase())
+    );
+
+    if (manifestOnly.length > 0) {
+      sections.push(`\n## Predicted File Manifest\n`);
+      sections.push(
+        "The quest planner predicts these additional files are relevant to this task. " +
+        "Use this as a starting point — you may discover other files are needed too.\n"
+      );
+      for (const f of manifestOnly) {
+        sections.push(`- \`${f}\``);
+      }
     }
   }
 
@@ -155,12 +185,24 @@ export function generatePrompt(
       sections.push(`### Shared Knowledge\n`);
       sections.push(
         `The following knowledge document contains architectural decisions, ` +
-        `API contracts, and shared context for this quest:\n`
+        `API contracts, and shared context discovered during quest planning. ` +
+        `Read this carefully — it prevents you from re-discovering things ` +
+        `that other agents have already figured out.\n`
       );
       sections.push("---");
       sections.push(quest.knowledge.trim());
       sections.push("---\n");
     }
+
+    // Knowledge contribution instructions
+    sections.push(`### Knowledge Contributions\n`);
+    sections.push(
+      `If you discover important architectural decisions, API contracts, ` +
+      `or patterns that would help other agents working on this quest, ` +
+      `document them clearly in your commit messages and code comments. ` +
+      `The orchestrator will extract these for the shared knowledge cache.`
+    );
+    sections.push("");
   }
 
   // Build verification — uses config, no hardcoded Astro command
