@@ -14,6 +14,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
 import { resolveAgentBin } from "../config.js";
 import type { ProposedTask, PlanResult } from "./quest-planner.js";
@@ -147,6 +148,18 @@ export async function runErrandPlanner(
   const agentBin = resolveAgentBin(config);
   const agentName = "quest-planner-agent";
 
+  // Verify the agent binary exists before spawning
+  if (!existsSync(agentBin)) {
+    return {
+      success: false,
+      tasks: [],
+      knowledge: null,
+      issues: [],
+      rawOutput: "",
+      error: `Agent binary not found at: ${agentBin}. Check config.agent.bin or OPENCODE_BIN env var.`,
+    };
+  }
+
   const args = [
     "run",
     "--format",
@@ -188,15 +201,55 @@ export async function runErrandPlanner(
     stderrText += chunk.toString();
   });
 
-  // Wait for process to exit
+  // Wait for process to exit with a 5-minute timeout
+  const ERRAND_TIMEOUT_MS = 5 * 60 * 1000;
   const exitCode = await new Promise<number>((resolve) => {
-    child.on("close", (code) => resolve(code ?? 1));
-    child.on("error", () => resolve(1));
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        try {
+          child.kill("SIGTERM");
+        } catch {
+          // Best effort
+        }
+        resolve(-1);
+      }
+    }, ERRAND_TIMEOUT_MS);
+
+    child.on("close", (code) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        resolve(code ?? 1);
+      }
+    });
+
+    child.on("error", (err) => {
+      if (!settled) {
+        settled = true;
+        clearTimeout(timeout);
+        stderrText += `\nSpawn error: ${err.message}`;
+        resolve(1);
+      }
+    });
   });
 
   const rawOutput = Buffer.concat(chunks).toString("utf-8");
 
   onProgress("Parsing errand planner output...");
+
+  if (exitCode === -1) {
+    return {
+      success: false,
+      tasks: [],
+      knowledge: null,
+      issues: [],
+      rawOutput,
+      error: `Errand planner timed out after ${ERRAND_TIMEOUT_MS / 1000}s. The agent process was killed.`,
+    };
+  }
 
   if (exitCode !== 0 && !rawOutput.trim()) {
     return {

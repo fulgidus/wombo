@@ -1396,8 +1396,15 @@ async function launchWaveHeadless(
   if (tuiRef.current) {
     tuiRef.current.updateState(state);
     tuiRef.current.markWaveComplete();
-    // Wait for the user to press q to exit the TUI
-    await tuiRef.current.waitForQuit();
+
+    if (opts.detachOnQuit) {
+      // TUI loop mode — show "WAVE COMPLETE" banner briefly, then auto-return
+      // to the task browser instead of blocking on a manual Q press.
+      await new Promise<void>((r) => setTimeout(r, 2500));
+    } else {
+      // Standalone mode — wait for the user to press q to exit the TUI
+      await tuiRef.current.waitForQuit();
+    }
   }
 
   // Print final dashboard after TUI is closed

@@ -446,6 +446,13 @@ export class TaskBrowser {
       this.refreshTimer = null;
     }
     this.screen.destroy();
+    // Clean up stdin state left behind by blessed — prevents double-character
+    // input when readline takes over stdin after the blessed screen is gone.
+    process.stdin.removeAllListeners("keypress");
+    process.stdin.removeAllListeners("data");
+    if (process.stdin.isTTY && process.stdin.setRawMode) {
+      process.stdin.setRawMode(false);
+    }
     // Clear terminal so the next view starts fresh
     process.stdout.write("\x1B[2J\x1B[H");
   }
