@@ -8,6 +8,18 @@
  * NOTE: .wombo-combo/history/ is intentionally NOT removed by cleanup.
  * Wave history records are meant to survive cleanup for retrospective
  * analysis. See src/lib/history.ts.
+ *
+ * ## Process Lifecycle (audit: wave-detach-audit)
+ *
+ * Cleanup kills multiplexer sessions via `killAllMuxSessions()`, which
+ * terminates interactive agents running in dmux/tmux. Headless agents are
+ * NOT explicitly killed here because cleanup assumes the parent process
+ * (launch/resume) has already exited — and since headless agents are
+ * spawned with `detached: false`, they die when the parent exits.
+ *
+ * If cleanup is run while a wave is still active (agents still running),
+ * the multiplexer sessions will be killed but any headless agents
+ * would have already died with their parent process.
  */
 
 import { existsSync, unlinkSync, rmSync } from "node:fs";

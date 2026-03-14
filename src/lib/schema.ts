@@ -266,6 +266,44 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     supportsDryRun: false,
   },
 
+  // --- usage --------------------------------------------------------------
+  {
+    name: "usage",
+    summary: "Show token usage statistics from .wombo-combo/usage.jsonl",
+    description:
+      "Displays aggregated token usage data collected during agent runs. " +
+      "Can show totals or group by task, quest, model, provider, or harness. " +
+      "Supports date range filtering and table or JSON output.",
+    positionals: [],
+    flags: [
+      {
+        name: "--by",
+        description: "Group usage by field (default: total — no grouping)",
+        type: "string",
+        enum: ["task", "quest", "model", "provider", "harness"],
+      },
+      {
+        name: "--since",
+        description: "Filter records from this date (ISO 8601, inclusive)",
+        type: "string",
+      },
+      {
+        name: "--until",
+        description: "Filter records until this date (ISO 8601, inclusive)",
+        type: "string",
+      },
+      {
+        name: "--format",
+        description: "Output format for usage data: table (default) or json",
+        type: "string",
+        default: "table",
+        enum: ["table", "json"],
+      },
+    ],
+    mutating: false,
+    supportsDryRun: false,
+  },
+
   // --- abort --------------------------------------------------------------
   {
     name: "abort",
