@@ -46,6 +46,7 @@ export type QuestPickerAction =
   | { type: "genesis"; vision: string }
   | { type: "errand"; spec: ErrandSpec }
   | { type: "wishlist" }
+  | { type: "onboarding" }
   | { type: "quit" };
 
 export interface QuestPickerOptions {
@@ -56,6 +57,7 @@ export interface QuestPickerOptions {
   onGenesis?: (vision: string) => void;
   onErrand?: (spec: ErrandSpec) => void;
   onWishlist?: () => void;
+  onOnboarding?: () => void;
   onQuit: () => void;
 }
 
@@ -145,6 +147,7 @@ export class QuestPicker {
   private onGenesis?: (vision: string) => void;
   private onErrand?: (spec: ErrandSpec) => void;
   private onWishlist?: () => void;
+  private onOnboarding?: () => void;
   private onQuit: () => void;
 
   /** "All Tasks" + quest summaries */
@@ -164,6 +167,7 @@ export class QuestPicker {
     this.onGenesis = opts.onGenesis;
     this.onErrand = opts.onErrand;
     this.onWishlist = opts.onWishlist;
+    this.onOnboarding = opts.onOnboarding;
     this.onQuit = opts.onQuit;
 
     this.loadQuests();
@@ -377,6 +381,11 @@ export class QuestPicker {
     this.screen.key(["w"], () => {
       this.triggerWishlist();
     });
+
+    // O -- onboarding wizard
+    this.screen.key(["o"], () => {
+      this.triggerOnboarding();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -467,6 +476,14 @@ export class QuestPicker {
 
     this.destroy();
     this.onWishlist();
+  }
+
+  private triggerOnboarding(): void {
+    if (this.creatingQuest) return;
+    if (!this.onOnboarding) return;
+
+    this.destroy();
+    this.onOnboarding();
   }
 
   // -----------------------------------------------------------------------
@@ -1155,6 +1172,7 @@ export class QuestPicker {
     line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
     line1 += `  {gray-fg}W{/gray-fg} wishlist`;
+    line1 += `  {gray-fg}O{/gray-fg} onboarding`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
     const item = this.items[this.selectedIndex];
