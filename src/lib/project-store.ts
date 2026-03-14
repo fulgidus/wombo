@@ -244,7 +244,7 @@ function atomicWrite(filePath: string, content: string): void {
 /**
  * Normalize a parsed objective to ensure all fields are present.
  */
-function normalizeObjective(
+export function normalizeObjective(
   obj: Partial<ProjectObjective>
 ): ProjectObjective {
   return {
@@ -259,7 +259,7 @@ function normalizeObjective(
 /**
  * Normalize a parsed rule to ensure all fields are present.
  */
-function normalizeRule(rule: Partial<ProjectRule>): ProjectRule {
+export function normalizeRule(rule: Partial<ProjectRule>): ProjectRule {
   return {
     id: rule.id ?? `rule-${randomUUID().slice(0, 8)}`,
     text: rule.text ?? "",
@@ -280,7 +280,7 @@ function normalizeRule(rule: Partial<ProjectRule>): ProjectRule {
 /**
  * Normalize a parsed tech stack to ensure all fields are present.
  */
-function normalizeTechStack(ts: Partial<TechStack>): TechStack {
+export function normalizeTechStack(ts: Partial<TechStack>): TechStack {
   return {
     runtime: ts.runtime ?? "",
     language: ts.language ?? "",
@@ -293,7 +293,7 @@ function normalizeTechStack(ts: Partial<TechStack>): TechStack {
 /**
  * Normalize parsed conventions to ensure all fields are present.
  */
-function normalizeConventions(
+export function normalizeConventions(
   conv: Partial<ProjectConventions>
 ): ProjectConventions {
   return {
@@ -308,7 +308,7 @@ function normalizeConventions(
 /**
  * Normalize a full parsed profile.
  */
-function normalizeProfile(raw: Record<string, unknown>): ProjectProfile {
+export function normalizeProfile(raw: Record<string, unknown>): ProjectProfile {
   const now = new Date().toISOString();
   return {
     name: (raw.name as string) ?? "",
