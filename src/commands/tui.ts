@@ -370,6 +370,28 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       continue;
     }
   }
+
+  // Centralized stdin cleanup — only runs when the TUI main loop exits.
+  // Individual view destroy() methods do NOT touch stdin because that would
+  // break blessed's internal program singleton during screen-to-screen
+  // transitions (e.g. QuestPicker → TaskBrowser).
+  cleanupStdin();
+}
+
+/**
+ * Clean up stdin state left behind by blessed screens.
+ * Called once when the TUI exits, NOT during screen transitions.
+ */
+function cleanupStdin(): void {
+  try {
+    process.stdin.removeAllListeners("keypress");
+    process.stdin.removeAllListeners("data");
+    if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") {
+      process.stdin.setRawMode(false);
+    }
+  } catch {
+    // Ignore — stdin may already be closed
+  }
 }
 
 // ---------------------------------------------------------------------------

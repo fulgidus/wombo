@@ -70,6 +70,7 @@ import {
   launchAllReady,
   markFeatureDone,
   attemptMerge,
+  rescueChainPredecessors,
   dumpFailedAgentLogs,
 } from "./launch.js";
 import {
@@ -555,6 +556,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             wtLog(featureId, `downstream cancelled: ${cancelled.join(", ")}`);
             saveState(projectRoot, state);
           }
+
+          // Rescue verified chain predecessors whose merge was deferred
+          rescueChainPredecessors(projectRoot, state, agent, config, model)
+            .catch((err) => wtLog(featureId, `CHAIN RESCUE ERROR: ${err.message}`));
         }
         launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
       },
@@ -704,6 +709,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
               saveState(projectRoot, state);
             }
 
+            // Rescue verified chain predecessors whose merge was deferred
+            rescueChainPredecessors(projectRoot, state, agent, config, model)
+              .catch((err) => wtLog(agent.feature_id, `CHAIN RESCUE ERROR: ${err.message}`));
+
             launchAllReady(projectRoot, state, featureMap, monitor, config, model, undefined, questContext, hitlMode);
             continue;
           }
@@ -725,6 +734,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
               wtLog(agent.feature_id, `downstream cancelled: ${cancelled.join(", ")}`);
               saveState(projectRoot, state);
             }
+
+            // Rescue verified chain predecessors whose merge was deferred
+            rescueChainPredecessors(projectRoot, state, agent, config, model)
+              .catch((err) => wtLog(agent.feature_id, `CHAIN RESCUE ERROR: ${err.message}`));
           } else {
             updateAgent(state, agent.feature_id, {
               status: "completed",
@@ -779,7 +792,15 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     if (tuiRef.current) {
       tuiRef.current.updateState(state);
       tuiRef.current.markWaveComplete();
-      await tuiRef.current.waitForQuit();
+
+      if (opts.detachOnQuit) {
+        // TUI loop mode — show "WAVE COMPLETE" banner briefly, then auto-return
+        // to the task browser instead of blocking on a manual Q press.
+        await new Promise<void>((r) => setTimeout(r, 2500));
+      } else {
+        // Standalone mode — wait for the user to press q to exit the TUI
+        await tuiRef.current.waitForQuit();
+      }
     }
 
     if (fmt === "text") {

@@ -227,18 +227,8 @@ export class ProgressScreen {
     this.destroyed = true;
     this.stopSpinner();
     this.screen.destroy();
-    // Clean up stdin state
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.removeAllListeners("keypress");
-        process.stdin.removeAllListeners("data");
-        if (typeof process.stdin.setRawMode === "function") {
-          process.stdin.setRawMode(false);
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
+    // NOTE: Do NOT remove stdin listeners or reset raw mode here.
+    // Stdin cleanup is done once at TUI exit in cmdTui() via cleanupStdin().
   }
 
   // -----------------------------------------------------------------------
@@ -323,17 +313,8 @@ export async function showConfirm(
   return new Promise<boolean>((resolve) => {
     const cleanup = (result: boolean) => {
       screen.destroy();
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.removeAllListeners("data");
-          if (typeof process.stdin.setRawMode === "function") {
-            process.stdin.setRawMode(false);
-          }
-        } catch {
-          // Ignore
-        }
-      }
+      // NOTE: Do NOT remove stdin listeners or reset raw mode here.
+      // Stdin cleanup is done once at TUI exit in cmdTui() via cleanupStdin().
       resolve(result);
     };
 

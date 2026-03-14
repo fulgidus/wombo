@@ -217,11 +217,8 @@ export function showQuestWizard(opts: QuestWizardOptions): () => void {
   const destroyScreen = () => {
     if (!ownsScreen) return;
     screen.destroy();
-    process.stdin.removeAllListeners("keypress");
-    process.stdin.removeAllListeners("data");
-    if (process.stdin.isTTY && process.stdin.setRawMode) {
-      process.stdin.setRawMode(false);
-    }
+    // NOTE: Do NOT remove stdin listeners or reset raw mode here.
+    // Stdin cleanup is done once at TUI exit in cmdTui() via cleanupStdin().
     process.stdout.write("\x1B[2J\x1B[H");
   };
 

@@ -136,6 +136,32 @@ export async function mergeBranch(
   baseBranch: string,
   config: WomboConfig
 ): Promise<MergeResult> {
+  // Stash any dirty tracked files in the project root before we touch the
+  // working tree.  The merge target directory should ideally be clean, but
+  // agents, TUI state files, or prior failed resolution attempts can leave
+  // uncommitted modifications that cause `git checkout` / `git merge` to
+  // refuse with "Your local changes … would be overwritten".
+  const stashResult = await runSafe("git stash push -m wombo-merge-guard --include-untracked", projectRoot);
+  const didStash = stashResult.ok && !stashResult.output.includes("No local changes to save");
+
+  try {
+    return await _mergeBranchInner(projectRoot, featureBranch, baseBranch, config);
+  } finally {
+    // Restore the stash regardless of merge outcome so the user's working
+    // tree is returned to its previous state.
+    if (didStash) {
+      await runSafe("git stash pop", projectRoot);
+    }
+  }
+}
+
+/** Internal merge implementation — always called with a clean worktree. */
+async function _mergeBranchInner(
+  projectRoot: string,
+  featureBranch: string,
+  baseBranch: string,
+  config: WomboConfig
+): Promise<MergeResult> {
   // Ensure we're on the base branch
   const currentBranch = await run("git branch --show-current", projectRoot);
   if (currentBranch !== baseBranch) {

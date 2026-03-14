@@ -267,17 +267,20 @@ export async function launchSingleHeadless(
 
     if (isChainReuse && worktreeReady(agent.worktree)) {
       // Chain worktree reuse: the worktree already exists from a predecessor.
-      // Create a new branch for this feature and switch the worktree to it.
-      wtLog(agent.feature_id, "reusing chain worktree — switching branch...");
-      updateAgent(state, agent.feature_id, { activity: "switching branch (chain reuse)..." });
+      // Branch from the current HEAD (predecessor's tip) so all accumulated
+      // chain work carries forward — no merge-branch-merge cycle needed.
+      wtLog(agent.feature_id, "reusing chain worktree — branching from predecessor tip...");
+      updateAgent(state, agent.feature_id, { activity: "branching from predecessor (chain reuse)..." });
 
       try {
-        // Create the new feature branch from base (in the worktree)
-        execSync(`git checkout -B "${agent.branch}" "${state.base_branch}"`, {
+        // Create the new feature branch at the current HEAD (predecessor's tip).
+        // This carries forward all work from prior chain members without
+        // requiring an intermediate merge into base_branch.
+        execSync(`git checkout -B "${agent.branch}"`, {
           cwd: agent.worktree,
           stdio: "pipe",
         });
-        wtLog(agent.feature_id, `switched to branch ${agent.branch}`);
+        wtLog(agent.feature_id, `switched to branch ${agent.branch} (from predecessor tip)`);
       } catch (branchErr: any) {
         wtLog(agent.feature_id, `branch switch failed: ${branchErr.message}`);
         // Fall through to normal worktree creation
@@ -401,8 +404,21 @@ export async function handleBuildVerification(
       saveState(projectRoot, state);
       printAgentUpdate(agent, `BUILD PASSED (${Math.round(buildResult.durationMs / 1000)}s)`);
 
-      // Auto-merge: attempt merge + conflict resolution
-      await attemptMerge(projectRoot, state, agent, feature, config, model);
+      // Chain-aware merge: non-terminal chain members defer their merge.
+      // The successor will branch from this agent's tip and carry forward
+      // all accumulated work.  Only the terminal chain member merges the
+      // full chain into base_branch — one merge instead of N.
+      const hasChainSuccessor = agent.depended_on_by.some((depId) => {
+        const depAgent = state.agents.find((a) => a.feature_id === depId);
+        return depAgent && depAgent.worktree === agent.worktree;
+      });
+
+      if (hasChainSuccessor) {
+        printAgentUpdate(agent, "chain member — deferring merge to chain terminal");
+      } else {
+        // Terminal chain member (or standalone agent) — merge now.
+        await attemptMerge(projectRoot, state, agent, feature, config, model);
+      }
     } else {
       const errorSummary = fullResult.combinedErrorSummary;
 
@@ -469,6 +485,9 @@ export async function handleBuildVerification(
           printAgentUpdate(agent, `downstream cancelled: ${cancelled.join(", ")}`);
           saveState(projectRoot, state);
         }
+
+        // Rescue verified chain predecessors whose merge was deferred
+        await rescueChainPredecessors(projectRoot, state, agent, config, model);
       }
     }
   } catch (err: any) {
@@ -480,6 +499,9 @@ export async function handleBuildVerification(
       completed_at: new Date().toISOString(),
     });
     saveState(projectRoot, state);
+
+    // Rescue verified chain predecessors whose merge was deferred
+    await rescueChainPredecessors(projectRoot, state, agent, config, model);
   }
 }
 
@@ -562,6 +584,35 @@ function handleMergeSuccess(
 
   markFeatureDone(projectRoot, agent.feature_id, config, state.base_branch);
 
+  // Walk back the chain and mark all deferred predecessors as merged.
+  // Their work was carried forward through branch continuity and is now
+  // included in the terminal merge — no separate merge needed.
+  const chainPredecessors = getChainPredecessors(state, agent);
+  for (const predAgent of chainPredecessors) {
+    if (predAgent.status === "verified") {
+      updateAgent(state, predAgent.feature_id, {
+        status: "merged",
+        completed_at: new Date().toISOString(),
+      });
+      printAgentUpdate(predAgent, `MERGED (via chain terminal ${agent.feature_id})`);
+      markFeatureDone(projectRoot, predAgent.feature_id, config, state.base_branch);
+
+      // Clean up predecessor branch — its commits are now reachable via
+      // the terminal branch's merge into base.
+      try {
+        execSync(`git branch -D "${predAgent.branch}"`, {
+          cwd: projectRoot,
+          stdio: "pipe",
+        });
+      } catch {
+        // Branch may already be gone
+      }
+    }
+  }
+  if (chainPredecessors.length > 0) {
+    saveState(projectRoot, state);
+  }
+
   // Clean up worktree — but preserve it if downstream agents in the same
   // chain share this worktree.
   const hasChainSuccessor = agent.depended_on_by.some((depId) => {
@@ -580,6 +631,54 @@ function handleMergeSuccess(
       printAgentUpdate(agent, `WARN: worktree cleanup failed: ${err.message?.split("\n")[0]}`);
     }
   }
+}
+
+/**
+ * Walk back through chain predecessors (agents sharing the same worktree
+ * via depends_on links).  Returns predecessors in reverse order (immediate
+ * predecessor first, chain root last).
+ */
+function getChainPredecessors(state: WaveState, agent: AgentState): AgentState[] {
+  const predecessors: AgentState[] = [];
+  let current = agent;
+  while (true) {
+    const pred = current.depends_on
+      .map((depId) => state.agents.find((a) => a.feature_id === depId))
+      .find((a) => a && a.worktree === current.worktree);
+    if (!pred) break;
+    predecessors.push(pred);
+    current = pred;
+  }
+  return predecessors;
+}
+
+/**
+ * Rescue verified chain predecessors when a chain member fails.
+ *
+ * If the failed agent has deferred-merge predecessors, merges the most
+ * recent verified predecessor's branch so its work isn't stranded.
+ * The predecessor's branch tip carries all earlier chain work, so one
+ * merge rescues the entire verified portion of the chain.
+ */
+export async function rescueChainPredecessors(
+  projectRoot: string,
+  state: WaveState,
+  failedAgent: AgentState,
+  config: WomboConfig,
+  model?: string,
+): Promise<void> {
+  const predecessors = getChainPredecessors(state, failedAgent);
+  // Find the most recent verified predecessor (closest to the failed agent
+  // in the chain — its branch tip carries all earlier chain work).
+  const lastVerified = predecessors.find((a) => a.status === "verified");
+  if (!lastVerified) return;
+
+  const data = loadFeatures(projectRoot, config);
+  const feature = data.tasks.find((f: Feature) => f.id === lastVerified.feature_id);
+  if (!feature) return;
+
+  printAgentUpdate(lastVerified, "rescuing verified chain work after downstream failure...");
+  await attemptMerge(projectRoot, state, lastVerified, feature, config, model);
 }
 
 /**
@@ -1092,6 +1191,10 @@ async function launchWaveHeadless(
           wtLog(featureId, `downstream cancelled: ${cancelled.join(", ")}`);
           saveState(projectRoot, state);
         }
+
+        // Rescue verified chain predecessors whose merge was deferred
+        rescueChainPredecessors(projectRoot, state, agent, config, model)
+          .catch((err) => wtLog(featureId, `CHAIN RESCUE ERROR: ${err.message}`));
       }
 
       // Try to launch dependency-ready agents
