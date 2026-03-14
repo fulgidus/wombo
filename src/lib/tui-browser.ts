@@ -816,6 +816,9 @@ export class TaskBrowser {
     ).length;
 
     let line1 = ` {bold}wombo-combo{/bold}`;
+    if (this.hasRunningWave) {
+      line1 += ` {bold}{yellow-fg}⚡ WAVE RUNNING{/yellow-fg}{/bold}`;
+    }
     if (this.questTitle) {
       line1 += ` {magenta-fg}\u25B6 ${escapeBlessedTags(this.questTitle)}{/magenta-fg}`;
     } else {
@@ -1017,7 +1020,7 @@ export class TaskBrowser {
       line1 += `  {bold}{green-fg}L{/green-fg} LAUNCH (${selCount}){/bold}`;
     }
     if (this.hasRunningWave) {
-      line1 += `  {gray-fg}Tab{/gray-fg} monitor`;
+      line1 += `  {bold}{yellow-fg}Tab{/yellow-fg} monitor{/bold}`;
     }
     if (this.onBack) {
       line1 += `  {gray-fg}Esc{/gray-fg} back`;

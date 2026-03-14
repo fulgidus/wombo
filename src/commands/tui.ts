@@ -90,6 +90,7 @@ type BrowserAction =
   | { type: "launch"; ids: string[] }
   | { type: "errand" }
   | { type: "back" }
+  | { type: "monitor" }
   | { type: "quit" };
 
 type PlanReviewResult =
@@ -117,6 +118,15 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   // Main TUI loop:
   //   Quest Picker -> Task Browser -> Launch -> Monitor -> back to Quest Picker
   // Only exits when the user presses Q from the Quest Picker (or browser if no quests).
+  //
+  // Wave detach support: When the user presses Q in the monitor while agents
+  // are still running, the monitor returns without killing agents. The loop
+  // goes to the browser, which shows a "running wave" indicator and allows
+  // the user to press Tab to switch back to the monitor.
+  //
+  // `skipAutoResume` prevents the loop from immediately re-entering the
+  // monitor after the user explicitly detached from it.
+  let skipAutoResume = false;
   while (true) {
     // Check for an active wave on each iteration
     const existingState = loadState(projectRoot);
@@ -131,10 +141,11 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
           a.status === "retry"
       );
 
-    if (hasRunningWave) {
+    if (hasRunningWave && !skipAutoResume) {
       // A wave is already running -- resume it (wave monitor TUI).
-      // When the wave completes and the user presses Q, cmdResume returns
-      // and we loop back to the quest picker / browser.
+      // When the wave completes, cmdResume returns and we loop back.
+      // When the user detaches (Q while agents running), cmdResume also
+      // returns and we fall through to the browser with running wave indicator.
       console.log(
         `Active wave detected: ${existingState!.wave_id}. Resuming...`
       );
@@ -149,16 +160,24 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
           autoPush: opts.autoPush ?? false,
           baseBranch: opts.baseBranch,
           maxRetries: opts.maxRetries,
+          detachOnQuit: true,
         });
       } catch (err: any) {
         // Don't crash -- show error and loop back
         console.error(`\nResume error: ${err.message}\n`);
         await sleep(2000);
       }
+      // After resume returns, don't auto-resume again — let the user
+      // browse tasks and use Tab to switch back to the monitor if needed.
+      skipAutoResume = true;
       // Clear terminal before showing picker/browser again
       process.stdout.write("\x1B[2J\x1B[H");
       continue;
     }
+
+    // Reset the skip flag — if we reach the browser and the user launches
+    // a new wave, we should auto-resume when we loop back.
+    skipAutoResume = false;
 
     // -----------------------------------------------------------------------
     // Quest Picker (skip if no quests exist)
@@ -222,7 +241,8 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       session,
       opts,
       selectedQuestId,
-      hasQuests
+      hasQuests,
+      hasRunningWave
     );
 
     if (action.type === "quit") {
@@ -242,6 +262,34 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       // User pressed E in browser to create an errand
       await handleErrandFlow(projectRoot, config, opts);
       process.stdout.write("\x1B[2J\x1B[H");
+      continue;
+    }
+
+    if (action.type === "monitor") {
+      // User pressed Tab to switch to the running wave monitor.
+      // Resume connects to the existing wave and opens the monitor TUI.
+      // When the user presses Q in the monitor, cmdResume returns (detached)
+      // and we loop back to the browser with the running wave indicator.
+      try {
+        await cmdResume({
+          projectRoot,
+          config,
+          maxConcurrent: opts.maxConcurrent,
+          model: opts.model,
+          interactive: false,
+          noTui: false,
+          autoPush: opts.autoPush ?? false,
+          baseBranch: opts.baseBranch,
+          maxRetries: opts.maxRetries,
+          detachOnQuit: true,
+        });
+      } catch (err: any) {
+        console.error(`\nResume error: ${err.message}\n`);
+        await sleep(2000);
+      }
+      process.stdout.write("\x1B[2J\x1B[H");
+      // Don't auto-resume — let user browse tasks and Tab to monitor
+      skipAutoResume = true;
       continue;
     }
 
@@ -268,6 +316,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         outputFmt: "text",
         // Pass quest ID so launch uses quest branch and constraints
         questId: selectedQuestId ?? undefined,
+        detachOnQuit: true,
       };
 
       try {
@@ -280,6 +329,8 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
       // Clear terminal before showing picker/browser again
       process.stdout.write("\x1B[2J\x1B[H");
+      // Don't auto-resume — let user browse tasks and Tab to monitor
+      skipAutoResume = true;
       continue;
     }
   }
@@ -936,7 +987,7 @@ function showPlanReview(
 
 /**
  * Show the Task Browser and return a Promise that resolves when the user
- * takes an action (launch, back, or quit).
+ * takes an action (launch, back, quit, or switch to monitor).
  */
 function showBrowser(
   projectRoot: string,
@@ -944,7 +995,8 @@ function showBrowser(
   session: TUISession,
   opts: TUICommandOptions,
   questId: string | null,
-  hasQuestPicker: boolean
+  hasQuestPicker: boolean,
+  hasRunningWave: boolean = false
 ): Promise<BrowserAction> {
   // Reload session from disk in case state changed after a wave
   const freshSession = loadTUISession(projectRoot);
@@ -1001,8 +1053,18 @@ function showBrowser(
           }
         : undefined,
 
-      onSwitchToMonitor: undefined,
+      // Switch to monitor is available when a wave is running in the background
+      onSwitchToMonitor: hasRunningWave
+        ? () => {
+            resolve({ type: "monitor" });
+          }
+        : undefined,
     });
+
+    // Tell the browser about the running wave so it shows the Tab hint
+    if (hasRunningWave) {
+      browser.setHasRunningWave(true);
+    }
 
     browser.start();
   });
