@@ -56,6 +56,7 @@ woco merge                 # merge verified branches
 | `woco logs <id>`                      | View agent logs (--tail N, --follow)               |
 | `woco cleanup`                        | Remove worktrees and sessions                      |
 | `woco history`                        | List/view past wave results                        |
+| `woco usage`                          | Show token usage statistics                        |
 | `woco tasks list`                     | List tasks                                         |
 | `woco tasks add <id> <title>`         | Add a task                                         |
 | `woco tasks set-status <id> <status>` | Update task status                                 |
@@ -101,6 +102,32 @@ The interactive TUI has two views:
 Session state (selections, sort, concurrency) is persisted to
 `.wombo-combo/tui-session.json` so you can close and reopen without
 losing work.
+
+## Token Usage Tracking
+
+wombo-combo automatically tracks token consumption during agent runs. Every
+agent step that includes token data is recorded to `.wombo-combo/usage.jsonl`
+as an append-only log. Use the `usage` command (alias: `us`) to view
+aggregated statistics.
+
+```sh
+woco usage                              # show total token usage
+woco usage --by task                    # group by task
+woco usage --by model                   # group by model
+woco usage --by provider                # group by provider
+woco usage --by quest                   # group by quest
+woco usage --by harness                 # group by agent harness
+woco usage --since 2026-01-01           # filter from date (inclusive)
+woco usage --until 2026-03-01           # filter until date (inclusive)
+woco usage --format json                # JSON output (default: table)
+```
+
+Token data is collected automatically when agents run via `woco launch`.
+Each record includes input/output tokens, cache read/write tokens,
+reasoning tokens, cost, model, provider, and harness information.
+
+In the TUI, press **U** in the Task Browser to open the token usage overlay,
+which shows overall totals and per-group breakdowns with Tab to cycle grouping.
 
 ## Launch options
 
