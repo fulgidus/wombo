@@ -41,12 +41,14 @@ import type { WomboConfig } from "../config.js";
 
 export type QuestPickerAction =
   | { type: "select"; questId: string | null }
+  | { type: "plan"; questId: string }
   | { type: "quit" };
 
 export interface QuestPickerOptions {
   projectRoot: string;
   config: WomboConfig;
   onSelect: (questId: string | null) => void;
+  onPlan?: (questId: string) => void;
   onQuit: () => void;
 }
 
@@ -109,6 +111,7 @@ export class QuestPicker {
   private projectRoot: string;
   private config: WomboConfig;
   private onSelect: (questId: string | null) => void;
+  private onPlan?: (questId: string) => void;
   private onQuit: () => void;
 
   /** "All Tasks" + quest summaries */
@@ -120,6 +123,7 @@ export class QuestPicker {
     this.projectRoot = opts.projectRoot;
     this.config = opts.config;
     this.onSelect = opts.onSelect;
+    this.onPlan = opts.onPlan;
     this.onQuit = opts.onQuit;
 
     this.loadQuests();
@@ -283,6 +287,11 @@ export class QuestPicker {
     this.screen.key(["c"], () => {
       this.showCreateQuestModal();
     });
+
+    // P -- plan quest (run planner agent)
+    this.screen.key(["p"], () => {
+      this.planQuest();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -323,6 +332,23 @@ export class QuestPicker {
     this.loadQuests();
     this.refreshAll();
     this.screen.render();
+  }
+
+  private planQuest(): void {
+    if (this.creatingQuest) return;
+    const item = this.items[this.selectedIndex];
+    if (!item || item.type === "all") return;
+
+    const quest = item.summary.quest;
+    // Only allow planning for draft or planning quests
+    if (quest.status !== "draft" && quest.status !== "planning") {
+      return;
+    }
+
+    if (!this.onPlan) return;
+
+    this.destroy();
+    this.onPlan(quest.id);
   }
 
   // -----------------------------------------------------------------------
@@ -965,6 +991,7 @@ export class QuestPicker {
     let line1 = ` {bold}Keys:{/bold}`;
     line1 += `  {gray-fg}Enter{/gray-fg} select`;
     line1 += `  {gray-fg}C{/gray-fg} create`;
+    line1 += `  {gray-fg}P{/gray-fg} plan`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
@@ -977,6 +1004,9 @@ export class QuestPicker {
       line2 += `{white-fg}${escapeBlessedTags(q.id)}{/white-fg}`;
       line2 += `  {gray-fg}|{/gray-fg}  ${item.summary.totalTasks} task${item.summary.totalTasks !== 1 ? "s" : ""}`;
       line2 += `  {gray-fg}|{/gray-fg}  ${item.summary.completionPct}% complete`;
+      if (q.status === "draft" || q.status === "planning") {
+        line2 += `  {gray-fg}|{/gray-fg}  {magenta-fg}P to plan{/magenta-fg}`;
+      }
     }
 
     this.statusBar.setContent(`${line1}\n${line2}`);

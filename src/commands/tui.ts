@@ -1,14 +1,18 @@
 /**
  * tui.ts -- Unified TUI command entry point for wombo-combo.
  *
- * Orchestrates three views in a persistent loop:
+ * Orchestrates multiple views in a persistent loop:
  *   1. Quest Picker (tui-quest-picker.ts) -- select a quest or "All Tasks"
  *   2. Task Browser (tui-browser.ts) -- select tasks, change priorities, launch
  *   3. Wave Monitor (tui.ts) -- watch running wave, view logs, retry agents
+ *   4. Plan Review (tui-plan-review.ts) -- review/edit/approve planner output
  *
  * Flow:
  *   `woco` -> Quest Picker (if quests exist) -> Task Browser -> L -> launches
  *   wave -> wave completes -> Q in monitor -> back to Quest Picker -> ...
+ *
+ *   Quest Picker -> P (plan) -> spinner -> Plan Review -> approve/cancel ->
+ *   back to Quest Picker
  *
  * If no quests exist, the Quest Picker is skipped entirely and the flow goes
  * straight to the Task Browser (backward compatible).
@@ -17,6 +21,7 @@
  *   - Q from Quest Picker: exits the process
  *   - Q/Esc from Task Browser: back to Quest Picker (or exits if no quests)
  *   - Q from Wave Monitor: back to Quest Picker
+ *   - Q/Esc from Plan Review: discard plan, back to Quest Picker
  *
  * Session state is persisted to .wombo-combo/tui-session.json so the user can
  * close and reopen the TUI without losing their task selections.
@@ -30,7 +35,11 @@ import type { TUISession } from "../lib/tui-session.js";
 import { TaskBrowser } from "../lib/tui-browser.js";
 import { QuestPicker } from "../lib/tui-quest-picker.js";
 import type { QuestPickerAction } from "../lib/tui-quest-picker.js";
-import { loadAllQuests, loadQuest } from "../lib/quest-store.js";
+import { PlanReview } from "../lib/tui-plan-review.js";
+import type { ProposedTask } from "../lib/quest-planner.js";
+import { runQuestPlanner, applyPlanToQuest } from "../lib/quest-planner.js";
+import type { PlanResult } from "../lib/quest-planner.js";
+import { loadAllQuests, loadQuest, saveQuest } from "../lib/quest-store.js";
 import { cmdLaunch } from "./launch.js";
 import type { LaunchCommandOptions } from "./launch.js";
 import { cmdResume } from "./resume.js";
@@ -64,6 +73,10 @@ type BrowserAction =
   | { type: "launch"; ids: string[] }
   | { type: "back" }
   | { type: "quit" };
+
+type PlanReviewResult =
+  | { type: "approve"; tasks: ProposedTask[]; knowledge: string | null }
+  | { type: "cancel" };
 
 // ---------------------------------------------------------------------------
 // Command -- Main Loop
@@ -138,13 +151,21 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
     let selectedQuestId: string | null = null;
 
     if (hasQuests) {
-      const questAction = await showQuestPicker(projectRoot, config);
+      const questAction = await showQuestPicker(projectRoot, config, opts);
 
       if (questAction.type === "quit") {
         // User pressed Q in quest picker -- exit cleanly
         session.lastView = "browser";
         saveTUISession(projectRoot, session);
         break;
+      }
+
+      if (questAction.type === "plan") {
+        // User pressed P to plan a quest -- run planner + review
+        await handlePlanFlow(projectRoot, config, opts, questAction.questId);
+        // After planning (approve or cancel), loop back to quest picker
+        process.stdout.write("\x1B[2J\x1B[H");
+        continue;
       }
 
       selectedQuestId = questAction.questId;
@@ -221,11 +242,12 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
 /**
  * Show the Quest Picker and return a Promise that resolves when the user
- * takes an action (select quest or quit).
+ * takes an action (select quest, plan quest, or quit).
  */
 function showQuestPicker(
   projectRoot: string,
-  config: WomboConfig
+  config: WomboConfig,
+  opts: TUICommandOptions
 ): Promise<QuestPickerAction> {
   return new Promise<QuestPickerAction>((resolve) => {
     const picker = new QuestPicker({
@@ -236,12 +258,173 @@ function showQuestPicker(
         resolve({ type: "select", questId });
       },
 
+      onPlan: (questId: string) => {
+        resolve({ type: "plan", questId });
+      },
+
       onQuit: () => {
         resolve({ type: "quit" });
       },
     });
 
     picker.start();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Plan Flow -- Planner + Review
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the quest planner agent, then show the plan review TUI.
+ * Handles the full flow: spinner → planner → review → approve/cancel.
+ */
+async function handlePlanFlow(
+  projectRoot: string,
+  config: WomboConfig,
+  opts: TUICommandOptions,
+  questId: string
+): Promise<void> {
+  const quest = loadQuest(projectRoot, questId);
+  if (!quest) {
+    console.error(`\nQuest "${questId}" not found.\n`);
+    await sleep(2000);
+    return;
+  }
+
+  // Set quest to planning status
+  const prevStatus = quest.status;
+  quest.status = "planning";
+  saveQuest(projectRoot, quest);
+
+  // Show a planning spinner on the terminal (no blessed screen here)
+  console.log(`\n  Planning quest: ${quest.title} (${quest.id})`);
+  console.log(`  Running quest planner agent...\n`);
+
+  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
+  let spinIdx = 0;
+  let lastProgress = "";
+  const spinTimer = setInterval(() => {
+    const ch = spinChars[spinIdx % spinChars.length];
+    spinIdx++;
+    process.stdout.write(`\r  ${ch} ${lastProgress}`);
+  }, 120);
+
+  let planResult: PlanResult;
+
+  try {
+    planResult = await runQuestPlanner(quest, projectRoot, config, {
+      model: opts.model,
+      onProgress: (msg) => {
+        lastProgress = msg;
+      },
+    });
+  } catch (err: any) {
+    clearInterval(spinTimer);
+    process.stdout.write("\r" + " ".repeat(80) + "\r");
+    console.error(`\n  Planner error: ${err.message}\n`);
+    // Revert quest status
+    quest.status = prevStatus;
+    saveQuest(projectRoot, quest);
+    await sleep(3000);
+    return;
+  }
+
+  clearInterval(spinTimer);
+  process.stdout.write("\r" + " ".repeat(80) + "\r");
+
+  if (!planResult.success && planResult.tasks.length === 0) {
+    // Total failure — no tasks produced
+    console.error(`\n  Planner failed: ${planResult.error ?? "No tasks produced"}\n`);
+    quest.status = prevStatus;
+    saveQuest(projectRoot, quest);
+    await sleep(3000);
+    return;
+  }
+
+  console.log(`  Planner produced ${planResult.tasks.length} tasks.`);
+  if (planResult.issues.length > 0) {
+    const errors = planResult.issues.filter((i) => i.level === "error").length;
+    const warnings = planResult.issues.filter((i) => i.level === "warning").length;
+    if (errors > 0) console.log(`  ${errors} validation error(s).`);
+    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+  }
+  console.log(`  Opening plan review...\n`);
+  await sleep(1000);
+
+  // Clear terminal before showing the plan review TUI
+  process.stdout.write("\x1B[2J\x1B[H");
+
+  // Show the plan review TUI
+  const reviewAction = await showPlanReview(
+    questId,
+    quest.title,
+    planResult
+  );
+
+  if (reviewAction.type === "cancel") {
+    // User cancelled — revert quest status
+    quest.status = prevStatus;
+    saveQuest(projectRoot, quest);
+    console.log(`\n  Plan discarded. Quest "${questId}" reverted to "${prevStatus}".\n`);
+    await sleep(1500);
+    return;
+  }
+
+  // User approved — apply the plan
+  try {
+    // Update planResult with only the accepted tasks
+    const approvedResult: PlanResult = {
+      ...planResult,
+      tasks: reviewAction.tasks,
+      knowledge: reviewAction.knowledge,
+    };
+
+    const tasks = applyPlanToQuest(approvedResult, quest, projectRoot, config);
+    console.log(`\n  Plan approved! Created ${tasks.length} tasks.`);
+    console.log(`  Quest "${questId}" is now active.`);
+    if (reviewAction.knowledge) {
+      console.log(`  Saved knowledge file (${reviewAction.knowledge.length} chars).`);
+    }
+    console.log();
+    await sleep(2000);
+  } catch (err: any) {
+    console.error(`\n  Failed to apply plan: ${err.message}\n`);
+    quest.status = prevStatus;
+    saveQuest(projectRoot, quest);
+    await sleep(3000);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Plan Review View -- Promise-based
+// ---------------------------------------------------------------------------
+
+/**
+ * Show the Plan Review TUI and return a Promise that resolves when the user
+ * approves or cancels.
+ */
+function showPlanReview(
+  questId: string,
+  questTitle: string,
+  planResult: PlanResult
+): Promise<PlanReviewResult> {
+  return new Promise<PlanReviewResult>((resolve) => {
+    const review = new PlanReview({
+      questId,
+      questTitle,
+      planResult,
+
+      onApprove: (tasks, knowledge) => {
+        resolve({ type: "approve", tasks, knowledge });
+      },
+
+      onCancel: () => {
+        resolve({ type: "cancel" });
+      },
+    });
+
+    review.start();
   });
 }
 
