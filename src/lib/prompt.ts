@@ -12,6 +12,7 @@ import type { Feature, Subtask } from "./tasks.js";
 import { formatDuration, parseDurationMinutes } from "./tasks.js";
 import type { WomboConfig } from "../config.js";
 import { isPortlessAvailable, portlessUrl } from "./portless.js";
+import type { QuestHitlMode } from "./quest.js";
 
 // ---------------------------------------------------------------------------
 // Quest Context (optional — passed when launching within a quest)
@@ -44,12 +45,16 @@ export interface QuestPromptContext {
  * @param quest - Optional quest context. When provided, injects a Quest Context
  *                section and knowledge into the prompt so agents understand
  *                the broader mission they are contributing to.
+ * @param hitlMode - Optional HITL mode. When "cautious" or "supervised", injects
+ *                   instructions for using the query_human tool to ask the
+ *                   human operator questions.
  */
 export function generatePrompt(
   feature: Feature,
   baseBranch: string,
   config: WomboConfig,
-  quest?: QuestPromptContext
+  quest?: QuestPromptContext,
+  hitlMode?: QuestHitlMode
 ): string {
   const sections: string[] = [];
 
@@ -271,6 +276,50 @@ export function generatePrompt(
         "\n**⚠️ Strict mode is active.** Verification will FAIL if any testable source file is missing a test."
       );
     }
+  }
+
+  // HITL — Human-in-the-Loop instructions
+  if (hitlMode && hitlMode !== "yolo") {
+    sections.push(`\n## Human-in-the-Loop\n`);
+
+    sections.push(
+      "You can ask the human operator questions using the `hitl-ask` command via bash.\n"
+    );
+    sections.push("```bash");
+    sections.push("bun $WOMBO_HITL_ASK \"Your question here\"");
+    sections.push("```\n");
+    sections.push(
+      "The command will **block** until the human responds. Their answer will be " +
+      "printed to stdout. Use this when you need clarification or approval.\n"
+    );
+    sections.push(
+      "You can optionally provide context about what you're working on:\n"
+    );
+    sections.push("```bash");
+    sections.push("bun $WOMBO_HITL_ASK --context \"working on auth middleware\" \"Should I use JWT or session cookies?\"");
+    sections.push("```\n");
+
+    if (hitlMode === "cautious") {
+      sections.push(
+        "**HITL Mode: Cautious** — Ask the human when you are genuinely uncertain " +
+        "about a design decision, encounter an ambiguous requirement, or face a " +
+        "choice that could significantly affect the project. If the answer is " +
+        "reasonably clear from the codebase or requirements, proceed without asking."
+      );
+    } else if (hitlMode === "supervised") {
+      sections.push(
+        "**HITL Mode: Supervised** — You are expected to check in frequently. " +
+        "Ask the human before:\n" +
+        "- Making architectural decisions\n" +
+        "- Choosing between alternative approaches\n" +
+        "- Adding new dependencies\n" +
+        "- Modifying existing public APIs\n" +
+        "- Any change that affects other parts of the system\n\n" +
+        "When in doubt, ask. The human prefers to be consulted rather than surprised."
+      );
+    }
+
+    sections.push("");
   }
 
   // Commit guidelines

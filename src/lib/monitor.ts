@@ -155,8 +155,14 @@ export function extractActivity(event: OpenCodeEvent): string | null {
           return `editing ${shortPath(input.filePath ?? input.path)}`;
         case "bash":
         case "command":
-        case "terminal":
-          return `$ ${shortCmd(input.command ?? input.cmd)}`;
+        case "terminal": {
+          const cmd = input.command ?? input.cmd ?? "";
+          // Detect HITL ask script invocation
+          if (cmd.includes("hitl-ask")) {
+            return "waiting for human…";
+          }
+          return `$ ${shortCmd(cmd)}`;
+        }
         case "glob":
           return `finding: ${shortPath(input.pattern)}`;
         case "grep":
@@ -298,6 +304,8 @@ export interface MonitorCallbacks {
   onError?: (featureId: string, error: string) => void;
   onOutput?: (featureId: string, data: string) => void;
   onActivity?: (featureId: string, activity: string) => void;
+  /** Called when an agent asks a human question via HITL */
+  onQuestion?: (featureId: string, questionText: string) => void;
 }
 
 interface MonitoredProcess {

@@ -29,6 +29,8 @@ import {
   type MultiplexerInfo,
 } from "./multiplexer.js";
 import { portlessEnv } from "./portless.js";
+import { hitlDir } from "./hitl-channel.js";
+import { resolve, dirname } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +51,10 @@ export interface LaunchOptions {
   config: WomboConfig;
   /** Override the agent name (for specialized agents from the registry) */
   agentName?: string;
+  /** HITL mode for this agent (from quest or config) */
+  hitlMode?: string;
+  /** Project root (for HITL directory path) */
+  projectRoot?: string;
 }
 
 export interface RetryOptions {
@@ -59,6 +65,10 @@ export interface RetryOptions {
   model?: string;
   interactive?: boolean;
   config: WomboConfig;
+  /** HITL mode for this agent (from quest or config) */
+  hitlMode?: string;
+  /** Project root (for HITL directory path) */
+  projectRoot?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -86,19 +96,36 @@ function runSilent(cmd: string): string {
 }
 
 /**
- * Build the environment for an agent process.
- * Merges process.env with OPENCODE_DIR and portless env vars.
+ * Build environment variables for an agent process.
+ * Merges process.env with OPENCODE_DIR, portless env vars, and HITL env vars.
  */
 function agentEnv(
   worktreePath: string,
   featureId: string,
-  config: WomboConfig
+  config: WomboConfig,
+  hitlMode?: string,
+  projectRoot?: string
 ): Record<string, string | undefined> {
-  return {
+  const env: Record<string, string | undefined> = {
     ...process.env,
     OPENCODE_DIR: worktreePath,
     ...portlessEnv(featureId, config),
   };
+
+  // HITL environment — always set so the hitl-ask script is available,
+  // but the prompt controls whether the agent actually uses it.
+  if (projectRoot) {
+    env.WOMBO_HITL_DIR = hitlDir(projectRoot);
+    env.WOMBO_AGENT_ID = featureId;
+    env.WOMBO_HITL_MODE = hitlMode ?? "yolo";
+    // Path to the hitl-ask script (relative to this module)
+    // In development: src/lib/hitl-ask.ts
+    // In production (bundled): same dir as this file
+    const hitlAskPath = resolve(import.meta.dir, "hitl-ask.ts");
+    env.WOMBO_HITL_ASK = hitlAskPath;
+  }
+
+  return env;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +155,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-    env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
+    env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
 
   // Close stdin so agent starts processing immediately
@@ -165,7 +192,7 @@ export function retryHeadless(opts: RetryOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
-    env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
+    env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
 
   child.stdin?.end();
