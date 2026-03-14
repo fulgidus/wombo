@@ -1538,6 +1538,445 @@ export function reviewSections(
 }
 
 // ---------------------------------------------------------------------------
+// showSectionMenu — section-menu editor for existing profiles
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate a one-line summary of a profile section for display in the menu.
+ *
+ * Examples:
+ *   Identity: wombo-combo (brownfield)
+ *   Tech Stack: Bun, TypeScript, neo-blessed
+ *   Rules: 5 rules
+ *   Objectives: 3 objectives (1 high)
+ */
+function summarizeSection(
+  section: ProfileSection,
+  profile: ProjectProfile,
+): string {
+  switch (section) {
+    case "identity": {
+      const parts: string[] = [];
+      if (profile.name) parts.push(profile.name);
+      parts.push(`(${profile.type})`);
+      return parts.join(" ") || "(not set)";
+    }
+
+    case "vision": {
+      if (!profile.vision) return "(no vision set)";
+      const truncated = profile.vision.length > 60
+        ? profile.vision.slice(0, 57) + "..."
+        : profile.vision;
+      return truncated;
+    }
+
+    case "objectives": {
+      if (profile.objectives.length === 0) return "(no objectives)";
+      const highCount = profile.objectives.filter((o) => o.priority === "high").length;
+      const suffix = highCount > 0 ? ` (${highCount} high)` : "";
+      return `${profile.objectives.length} objective${profile.objectives.length === 1 ? "" : "s"}${suffix}`;
+    }
+
+    case "tech_stack": {
+      const ts = profile.tech_stack;
+      const parts: string[] = [];
+      if (ts.runtime) parts.push(ts.runtime);
+      if (ts.language) parts.push(ts.language);
+      if (ts.frameworks.length > 0) parts.push(ts.frameworks.join(", "));
+      return parts.length > 0 ? parts.join(", ") : "(not set)";
+    }
+
+    case "conventions": {
+      const conv = profile.conventions;
+      const filled = Object.values(conv).filter((v) => v && v.trim()).length;
+      if (filled === 0) return "(no conventions set)";
+      return `${filled}/5 fields set`;
+    }
+
+    case "rules": {
+      if (profile.rules.length === 0) return "(no rules)";
+      return `${profile.rules.length} rule${profile.rules.length === 1 ? "" : "s"}`;
+    }
+  }
+}
+
+/**
+ * Show a blessed selectList of the 6 profile sections plus a
+ * "Re-run LLM synthesis" option. Each item shows the section name and a
+ * one-line summary of current content.
+ *
+ * Uses the ownsScreen pattern: if no screen is provided, creates and manages
+ * its own. Otherwise, renders as a modal on the provided screen.
+ *
+ * @param profile — The current project profile.
+ * @param screen  — Optional existing blessed screen to reuse.
+ * @returns An action indicating what the user chose:
+ *   - { action: 'edit', section: ProfileSection } — user wants to edit a section
+ *   - { action: 'resynthesize' } — user wants to re-run LLM synthesis
+ *   - { action: 'back' } — user pressed Escape / cancelled
+ */
+export function showSectionMenu(
+  profile: ProjectProfile,
+  screen?: Widgets.Screen,
+): Promise<
+  | { action: "edit"; section: ProfileSection }
+  | { action: "resynthesize" }
+  | { action: "back" }
+> {
+  return new Promise((resolve) => {
+    const ownsScreen = !screen;
+    const scr =
+      screen ??
+      blessed.screen({
+        smartCSR: true,
+        title: "wombo-combo -- Edit Profile",
+        fullUnicode: true,
+      });
+
+    // -----------------------------------------------------------------------
+    // Cleanup
+    // -----------------------------------------------------------------------
+
+    const destroyScreen = () => {
+      if (!ownsScreen) return;
+      scr.destroy();
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.removeAllListeners("keypress");
+          process.stdin.removeAllListeners("data");
+          if (typeof process.stdin.setRawMode === "function") {
+            process.stdin.setRawMode(false);
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      process.stdout.write("\x1B[2J\x1B[H");
+    };
+
+    // -----------------------------------------------------------------------
+    // Layout
+    // -----------------------------------------------------------------------
+
+    const container = blessed.box({
+      parent: scr,
+      top: "center",
+      left: "center",
+      width: "70%",
+      height: "80%",
+      tags: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "magenta" },
+        fg: "white",
+        bg: "black",
+      },
+      label: " {magenta-fg}Edit Profile{/magenta-fg} ",
+      shadow: true,
+    });
+
+    // Header
+    const headerBox = blessed.box({
+      parent: container,
+      top: 0,
+      left: 1,
+      right: 1,
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+    headerBox.setContent(
+      `{bold}Select a section to edit{/bold}\n` +
+        `{gray-fg}Use arrow keys to navigate, Enter to select{/gray-fg}\n` +
+        `{gray-fg}Esc to go back{/gray-fg}`
+    );
+
+    // Build menu items: 6 sections + resynthesize
+    const menuItems: string[] = [];
+    for (const sec of PROFILE_SECTIONS) {
+      const name = SECTION_NAMES[sec];
+      const summary = escapeBlessedTags(summarizeSection(sec, profile));
+      menuItems.push(
+        `  {cyan-fg}${name}{/cyan-fg}  {gray-fg}— ${summary}{/gray-fg}`
+      );
+    }
+    menuItems.push(
+      `  {magenta-fg}Re-run LLM synthesis{/magenta-fg}  {gray-fg}— regenerate profile from scratch{/gray-fg}`
+    );
+
+    const selectList = blessed.list({
+      parent: container,
+      top: 3,
+      left: 1,
+      right: 1,
+      height: "100%-6",
+      tags: true,
+      keys: true,
+      vi: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "cyan" },
+        selected: { bg: "blue", fg: "white", bold: true },
+        item: { fg: "white" },
+        bg: "black",
+      },
+    });
+    selectList.setItems(menuItems as any);
+    selectList.select(0);
+
+    // Status line
+    const statusLine = blessed.box({
+      parent: container,
+      bottom: 0,
+      left: 1,
+      right: 1,
+      height: 1,
+      tags: true,
+      style: { fg: "gray", bg: "black" },
+    });
+    statusLine.setContent(
+      "{gray-fg}Enter: select  |  Esc: back{/gray-fg}"
+    );
+
+    selectList.focus();
+    scr.render();
+
+    // -----------------------------------------------------------------------
+    // Input handlers
+    // -----------------------------------------------------------------------
+
+    let resolved = false;
+
+    const finish = (
+      result:
+        | { action: "edit"; section: ProfileSection }
+        | { action: "resynthesize" }
+        | { action: "back" }
+    ) => {
+      if (resolved) return;
+      resolved = true;
+      container.destroy();
+      destroyScreen();
+      resolve(result);
+    };
+
+    selectList.key(["enter", "space"], () => {
+      const idx = (selectList as any).selected ?? 0;
+      if (idx < PROFILE_SECTIONS.length) {
+        finish({ action: "edit", section: PROFILE_SECTIONS[idx] });
+      } else {
+        finish({ action: "resynthesize" });
+      }
+    });
+
+    selectList.key(["escape"], () => {
+      finish({ action: "back" });
+    });
+
+    scr.key(["C-c"], () => {
+      finish({ action: "back" });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// editSingleSection — textarea editor for a single profile section
+// ---------------------------------------------------------------------------
+
+/**
+ * Open a textarea pre-populated with the section's current content formatted
+ * as editable text. The user edits the text, and the result is parsed back
+ * into the profile.
+ *
+ * Uses the ownsScreen pattern: if no screen is provided, creates and manages
+ * its own. Otherwise, renders as a modal on the provided screen.
+ *
+ * @param profile — The current project profile (not mutated).
+ * @param section — Which section to edit.
+ * @param screen  — Optional existing blessed screen to reuse.
+ * @returns The updated profile with the edited section applied.
+ */
+export function editSingleSection(
+  profile: ProjectProfile,
+  section: ProfileSection,
+  screen?: Widgets.Screen,
+): Promise<ProjectProfile> {
+  return new Promise((resolve) => {
+    // Deep-clone the profile so edits are non-destructive
+    const workingProfile: ProjectProfile = JSON.parse(
+      JSON.stringify(profile)
+    );
+
+    const ownsScreen = !screen;
+    const scr =
+      screen ??
+      blessed.screen({
+        smartCSR: true,
+        title: "wombo-combo -- Edit Section",
+        fullUnicode: true,
+      });
+
+    // -----------------------------------------------------------------------
+    // Cleanup
+    // -----------------------------------------------------------------------
+
+    const destroyScreen = () => {
+      if (!ownsScreen) return;
+      scr.destroy();
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.removeAllListeners("keypress");
+          process.stdin.removeAllListeners("data");
+          if (typeof process.stdin.setRawMode === "function") {
+            process.stdin.setRawMode(false);
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      process.stdout.write("\x1B[2J\x1B[H");
+    };
+
+    // -----------------------------------------------------------------------
+    // Layout
+    // -----------------------------------------------------------------------
+
+    const secName = SECTION_NAMES[section];
+
+    const container = blessed.box({
+      parent: scr,
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Header
+    const headerBox = blessed.box({
+      parent: container,
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+    headerBox.setContent(
+      ` {bold}wombo-combo{/bold} {magenta-fg}Edit Section{/magenta-fg}\n` +
+        ` {bold}${secName}{/bold}  {magenta-fg}✎ Edit mode{/magenta-fg}\n` +
+        ` {gray-fg}Edit the content below, then press Ctrl+S to save or Escape to discard{/gray-fg}`
+    );
+
+    // Edit textarea
+    const editArea = blessed.textarea({
+      parent: container,
+      top: 3,
+      left: 0,
+      width: "100%",
+      height: "100%-6",
+      border: { type: "line" },
+      style: {
+        border: { fg: "magenta" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "cyan" } },
+      },
+      inputOnFocus: true,
+      label: ` {cyan-fg}${secName}{/cyan-fg} `,
+      padding: { left: 1, right: 1 },
+    });
+
+    // Status bar
+    const statusBar = blessed.box({
+      parent: container,
+      bottom: 0,
+      left: 0,
+      width: "100%",
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+    statusBar.setContent(
+      ` {bold}Keys:{/bold}  {green-fg}Ctrl+S{/green-fg} save  |  {red-fg}Escape{/red-fg} discard\n` +
+        ` {gray-fg}Editing: ${secName}{/gray-fg}`
+    );
+
+    // Pre-populate with serialized section content
+    const editText = serializeSectionForEdit(section, workingProfile);
+    editArea.setValue(editText);
+    editArea.focus();
+    scr.render();
+
+    // -----------------------------------------------------------------------
+    // Input handlers
+    // -----------------------------------------------------------------------
+
+    let resolved = false;
+
+    const finishSave = () => {
+      if (resolved) return;
+      resolved = true;
+
+      const editedText = editArea.getValue() ?? "";
+      const patch = parseSectionEdit(section, editedText, workingProfile);
+
+      // Apply patch to working profile
+      Object.assign(workingProfile, patch);
+
+      // Deep-merge for nested objects
+      if (patch.tech_stack) {
+        workingProfile.tech_stack = {
+          ...workingProfile.tech_stack,
+          ...patch.tech_stack,
+        };
+      }
+      if (patch.conventions) {
+        workingProfile.conventions = {
+          ...workingProfile.conventions,
+          ...patch.conventions,
+        };
+      }
+
+      workingProfile.updated_at = new Date().toISOString();
+
+      container.destroy();
+      destroyScreen();
+      resolve(workingProfile);
+    };
+
+    const finishDiscard = () => {
+      if (resolved) return;
+      resolved = true;
+      container.destroy();
+      destroyScreen();
+      // Return original profile unchanged
+      resolve(profile);
+    };
+
+    // Ctrl+S to save
+    scr.key(["C-s"], () => {
+      finishSave();
+    });
+
+    // Enter to save (same as reviewSections edit mode)
+    editArea.key(["enter"], () => {
+      finishSave();
+    });
+
+    // Escape to discard
+    editArea.key(["escape"], () => {
+      finishDiscard();
+    });
+
+    scr.key(["C-c"], () => {
+      finishDiscard();
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Internal parsers (for structureRawInputs)
 // ---------------------------------------------------------------------------
 
