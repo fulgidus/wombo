@@ -18,6 +18,9 @@
  *   Quest Picker -> G (genesis) -> vision prompt -> spinner -> Genesis Review
  *   -> approve/cancel -> back to Quest Picker
  *
+ *   Quest Picker/Browser -> E (errand) -> description prompt -> spinner ->
+ *   Plan Review -> approve/cancel -> creates quest-less tasks -> back
+ *
  * If no quests exist, the Quest Picker is skipped entirely and the flow goes
  * straight to the Task Browser (backward compatible).
  *
@@ -49,6 +52,7 @@ import type { GenesisReviewAction } from "../lib/tui-genesis-review.js";
 import { runGenesisPlanner } from "../lib/genesis-planner.js";
 import type { GenesisResult, ProposedQuest } from "../lib/genesis-planner.js";
 import { createBlankQuest } from "../lib/quest.js";
+import { runErrandPlanner, applyErrandPlan } from "../lib/errand-planner.js";
 import { cmdLaunch } from "./launch.js";
 import type { LaunchCommandOptions } from "./launch.js";
 import { cmdResume } from "./resume.js";
@@ -80,6 +84,7 @@ export interface TUICommandOptions {
 
 type BrowserAction =
   | { type: "launch"; ids: string[] }
+  | { type: "errand" }
   | { type: "back" }
   | { type: "quit" };
 
@@ -185,6 +190,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         continue;
       }
 
+      if (questAction.type === "errand") {
+        // User pressed E to create an errand (quest-less assisted task)
+        await handleErrandFlow(projectRoot, config, opts);
+        // After errand (approve or cancel), loop back to quest picker
+        process.stdout.write("\x1B[2J\x1B[H");
+        continue;
+      }
+
       selectedQuestId = questAction.questId;
     }
 
@@ -209,6 +222,13 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
     if (action.type === "back") {
       // User pressed Q/Esc in quest-filtered browser -- back to quest picker
+      process.stdout.write("\x1B[2J\x1B[H");
+      continue;
+    }
+
+    if (action.type === "errand") {
+      // User pressed E in browser to create an errand
+      await handleErrandFlow(projectRoot, config, opts);
       process.stdout.write("\x1B[2J\x1B[H");
       continue;
     }
@@ -281,6 +301,10 @@ function showQuestPicker(
 
       onGenesis: () => {
         resolve({ type: "genesis" });
+      },
+
+      onErrand: () => {
+        resolve({ type: "errand" });
       },
 
       onQuit: () => {
@@ -564,6 +588,137 @@ async function handleGenesisFlow(
 }
 
 // ---------------------------------------------------------------------------
+// Errand Flow -- Quick Task Generation (quest-less)
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the errand planner: prompt user for a brief description, run the quest
+ * planner agent with an errand-specific prompt, then show plan review to let
+ * the user accept/reject/edit the proposed tasks.
+ *
+ * Created tasks go directly into the task store without any quest association.
+ */
+async function handleErrandFlow(
+  projectRoot: string,
+  config: WomboConfig,
+  opts: TUICommandOptions
+): Promise<void> {
+  // Prompt the user for a description via readline (no blessed screen is active)
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const description = await new Promise<string>((resolve) => {
+    console.log();
+    console.log("  ╔══════════════════════════════════════╗");
+    console.log("  ║           ERRAND PLANNER             ║");
+    console.log("  ╚══════════════════════════════════════╝");
+    console.log();
+    console.log("  Describe the errand. The planner will explore the");
+    console.log("  codebase and generate tasks for you.");
+    console.log();
+    rl.question("  Errand: ", (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+
+  if (!description) {
+    console.log("\n  No description provided. Returning.\n");
+    await sleep(1500);
+    return;
+  }
+
+  // Show a planning spinner on the terminal
+  console.log();
+  console.log(`  Running errand planner...`);
+  console.log();
+
+  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
+  let spinIdx = 0;
+  let lastProgress = "";
+  const spinTimer = setInterval(() => {
+    const ch = spinChars[spinIdx % spinChars.length];
+    spinIdx++;
+    process.stdout.write(`\r  ${ch} ${lastProgress}`);
+  }, 120);
+
+  let planResult: PlanResult;
+
+  try {
+    planResult = await runErrandPlanner(description, projectRoot, config, {
+      model: opts.model,
+      onProgress: (msg) => {
+        lastProgress = msg;
+      },
+    });
+  } catch (err: any) {
+    clearInterval(spinTimer);
+    process.stdout.write("\r" + " ".repeat(80) + "\r");
+    console.error(`\n  Errand planner error: ${err.message}\n`);
+    await sleep(3000);
+    return;
+  }
+
+  clearInterval(spinTimer);
+  process.stdout.write("\r" + " ".repeat(80) + "\r");
+
+  if (!planResult.success && planResult.tasks.length === 0) {
+    console.error(`\n  Errand planner failed: ${planResult.error ?? "No tasks produced"}\n`);
+    await sleep(3000);
+    return;
+  }
+
+  console.log(`  Errand planner produced ${planResult.tasks.length} task(s).`);
+  if (planResult.issues.length > 0) {
+    const errors = planResult.issues.filter((i) => i.level === "error").length;
+    const warnings = planResult.issues.filter((i) => i.level === "warning").length;
+    if (errors > 0) console.log(`  ${errors} validation error(s).`);
+    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+  }
+  console.log(`  Opening plan review...\n`);
+  await sleep(1000);
+
+  // Clear terminal before showing the plan review TUI
+  process.stdout.write("\x1B[2J\x1B[H");
+
+  // Reuse the plan review TUI (it works for any set of proposed tasks)
+  const reviewAction = await showPlanReview(
+    "(errand)",
+    description.length > 50 ? description.slice(0, 47) + "..." : description,
+    planResult
+  );
+
+  if (reviewAction.type === "cancel") {
+    console.log(`\n  Errand plan discarded.\n`);
+    await sleep(1500);
+    return;
+  }
+
+  // User approved -- create tasks directly (no quest)
+  try {
+    const approvedResult: PlanResult = {
+      ...planResult,
+      tasks: reviewAction.tasks,
+      knowledge: reviewAction.knowledge,
+    };
+
+    const tasks = applyErrandPlan(approvedResult, projectRoot, config);
+    console.log(`\n  Errand approved! Created ${tasks.length} task(s):`);
+    for (const t of tasks) {
+      console.log(`    - ${t.id}: ${t.title}`);
+    }
+    console.log();
+    await sleep(2000);
+  } catch (err: any) {
+    console.error(`\n  Failed to create errand tasks: ${err.message}\n`);
+    await sleep(3000);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Genesis Review View -- Promise-based
 // ---------------------------------------------------------------------------
 
@@ -684,6 +839,13 @@ function showBrowser(
       onBack: hasQuestPicker
         ? () => {
             resolve({ type: "back" });
+          }
+        : undefined,
+
+      // Errand is available when not in quest-filtered mode
+      onErrand: !questId
+        ? () => {
+            resolve({ type: "errand" });
           }
         : undefined,
 

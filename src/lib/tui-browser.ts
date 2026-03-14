@@ -58,6 +58,8 @@ export interface TaskBrowserOptions {
   onBack?: () => void;
   /** Called when user presses Tab to switch to wave monitor (if a wave is running) */
   onSwitchToMonitor?: () => void;
+  /** Called when user presses E to create an errand (quest-less assisted task) */
+  onErrand?: () => void;
   /** If set, filter to only tasks belonging to this quest */
   questId?: string | null;
   /** Human-readable quest title for header display */
@@ -260,6 +262,7 @@ export class TaskBrowser {
   private onQuit: () => void;
   private onBack?: () => void;
   private onSwitchToMonitor?: () => void;
+  private onErrand?: () => void;
 
   /** Quest filtering */
   private questId: string | null = null;
@@ -287,6 +290,7 @@ export class TaskBrowser {
     this.onQuit = opts.onQuit;
     this.onBack = opts.onBack;
     this.onSwitchToMonitor = opts.onSwitchToMonitor;
+    this.onErrand = opts.onErrand;
     this.selected = new Set(opts.session.selected);
     this.collapsed = new Set(opts.session.collapsed);
 
@@ -593,6 +597,14 @@ export class TaskBrowser {
     // c — change concurrency
     this.screen.key(["c"], () => {
       this.cycleConcurrency();
+    });
+
+    // e — errand (quest-less assisted task generation)
+    this.screen.key(["e"], () => {
+      if (!this.onErrand) return;
+      this.saveSession();
+      this.destroy();
+      this.onErrand();
     });
   }
 
@@ -962,6 +974,9 @@ export class TaskBrowser {
     line1 += `  {gray-fg}D{/gray-fg} ${this.hideDone ? "show" : "hide"} done`;
     line1 += `  {gray-fg}X{/gray-fg} archive done`;
     line1 += `  {gray-fg}C{/gray-fg} concurrency`;
+    if (this.onErrand) {
+      line1 += `  {gray-fg}E{/gray-fg} errand`;
+    }
     line1 += `  {gray-fg}F5{/gray-fg} sort`;
 
     if (selCount > 0) {

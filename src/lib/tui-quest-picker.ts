@@ -43,6 +43,7 @@ export type QuestPickerAction =
   | { type: "select"; questId: string | null }
   | { type: "plan"; questId: string }
   | { type: "genesis" }
+  | { type: "errand" }
   | { type: "quit" };
 
 export interface QuestPickerOptions {
@@ -51,6 +52,7 @@ export interface QuestPickerOptions {
   onSelect: (questId: string | null) => void;
   onPlan?: (questId: string) => void;
   onGenesis?: () => void;
+  onErrand?: () => void;
   onQuit: () => void;
 }
 
@@ -115,6 +117,7 @@ export class QuestPicker {
   private onSelect: (questId: string | null) => void;
   private onPlan?: (questId: string) => void;
   private onGenesis?: () => void;
+  private onErrand?: () => void;
   private onQuit: () => void;
 
   /** "All Tasks" + quest summaries */
@@ -128,6 +131,7 @@ export class QuestPicker {
     this.onSelect = opts.onSelect;
     this.onPlan = opts.onPlan;
     this.onGenesis = opts.onGenesis;
+    this.onErrand = opts.onErrand;
     this.onQuit = opts.onQuit;
 
     this.loadQuests();
@@ -301,6 +305,11 @@ export class QuestPicker {
     this.screen.key(["g"], () => {
       this.triggerGenesis();
     });
+
+    // E -- errand (quick task generation without a quest)
+    this.screen.key(["e"], () => {
+      this.triggerErrand();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -366,6 +375,14 @@ export class QuestPicker {
 
     this.destroy();
     this.onGenesis();
+  }
+
+  private triggerErrand(): void {
+    if (this.creatingQuest) return;
+    if (!this.onErrand) return;
+
+    this.destroy();
+    this.onErrand();
   }
 
   // -----------------------------------------------------------------------
@@ -1008,6 +1025,7 @@ export class QuestPicker {
     let line1 = ` {bold}Keys:{/bold}`;
     line1 += `  {gray-fg}Enter{/gray-fg} select`;
     line1 += `  {gray-fg}C{/gray-fg} create`;
+    line1 += `  {gray-fg}E{/gray-fg} errand`;
     line1 += `  {gray-fg}P{/gray-fg} plan`;
     line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}A{/gray-fg} activate/pause`;
