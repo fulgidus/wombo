@@ -5,6 +5,17 @@
  *
  * Resets the agent's retry count and re-launches it. Can launch in either
  * headless mode (default) or interactive (dmux/tmux) mode.
+ *
+ * ## Process Lifecycle (audit: wave-detach-audit)
+ *
+ * When `--interactive` is NOT set, the retried agent is launched via
+ * `launchSingleHeadless()`, which spawns with `detached: false` and piped
+ * stdio. The agent is a child of this retry command process and dies when
+ * the retry command exits. Since retry runs a one-shot launch (no monitoring
+ * loop), the agent must complete within the process lifetime.
+ *
+ * When `--interactive` IS set, the agent runs in a multiplexer session
+ * (dmux/tmux) that survives after the retry command exits.
  */
 
 import type { WomboConfig } from "../config.js";

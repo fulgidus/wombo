@@ -1412,6 +1412,12 @@ async function launchWaveHeadless(
 
 // ---------------------------------------------------------------------------
 // Interactive Wave Launch
+//
+// Audit (wave-detach-audit): Interactive agents run inside dmux/tmux sessions.
+// Unlike headless agents, they are NOT child processes of the wombo parent —
+// they survive parent death, SIGINT, and crashes naturally. No explicit
+// cleanup is needed when the parent exits. The `launchInteractive()` function
+// in launcher.ts returns `process: null as any` (no ChildProcess handle).
 // ---------------------------------------------------------------------------
 
 async function launchWaveInteractive(
