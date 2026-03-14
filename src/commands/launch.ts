@@ -1618,10 +1618,12 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       }
 
       // Finalize any merged agents by marking their features as done
+      const finalizedIds: string[] = [];
       if (merged.length > 0) {
         if (fmt === "text") console.log("\nFinalizing merged tasks in tasks file...");
         for (const agent of merged) {
           markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch, fmt);
+          finalizedIds.push(agent.feature_id);
           // Clean up worktree and branch (already merged, safe to delete)
           try {
             removeWorktree(projectRoot, agent.worktree, true);
@@ -1630,6 +1632,13 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
             if (fmt === "text") console.log(`  ${agent.feature_id}: marked done (worktree already cleaned)`);
           }
         }
+      }
+
+      // Strip finalized task IDs from explicit selection so we don't
+      // try to re-launch tasks that were just marked done
+      if (finalizedIds.length > 0 && opts.features?.length) {
+        const finalizedSet = new Set(finalizedIds);
+        opts.features = opts.features.filter((id) => !finalizedSet.has(id));
       }
 
       // Verified agents: build passed but NOT merged — do NOT mark done.
@@ -1684,7 +1693,9 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       msg = "No launchable tasks found.";
     }
 
-    outputError(fmt, msg);
+    // Throw instead of outputError so TUI callers can catch gracefully.
+    // CLI callers catch this in the command handler (index.ts).
+    throw new Error(msg);
   }
 
   // Apply quest constraints to selected tasks (add/ban layered on each task)
