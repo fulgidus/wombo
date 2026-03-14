@@ -253,7 +253,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-2
     title: "Quest TUI — browser integration"
-    status: pending
+    status: in_progress
     tasks:
 
       - id: p2-quest-selector
@@ -262,7 +262,7 @@ phases:
           Before the task browser, show a quest list (or 'all tasks' option).
           Selecting a quest filters the browser to that quest's tasks only.
           Show quest status, task count, completion percentage.
-        status: pending
+        status: done
         effort: PT6H
         depends_on: [p1-quest-cli]
         files:

@@ -54,8 +54,16 @@ export interface TaskBrowserOptions {
   onLaunch: (selectedIds: string[]) => void;
   /** Called when user presses q to quit */
   onQuit: () => void;
+  /** Called when user presses Escape to go back to quest picker */
+  onBack?: () => void;
   /** Called when user presses Tab to switch to wave monitor (if a wave is running) */
   onSwitchToMonitor?: () => void;
+  /** If set, filter to only tasks belonging to this quest */
+  questId?: string | null;
+  /** Human-readable quest title for header display */
+  questTitle?: string;
+  /** Task IDs belonging to the selected quest (used for filtering) */
+  questTaskIds?: string[];
 }
 
 /**
@@ -250,7 +258,13 @@ export class TaskBrowser {
   private session: TUISession;
   private onLaunch: (selectedIds: string[]) => void;
   private onQuit: () => void;
+  private onBack?: () => void;
   private onSwitchToMonitor?: () => void;
+
+  /** Quest filtering */
+  private questId: string | null = null;
+  private questTitle: string | null = null;
+  private questTaskIds: Set<string> | null = null;
 
   private allTasks: Task[] = [];
   private archiveTasks: Task[] = [];
@@ -271,9 +285,15 @@ export class TaskBrowser {
     this.session = opts.session;
     this.onLaunch = opts.onLaunch;
     this.onQuit = opts.onQuit;
+    this.onBack = opts.onBack;
     this.onSwitchToMonitor = opts.onSwitchToMonitor;
     this.selected = new Set(opts.session.selected);
     this.collapsed = new Set(opts.session.collapsed);
+
+    // Quest filtering
+    this.questId = opts.questId ?? null;
+    this.questTitle = opts.questTitle ?? null;
+    this.questTaskIds = opts.questTaskIds ? new Set(opts.questTaskIds) : null;
 
     // Load tasks
     this.reloadTasks();
@@ -281,7 +301,9 @@ export class TaskBrowser {
     // Create screen
     this.screen = blessed.screen({
       smartCSR: true,
-      title: "wombo-combo — Task Browser",
+      title: this.questTitle
+        ? `wombo-combo -- ${this.questTitle}`
+        : "wombo-combo -- Task Browser",
       fullUnicode: true,
     });
 
@@ -401,7 +423,14 @@ export class TaskBrowser {
   private reloadTasks(): void {
     const tasksData = loadTasks(this.projectRoot, this.config);
     const archiveData = loadArchive(this.projectRoot, this.config);
-    this.allTasks = tasksData.tasks;
+
+    // Filter tasks by quest if a quest is selected
+    if (this.questTaskIds) {
+      this.allTasks = tasksData.tasks.filter((t) => this.questTaskIds!.has(t.id));
+    } else {
+      this.allTasks = tasksData.tasks;
+    }
+
     this.archiveTasks = archiveData.tasks;
     this.doneIds = getDoneTaskIds(tasksData, this.archiveTasks);
     this.streams = buildTaskGraph(this.allTasks);
@@ -473,10 +502,26 @@ export class TaskBrowser {
   // -------------------------------------------------------------------------
 
   private bindKeys(): void {
-    // Quit
+    // Quit (or go back to quest picker if in quest mode)
     this.screen.key(["q", "C-c"], () => {
-      this.stop();
-      this.onQuit();
+      if (this.onBack && this.questId) {
+        // In quest-filtered mode: Q goes back to quest picker
+        this.saveSession();
+        this.destroy();
+        this.onBack();
+      } else {
+        this.stop();
+        this.onQuit();
+      }
+    });
+
+    // Escape -- go back to quest picker (always, if available)
+    this.screen.key(["escape"], () => {
+      if (this.onBack) {
+        this.saveSession();
+        this.destroy();
+        this.onBack();
+      }
     });
 
     // Navigate
@@ -725,15 +770,20 @@ export class TaskBrowser {
       (t) => t.status === "backlog" && areDependenciesMet(t, this.doneIds)
     ).length;
 
-    let line1 = ` {bold}wombo-combo{/bold} {cyan-fg}Task Browser{/cyan-fg}`;
-    line1 += `  {gray-fg}│{/gray-fg}  {white-fg}${total}{/white-fg} tasks`;
+    let line1 = ` {bold}wombo-combo{/bold}`;
+    if (this.questTitle) {
+      line1 += ` {magenta-fg}\u25B6 ${escapeBlessedTags(this.questTitle)}{/magenta-fg}`;
+    } else {
+      line1 += ` {cyan-fg}Task Browser{/cyan-fg}`;
+    }
+    line1 += `  {gray-fg}|{/gray-fg}  {white-fg}${total}{/white-fg} tasks`;
     if (this.hideDone) line1 += ` ({white-fg}${displayed}{/white-fg} shown)`;
-    line1 += `  {gray-fg}│{/gray-fg}  {green-fg}${selectedCount}{/green-fg} selected`;
+    line1 += `  {gray-fg}|{/gray-fg}  {green-fg}${selectedCount}{/green-fg} selected`;
 
     let line2 = ` {green-fg}${doneCount}{/green-fg} done`;
     line2 += `  {cyan-fg}${readyCount}{/cyan-fg} ready`;
-    line2 += `  {gray-fg}│{/gray-fg}  Sort: {yellow-fg}${this.session.sortBy}{/yellow-fg}`;
-    line2 += `  {gray-fg}│{/gray-fg}  Concurrency: {yellow-fg}${this.session.maxConcurrent}{/yellow-fg}`;
+    line2 += `  {gray-fg}|{/gray-fg}  Sort: {yellow-fg}${this.session.sortBy}{/yellow-fg}`;
+    line2 += `  {gray-fg}|{/gray-fg}  Concurrency: {yellow-fg}${this.session.maxConcurrent}{/yellow-fg}`;
 
     this.headerBox.setContent(`${line1}\n${line2}`);
   }
@@ -920,7 +970,14 @@ export class TaskBrowser {
     if (this.hasRunningWave) {
       line1 += `  {gray-fg}Tab{/gray-fg} monitor`;
     }
-    line1 += `  {gray-fg}Q{/gray-fg} quit`;
+    if (this.onBack) {
+      line1 += `  {gray-fg}Esc{/gray-fg} back`;
+    }
+    if (this.questId) {
+      line1 += `  {gray-fg}Q{/gray-fg} back`;
+    } else {
+      line1 += `  {gray-fg}Q{/gray-fg} quit`;
+    }
 
     let line2 = ` `;
     if (selCount > 0) {
