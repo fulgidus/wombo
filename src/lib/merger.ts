@@ -12,6 +12,7 @@
  */
 
 import { exec } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
 
 // ---------------------------------------------------------------------------
@@ -22,6 +23,28 @@ export interface MergeResult {
   success: boolean;
   merged: boolean;
   error: string | null;
+  commitHash: string | null;
+}
+
+/**
+ * Result of the tiered merge pipeline.
+ * Indicates which tier resolved the merge (or if it failed).
+ */
+export interface TieredMergeResult {
+  /** Whether the merge succeeded at any tier */
+  success: boolean;
+  /** Which tier resolved the merge:
+   *  1 = clean git merge (no conflicts)
+   *  2 = trivial auto-resolve (whitespace/formatting only)
+   *  3 = resolver agent needed (real conflicts)
+   *  null = not resolved yet (needs agent or manual)
+   */
+  tier: 1 | 2 | 3 | null;
+  /** Conflicting files (empty if tier 1 or 2 succeeded) */
+  conflictFiles: string[];
+  /** Error message if applicable */
+  error: string | null;
+  /** Commit hash if merge completed (tier 1 or 2) */
   commitHash: string | null;
 }
 
@@ -311,6 +334,233 @@ export async function pushBaseBranch(
     console.error(`Push failed: ${result.output}`);
   }
   return result.ok;
+}
+
+// ---------------------------------------------------------------------------
+// Trivial Conflict Auto-Resolution (Tier 2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex to match a single conflict block in a file.
+ *
+ * Captures:
+ *   group 1: "ours" content (HEAD / feature side)
+ *   group 2: "theirs" content (base branch side)
+ *
+ * Handles the standard 3-section format:
+ *   <<<<<<< HEAD
+ *   ... ours ...
+ *   =======
+ *   ... theirs ...
+ *   >>>>>>> branch-name
+ */
+const CONFLICT_RE = /^<{7}\s+\S+\r?\n([\s\S]*?)^={7}\r?\n([\s\S]*?)^>{7}\s+\S+\r?\n?/gm;
+
+/**
+ * Normalize a string for whitespace comparison: collapse all runs of
+ * whitespace (spaces, tabs, newlines) into single spaces and trim.
+ */
+function normalizeWhitespace(s: string): string {
+  return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Check if a conflict is trivial — both sides are semantically identical
+ * when whitespace differences are ignored.
+ */
+function isConflictTrivial(ours: string, theirs: string): boolean {
+  return normalizeWhitespace(ours) === normalizeWhitespace(theirs);
+}
+
+/**
+ * Attempt to auto-resolve trivial conflicts in a single file.
+ *
+ * A conflict is "trivial" if the ours and theirs sides differ only in
+ * whitespace (indentation, blank lines, trailing spaces, line endings).
+ * For trivial conflicts, we keep the "ours" (feature) side since the
+ * agent's implementation is the intended version.
+ *
+ * @returns { resolved: true, content } if ALL conflicts in the file were trivial
+ * @returns { resolved: false } if any conflict is non-trivial
+ */
+function tryAutoResolveFile(content: string): { resolved: boolean; content?: string } {
+  let hasConflicts = false;
+  let allTrivial = true;
+
+  // Check all conflicts first
+  const matches = [...content.matchAll(CONFLICT_RE)];
+  if (matches.length === 0) {
+    return { resolved: false }; // no conflicts found
+  }
+
+  for (const match of matches) {
+    hasConflicts = true;
+    const ours = match[1];
+    const theirs = match[2];
+    if (!isConflictTrivial(ours, theirs)) {
+      allTrivial = false;
+      break;
+    }
+  }
+
+  if (!hasConflicts || !allTrivial) {
+    return { resolved: false };
+  }
+
+  // All conflicts are trivial — resolve by keeping "ours" (feature side)
+  const resolved = content.replace(CONFLICT_RE, "$1");
+  return { resolved: true, content: resolved };
+}
+
+/**
+ * Attempt to auto-resolve ALL trivial conflicts in a worktree.
+ *
+ * For each unmerged file:
+ *   - If ALL its conflicts are trivial (whitespace-only) → auto-resolve
+ *   - If ANY conflict is non-trivial → leave the file untouched
+ *
+ * @returns Object with:
+ *   - `allResolved`: true if every conflicting file was auto-resolved
+ *   - `resolvedFiles`: files that were auto-resolved
+ *   - `unresolvedFiles`: files with real (non-trivial) conflicts
+ */
+export async function tryAutoResolveTrivialConflicts(
+  worktreePath: string
+): Promise<{
+  allResolved: boolean;
+  resolvedFiles: string[];
+  unresolvedFiles: string[];
+}> {
+  // Get list of unmerged (conflicting) files
+  const statusResult = await runSafe("git diff --name-only --diff-filter=U", worktreePath);
+  if (!statusResult.ok || !statusResult.output.trim()) {
+    return { allResolved: false, resolvedFiles: [], unresolvedFiles: [] };
+  }
+
+  const conflictFiles = statusResult.output
+    .trim()
+    .split("\n")
+    .filter((f) => f.length > 0);
+
+  const resolvedFiles: string[] = [];
+  const unresolvedFiles: string[] = [];
+
+  for (const file of conflictFiles) {
+    const filePath = `${worktreePath}/${file}`;
+    try {
+      const content = readFileSync(filePath, "utf-8");
+      const result = tryAutoResolveFile(content);
+
+      if (result.resolved && result.content !== undefined) {
+        writeFileSync(filePath, result.content);
+        await runSafe(`git add "${file}"`, worktreePath);
+        resolvedFiles.push(file);
+      } else {
+        unresolvedFiles.push(file);
+      }
+    } catch {
+      // Can't read/write the file — treat as unresolved
+      unresolvedFiles.push(file);
+    }
+  }
+
+  return {
+    allResolved: unresolvedFiles.length === 0,
+    resolvedFiles,
+    unresolvedFiles,
+  };
+}
+
+/**
+ * Complete a merge after all conflicts have been auto-resolved.
+ * Stages everything and commits with the merge message.
+ */
+export async function commitAutoResolvedMerge(
+  worktreePath: string,
+): Promise<{ success: boolean; error?: string }> {
+  // Commit the merge (--no-edit uses the default merge message)
+  const commitResult = await runSafe("git commit --no-edit", worktreePath);
+  if (!commitResult.ok) {
+    return { success: false, error: commitResult.output };
+  }
+  return { success: true };
+}
+
+/**
+ * Run the tiered merge pipeline for merging base into a feature worktree.
+ *
+ * Tier 1: git merge (fast, free) — if clean, done.
+ * Tier 2: If conflicts, check if ALL are trivial (whitespace-only) → auto-resolve.
+ * Tier 3: Real conflicts remain → return them for a resolver agent.
+ *
+ * This function handles tiers 1 & 2. The caller is responsible for tier 3
+ * (launching a resolver agent) if this returns `tier: 3`.
+ */
+export async function tieredMergeBaseIntoFeature(
+  worktreePath: string,
+  baseBranch: string,
+  config: WomboConfig
+): Promise<TieredMergeResult> {
+  // Tier 1: Attempt clean merge
+  const mergeResult = await mergeBaseIntoFeature(worktreePath, baseBranch, config);
+
+  if (mergeResult.error && !mergeResult.conflicting) {
+    // Merge setup failed entirely
+    return {
+      success: false,
+      tier: null,
+      conflictFiles: [],
+      error: mergeResult.error,
+      commitHash: null,
+    };
+  }
+
+  if (!mergeResult.conflicting) {
+    // Clean merge — tier 1 success
+    const hash = await runSafe("git rev-parse HEAD", worktreePath);
+    return {
+      success: true,
+      tier: 1,
+      conflictFiles: [],
+      error: null,
+      commitHash: hash.ok ? hash.output : null,
+    };
+  }
+
+  // Tier 2: Try auto-resolving trivial conflicts
+  const autoResult = await tryAutoResolveTrivialConflicts(worktreePath);
+
+  if (autoResult.allResolved) {
+    // All conflicts were trivial — commit and done
+    const commitResult = await commitAutoResolvedMerge(worktreePath);
+    if (commitResult.success) {
+      const hash = await runSafe("git rev-parse HEAD", worktreePath);
+      return {
+        success: true,
+        tier: 2,
+        conflictFiles: [],
+        error: null,
+        commitHash: hash.ok ? hash.output : null,
+      };
+    }
+    // Auto-resolve commit failed — fall through to tier 3
+    return {
+      success: false,
+      tier: 3,
+      conflictFiles: autoResult.unresolvedFiles,
+      error: commitResult.error ?? "Auto-resolve commit failed",
+      commitHash: null,
+    };
+  }
+
+  // Tier 3: Real conflicts remain — caller must launch resolver agent
+  return {
+    success: false,
+    tier: 3,
+    conflictFiles: autoResult.unresolvedFiles,
+    error: `${autoResult.unresolvedFiles.length} file(s) with non-trivial conflicts (${autoResult.resolvedFiles.length} trivial conflicts auto-resolved)`,
+    commitHash: null,
+  };
 }
 
 // ---------------------------------------------------------------------------
