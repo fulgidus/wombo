@@ -61,7 +61,7 @@ import {
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { runBuild, runFullVerification, type FullVerificationOptions } from "../lib/verifier.js";
-import { mergeBranch, mergeBaseIntoFeature, pushBaseBranch, canMerge, enqueueMerge } from "../lib/merger.js";
+import { mergeBranch, mergeBaseIntoFeature, pushBaseBranch, canMerge, enqueueMerge, tieredMergeBaseIntoFeature } from "../lib/merger.js";
 import {
   printDashboard,
   printFeatureSelection,
@@ -576,8 +576,13 @@ function handleMergeSuccess(
 }
 
 /**
- * Handle a merge conflict: merge base into feature, then either retry the
- * direct merge (if base merged cleanly) or launch a resolver agent.
+ * Handle a merge conflict: use tiered merge strategy.
+ *
+ * Tier 1: Already failed (we got here because the direct merge failed).
+ * Tier 2: Merge base into feature, then auto-resolve trivial conflicts.
+ * Tier 3: Real conflicts remain — launch a resolver agent.
+ *
+ * If tier 3 also fails after max attempts, mark as needs_manual_merge.
  *
  * All failure paths record the error on the agent (which stays "verified")
  * so the merge can be retried without silently stalling.
@@ -592,25 +597,15 @@ async function handleMergeConflict(
   mergeError: string,
 ): Promise<void> {
   try {
-    // Merge base INTO the feature worktree to create conflict markers
-    const conflictResult = await mergeBaseIntoFeature(
+    // Tiered merge: attempts tier 1 (clean merge) and tier 2 (trivial auto-resolve)
+    const tieredResult = await tieredMergeBaseIntoFeature(
       agent.worktree,
       state.base_branch,
       config
     );
 
-    if (conflictResult.error && !conflictResult.conflicting) {
-      // Setup itself failed — stay as "verified" (retryable) with error
-      printAgentUpdate(agent, `CONFLICT SETUP FAILED: ${conflictResult.error.slice(0, 100)}`);
-      updateAgent(state, agent.feature_id, {
-        error: `Conflict setup failed: ${conflictResult.error}`,
-      });
-      saveState(projectRoot, state);
-      return;
-    }
-
-    if (!conflictResult.conflicting) {
-      // Base merged cleanly into feature — retry merge into base.
+    if (tieredResult.success && tieredResult.tier === 1) {
+      // Clean merge of base into feature — retry merge into base
       printAgentUpdate(agent, "base merged cleanly into feature — retrying merge...");
       const retryMerge = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
       if (retryMerge.success) {
@@ -618,8 +613,8 @@ async function handleMergeConflict(
         return;
       }
 
-      // Retry still failed — need conflict resolution.
-      // Merge base into feature again to get conflict files for the resolver.
+      // Retry still failed — need conflict resolution. Re-merge base into
+      // feature to get conflict files for the resolver.
       printAgentUpdate(agent, `retry merge still failed — launching resolver agent...`);
       const secondConflict = await mergeBaseIntoFeature(
         agent.worktree,
@@ -638,15 +633,52 @@ async function handleMergeConflict(
       return;
     }
 
-    // There are real conflicts — launch a resolver agent
+    if (tieredResult.success && tieredResult.tier === 2) {
+      // Trivial conflicts auto-resolved — retry merge into base
+      printAgentUpdate(agent, "trivial conflicts auto-resolved (whitespace only) — retrying merge...");
+      const retryMerge = await mergeBranch(projectRoot, agent.branch, state.base_branch, config);
+      if (retryMerge.success) {
+        handleMergeSuccess(projectRoot, state, agent, config, retryMerge.commitHash, "MERGED after trivial auto-resolve");
+        return;
+      }
+
+      // Still failed after auto-resolve — fall through to agent resolver
+      printAgentUpdate(agent, `merge still failed after auto-resolve — launching resolver agent...`);
+      const postAutoConflict = await mergeBaseIntoFeature(
+        agent.worktree,
+        state.base_branch,
+        config
+      );
+      const conflictFiles = postAutoConflict.conflicting
+        ? postAutoConflict.files
+        : ["(unknown — merge direction mismatch)"];
+
+      await launchResolverAndRetryMerge(
+        projectRoot, state, agent, feature, config, model,
+        retryMerge.error ?? mergeError, conflictFiles
+      );
+      return;
+    }
+
+    if (tieredResult.tier === null && tieredResult.error) {
+      // Setup itself failed — stay as "verified" (retryable) with error
+      printAgentUpdate(agent, `CONFLICT SETUP FAILED: ${tieredResult.error.slice(0, 100)}`);
+      updateAgent(state, agent.feature_id, {
+        error: `Conflict setup failed: ${tieredResult.error}`,
+      });
+      saveState(projectRoot, state);
+      return;
+    }
+
+    // Tier 3: Real conflicts remain — launch resolver agent
     printAgentUpdate(
       agent,
-      `${conflictResult.files.length} conflicting file(s): ${conflictResult.files.join(", ")}`
+      `${tieredResult.conflictFiles.length} non-trivial conflict(s): ${tieredResult.conflictFiles.join(", ")}`
     );
 
     await launchResolverAndRetryMerge(
       projectRoot, state, agent, feature, config, model,
-      mergeError, conflictResult.files
+      mergeError, tieredResult.conflictFiles
     );
   } catch (conflictErr: any) {
     // Unexpected error during conflict handling — stay "verified" with error
