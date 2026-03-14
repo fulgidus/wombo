@@ -560,7 +560,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
     // SIGINT handler for detailed lifecycle documentation. Agents are
     // non-detached children; killAll() gives them SIGTERM before exit.
     const tuiRef = { current: null as WomboTUI | null };
-    process.on("SIGINT", () => {
+    const gracefulShutdown = (signal: string) => {
       if (tuiRef.current) tuiRef.current.stop();
       for (const agent of state.agents) {
         if (agent.status === "running" || agent.status === "resolving_conflict") {
@@ -571,9 +571,12 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       }
       monitor.killAll();
       flushState(projectRoot, state);
-      if (fmt === "text") console.log("\nState saved. Use 'woco resume' to continue.");
+      if (fmt === "text") console.log(`\nState saved (${signal}). Use 'woco resume' to continue.`);
       process.exit(0);
-    });
+    };
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+    process.on("SIGHUP", () => gracefulShutdown("SIGHUP"));
 
     await Promise.all(
       toLaunchNow.map((agent) => {
