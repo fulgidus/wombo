@@ -383,7 +383,7 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-5
     title: "Quest planner agent"
-    status: pending
+    status: done
     tasks:
 
       - id: p5-quest-planner-definition
@@ -395,7 +395,7 @@ phases:
           Produces: structured YAML with tasks, deps, agent suggestions, effort.
           Multi-step: can explore files via tools, but outputs only a plan.
           Validates: DAG, no file overlap in streams, mergeability.
-        status: pending
+        status: done
         effort: PT10H
         files:
           - src/templates/quest-planner-agent.md (new)
@@ -407,7 +407,7 @@ phases:
           Capture structured output (YAML task list).
           Parse and validate: DAG check, file overlap detection, effort sanity.
           Store proposed plan in quest file under a 'proposed_tasks' field.
-        status: pending
+        status: done
         effort: PT8H
         depends_on: [p5-quest-planner-definition]
         files:
@@ -421,7 +421,7 @@ phases:
           User can: accept, reject, edit, reorder, change agents, adjust deps.
           Approve = writes tasks to quest's task set and transitions to active.
           Reject = discard plan, optionally re-run planner with feedback.
-        status: pending
+        status: done
         effort: PT10H
         depends_on: [p5-planner-execution, p2-quest-selector]
         files:
