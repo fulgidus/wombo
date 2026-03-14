@@ -285,53 +285,65 @@ phases:
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-3
     title: "HITL — real-time query_human system"
-    status: pending
+    status: done
     tasks:
 
       - id: p3-question-channel
-        title: "IPC channel for agent ↔ monitor communication"
+        title: "File-based IPC channel for agent ↔ monitor communication"
         description: >
-          Create a named pipe or Unix domain socket per agent session.
-          The agent writes a JSON question message, blocks on read.
-          The monitor reads the question, displays it, writes the answer back.
-          Protocol: { type: "question", task_id, text } → { type: "answer", text }
-          Must handle agent crash (broken pipe = treat as abandoned question).
-        status: pending
+          File-based IPC via JSON files in .wombo-combo/hitl/.
+          Agent runs hitl-ask standalone script (via bash tool), which writes
+          a question file, polls for answer file at 1s intervals.
+          Monitor detects question files in 5-second polling loop, shows in TUI.
+          Human types answer, monitor writes answer file.
+          hitl-ask reads answer, prints to stdout, exits.
+          Protocol: question.json { id, agentId, text, context?, timestamp }
+                    answer.json   { id, text, timestamp }
+          30-minute timeout → fallback "proceed with best judgment".
+        status: done
         effort: PT8H
         files:
           - src/lib/hitl-channel.ts (new)
+          - src/lib/hitl-ask.ts (new)
           - src/lib/launcher.ts
+          - src/lib/monitor.ts
 
       - id: p3-query-human-tool
-        title: "query_human MCP tool definition"
+        title: "HITL prompt injection and env var threading"
         description: >
-          Define the query_human tool that agents can call.
-          In yolo mode: returns canned "proceed autonomously" response.
-          In cautious/supervised mode: writes to IPC channel, blocks for answer.
-          Tool definition injected into agent prompts based on HITL mode.
-        status: pending
+          Instead of MCP tool, agents use bash tool to call hitl-ask script.
+          Prompt injection adds ## Human-in-the-Loop section when hitlMode
+          is cautious or supervised. hitlMode threaded from Quest through
+          launch/resume/retry → generatePrompt and launchHeadless.
+          Env vars WOMBO_HITL_DIR, WOMBO_AGENT_ID, WOMBO_HITL_MODE,
+          WOMBO_HITL_ASK set in agent environment.
+        status: done
         effort: PT6H
         depends_on: [p3-question-channel]
         files:
-          - src/lib/hitl-tool.ts (new)
-          - src/templates/hitl-cautious.md (new)
-          - src/templates/hitl-supervised.md (new)
+          - src/lib/prompt.ts
+          - src/lib/launcher.ts
+          - src/commands/launch.ts
+          - src/commands/resume.ts
+          - src/commands/retry.ts
 
       - id: p3-tui-question-queue
         title: "Question queue + popup in wave monitor"
         description: >
-          Monitor maintains a queue of pending questions from all agents.
-          Badge count shown in status bar (e.g. "3 questions pending").
-          Dedicated key (?) to open question viewer.
-          Question viewer shows agent ID, question text, text input for answer.
-          Tab/arrows to cycle between multiple pending questions.
-          Answer submission writes to the agent's IPC channel.
-        status: pending
+          Monitor polls .wombo-combo/hitl/ for pending questions every 5s.
+          Badge "? N pending" shown in status bar when questions exist.
+          H key opens QuestionPopup modal overlay.
+          Popup shows agent ID, question text, context, textarea for answer.
+          Tab/S-Tab to cycle between multiple pending questions.
+          Ctrl+S to submit answer (calls submitAnswer from hitl-channel).
+          Live-updated when new questions arrive while popup is open.
+          Answer callback wired through TUIOptions → launch.ts/resume.ts.
+        status: done
         effort: PT10H
         depends_on: [p3-query-human-tool]
         files:
-          - src/lib/tui.ts
           - src/lib/tui-question-popup.ts (new)
+          - src/lib/tui.ts
 
   # ─────────────────────────────────────────────────────────────────────────
   - id: phase-4
