@@ -16,7 +16,7 @@
  *   │ ☐ tdd-test-detection   done │ Depends on:            │
  *   │ ...                         │   - json-ops-commands  │
  *   ├──────────────────────────────┴────────────────────────┤
- *   │ Space:toggle  S:stream  L:launch  Tab:sort  Q:quit   │
+ *   │ Space:toggle  S:stream  L:launch  O:sort  Q:quit    │
  *   └───────────────────────────────────────────────────────┘
  *
  * Keybinds:
@@ -24,7 +24,8 @@
  *   S         — toggle entire stream (select/deselect all tasks in the group)
  *   A         — select all / deselect all (toggle)
  *   L         — launch selected tasks as a new wave
- *   Tab       — cycle sort field (priority → status → name → effort → stream)
+ *   Tab       — cycle sort field / switch to wave monitor (if wave running)
+ *   O         — cycle sort field (priority → status → name → effort → stream)
  *   +/-       — change priority of selected task
  *   Enter     — expand/collapse task detail inline
  *   D         — toggle show done tasks (filter)
@@ -566,8 +567,8 @@ export class TaskBrowser {
       }
     });
 
-    // F5 — cycle sort (alternative when Tab is used for view switch)
-    this.screen.key(["f5"], () => {
+    // O — cycle sort order (laptop-friendly alternative when Tab is used for view switch)
+    this.screen.key(["o"], () => {
       this.cycleSort();
     });
 
@@ -977,7 +978,7 @@ export class TaskBrowser {
     if (this.onErrand) {
       line1 += `  {gray-fg}E{/gray-fg} errand`;
     }
-    line1 += `  {gray-fg}F5{/gray-fg} sort`;
+    line1 += `  {gray-fg}O{/gray-fg} sort`;
 
     if (selCount > 0) {
       line1 += `  {bold}{green-fg}L{/green-fg} LAUNCH (${selCount}){/bold}`;
