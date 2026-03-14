@@ -53,6 +53,7 @@ import {
   type TechStack,
   type ProjectConventions,
 } from "./project-store.js";
+import { patchTextarea } from "./blessed-textarea-patch.js";
 
 // ---------------------------------------------------------------------------
 // runBrownfieldScout — standalone scout function
@@ -474,17 +475,10 @@ function escapeBlessedTags(text: string): string {
 
 function cleanupScreen(screen: Widgets.Screen): void {
   screen.destroy();
-  if (process.stdin.isTTY) {
-    try {
-      process.stdin.removeAllListeners("keypress");
-      process.stdin.removeAllListeners("data");
-      if (typeof process.stdin.setRawMode === "function") {
-        process.stdin.setRawMode(false);
-      }
-    } catch {
-      // Ignore cleanup errors
-    }
-  }
+  // NOTE: Do NOT call process.stdin.removeAllListeners() or setRawMode(false)
+  // here.  screen.destroy() already restores terminal state, and nuking stdin
+  // listeners / raw-mode would break any *subsequent* blessed screen that the
+  // TUI main loop creates (e.g. quest picker after skipped onboarding).
   process.stdout.write("\x1B[2J\x1B[H");
 }
 
@@ -562,6 +556,7 @@ export function runOnboardingWizard(
       inputOnFocus: true,
       hidden: true,
     });
+    patchTextarea(textbox);
 
     // Selection list (for type selection)
     const selectList = blessed.list({
@@ -1236,17 +1231,8 @@ export function reviewSections(
     const destroyScreen = () => {
       if (!ownsScreen) return;
       scr.destroy();
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.removeAllListeners("data");
-          if (typeof process.stdin.setRawMode === "function") {
-            process.stdin.setRawMode(false);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
+      // screen.destroy() restores terminal state. Do NOT nuke stdin listeners
+      // or disable raw mode — that would break subsequent blessed screens.
       process.stdout.write("\x1B[2J\x1B[H");
     };
 
@@ -1324,6 +1310,7 @@ export function reviewSections(
       hidden: true,
       padding: { left: 1, right: 1 },
     });
+    patchTextarea(editArea);
 
     contentBox.focus();
 
@@ -1643,17 +1630,8 @@ export function showSectionMenu(
     const destroyScreen = () => {
       if (!ownsScreen) return;
       scr.destroy();
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.removeAllListeners("data");
-          if (typeof process.stdin.setRawMode === "function") {
-            process.stdin.setRawMode(false);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
+      // screen.destroy() restores terminal state. Do NOT nuke stdin listeners
+      // or disable raw mode — that would break subsequent blessed screens.
       process.stdout.write("\x1B[2J\x1B[H");
     };
 
@@ -1826,17 +1804,8 @@ export function editSingleSection(
     const destroyScreen = () => {
       if (!ownsScreen) return;
       scr.destroy();
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.removeAllListeners("data");
-          if (typeof process.stdin.setRawMode === "function") {
-            process.stdin.setRawMode(false);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
+      // screen.destroy() restores terminal state. Do NOT nuke stdin listeners
+      // or disable raw mode — that would break subsequent blessed screens.
       process.stdout.write("\x1B[2J\x1B[H");
     };
 
@@ -1890,6 +1859,7 @@ export function editSingleSection(
       label: ` {cyan-fg}${secName}{/cyan-fg} `,
       padding: { left: 1, right: 1 },
     });
+    patchTextarea(editArea);
 
     // Status bar
     const statusBar = blessed.box({
@@ -1958,8 +1928,14 @@ export function editSingleSection(
       resolve(profile);
     };
 
-    // Ctrl+S to save
-    scr.key(["C-s"], () => {
+    // Ctrl+S to save — bound on the editArea widget (not screen) because
+    // blessed's grabKeys blocks screen-level handlers during textarea input.
+    editArea.key(["C-s"], () => {
+      finishSave();
+    });
+
+    // Ctrl+D ("done") as alternative
+    editArea.key(["C-d"], () => {
       finishSave();
     });
 
@@ -2380,17 +2356,8 @@ export function collectInputs(
     const destroyScreen = () => {
       if (!ownsScreen) return;
       scr.destroy();
-      if (process.stdin.isTTY) {
-        try {
-          process.stdin.removeAllListeners("keypress");
-          process.stdin.removeAllListeners("data");
-          if (typeof process.stdin.setRawMode === "function") {
-            process.stdin.setRawMode(false);
-          }
-        } catch {
-          // Ignore cleanup errors
-        }
-      }
+      // screen.destroy() restores terminal state. Do NOT nuke stdin listeners
+      // or disable raw mode — that would break subsequent blessed screens.
       process.stdout.write("\x1B[2J\x1B[H");
     };
 
@@ -2443,6 +2410,7 @@ export function collectInputs(
       inputOnFocus: true,
       hidden: true,
     });
+    patchTextarea(textbox);
 
     // Multi-line textarea
     const textarea = blessed.textarea({
@@ -2461,6 +2429,7 @@ export function collectInputs(
       inputOnFocus: true,
       hidden: true,
     });
+    patchTextarea(textarea);
 
     // Selection list (for type step)
     const selectList = blessed.list({
@@ -2635,8 +2604,12 @@ export function collectInputs(
     // Input handlers — Multi-line textarea
     // -----------------------------------------------------------------------
 
-    // Ctrl+S to save textarea content and advance
-    scr.key(["C-s"], () => {
+    // Submit textarea content and advance to the next step.
+    //
+    // IMPORTANT: handlers must be bound on the *textarea widget*, NOT on the
+    // screen, because blessed sets `screen.grabKeys = true` while a textarea
+    // is in reading mode — screen-level key handlers are blocked.
+    const submitTextarea = () => {
       const step = currentStep();
       if (!step.multiline) return;
 
@@ -2649,7 +2622,15 @@ export function collectInputs(
       }
       data[step.field] = trimmed;
       advance();
-    });
+    };
+
+    // Ctrl+S on the textarea widget (bypasses grabKeys).
+    // Ctrl+S sends \x13 which blessed's textarea _listener filters as a
+    // control char (never appended to the value), so it's safe.
+    textarea.key(["C-s"], submitTextarea);
+
+    // Also accept Ctrl+D ("done") as an alternative
+    textarea.key(["C-d"], submitTextarea);
 
     textarea.key(["escape"], () => {
       goBack();
@@ -2882,17 +2863,9 @@ export async function runOnboardingAsync(opts: {
 
     return profile;
   } finally {
-    // Clean up stdin on exit
-    if (process.stdin.isTTY) {
-      try {
-        process.stdin.removeAllListeners("keypress");
-        process.stdin.removeAllListeners("data");
-        if (typeof process.stdin.setRawMode === "function") {
-          process.stdin.setRawMode(false);
-        }
-      } catch {
-        // Ignore cleanup errors
-      }
-    }
+    // Nothing to do here — individual sub-screens handle their own cleanup
+    // via screen.destroy(), which restores terminal state.  We must NOT call
+    // removeAllListeners or setRawMode(false) because the TUI main loop may
+    // create another blessed screen immediately after this function returns.
   }
 }

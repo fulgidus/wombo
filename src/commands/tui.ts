@@ -120,12 +120,12 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
     session.maxConcurrent = opts.maxConcurrent;
   }
 
-  // First-run detection: if no project.yml exists, run onboarding wizard
+  // First-run detection: if no project.yml exists, run onboarding wizard.
+  // If the user cancels/skips, we continue into the TUI anyway — next time
+  // they launch, onboarding will appear again (snoozable).
   if (!projectExists(projectRoot)) {
     const profile = await runOnboardingAsync({ projectRoot, config });
-    if (!profile) {
-      process.exit(0);
-    }
+    // Clear screen whether completed or skipped
     process.stdout.write('\x1B[2J\x1B[H');
   }
 
