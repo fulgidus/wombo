@@ -375,6 +375,24 @@ export class WomboTUI {
 
   // -------------------------------------------------------------------------
   // Start / Stop
+  //
+  // ## TUI Lifecycle and Agent Processes (audit: wave-detach-audit)
+  //
+  // `stop()` only tears down the TUI — it clears the refresh timer and
+  // destroys the blessed screen. It does NOT kill agent processes.
+  //
+  // Agent process termination is handled by the `onQuit` callback, which
+  // is set by launch.ts/resume.ts to call `monitor.killAll()` + state save.
+  //
+  // The separation is intentional:
+  //   - `stop()` is also called before mux attach (muxAttach method) where
+  //     the TUI is temporarily destroyed and recreated after detach.
+  //   - `onQuit()` is only called when the user intends to exit the entire
+  //     wave, triggering agent cleanup and process exit.
+  //
+  // `screen.destroy()` does NOT affect child processes because agents are
+  // spawned by the ProcessMonitor (in the launch command), not by the TUI.
+  // The TUI only reads from the monitor — it never owns agent processes.
   // -------------------------------------------------------------------------
 
   start(): void {
