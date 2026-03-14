@@ -6,6 +6,7 @@
  *   2. Task Browser (tui-browser.ts) -- select tasks, change priorities, launch
  *   3. Wave Monitor (tui.ts) -- watch running wave, view logs, retry agents
  *   4. Plan Review (tui-plan-review.ts) -- review/edit/approve planner output
+ *   5. Genesis Review (tui-genesis-review.ts) -- review/edit/approve genesis plan
  *
  * Flow:
  *   `woco` -> Quest Picker (if quests exist) -> Task Browser -> L -> launches
@@ -13,6 +14,9 @@
  *
  *   Quest Picker -> P (plan) -> spinner -> Plan Review -> approve/cancel ->
  *   back to Quest Picker
+ *
+ *   Quest Picker -> G (genesis) -> vision prompt -> spinner -> Genesis Review
+ *   -> approve/cancel -> back to Quest Picker
  *
  * If no quests exist, the Quest Picker is skipped entirely and the flow goes
  * straight to the Task Browser (backward compatible).
@@ -39,7 +43,12 @@ import { PlanReview } from "../lib/tui-plan-review.js";
 import type { ProposedTask } from "../lib/quest-planner.js";
 import { runQuestPlanner, applyPlanToQuest } from "../lib/quest-planner.js";
 import type { PlanResult } from "../lib/quest-planner.js";
-import { loadAllQuests, loadQuest, saveQuest } from "../lib/quest-store.js";
+import { loadAllQuests, loadQuest, saveQuest, listQuestIds, saveQuestKnowledge } from "../lib/quest-store.js";
+import { GenesisReview } from "../lib/tui-genesis-review.js";
+import type { GenesisReviewAction } from "../lib/tui-genesis-review.js";
+import { runGenesisPlanner } from "../lib/genesis-planner.js";
+import type { GenesisResult, ProposedQuest } from "../lib/genesis-planner.js";
+import { createBlankQuest } from "../lib/quest.js";
 import { cmdLaunch } from "./launch.js";
 import type { LaunchCommandOptions } from "./launch.js";
 import { cmdResume } from "./resume.js";
@@ -168,6 +177,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         continue;
       }
 
+      if (questAction.type === "genesis") {
+        // User pressed G to run genesis -- run genesis planner + review
+        await handleGenesisFlow(projectRoot, config, opts);
+        // After genesis (approve or cancel), loop back to quest picker
+        process.stdout.write("\x1B[2J\x1B[H");
+        continue;
+      }
+
       selectedQuestId = questAction.questId;
     }
 
@@ -260,6 +277,10 @@ function showQuestPicker(
 
       onPlan: (questId: string) => {
         resolve({ type: "plan", questId });
+      },
+
+      onGenesis: () => {
+        resolve({ type: "genesis" });
       },
 
       onQuit: () => {
@@ -394,6 +415,180 @@ async function handlePlanFlow(
     saveQuest(projectRoot, quest);
     await sleep(3000);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Genesis Flow -- Vision Prompt + Planner + Review
+// ---------------------------------------------------------------------------
+
+/**
+ * Run the genesis planner: prompt user for a vision, run the genesis planner
+ * agent, then show the genesis review TUI.
+ * Handles the full flow: readline prompt → spinner → planner → review → create quests.
+ */
+async function handleGenesisFlow(
+  projectRoot: string,
+  config: WomboConfig,
+  opts: TUICommandOptions
+): Promise<void> {
+  // Prompt the user for a project vision via readline (no blessed screen is active)
+  const readline = await import("node:readline");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  const vision = await new Promise<string>((resolve) => {
+    console.log();
+    console.log("  ╔══════════════════════════════════════╗");
+    console.log("  ║         GENESIS PLANNER              ║");
+    console.log("  ╚══════════════════════════════════════╝");
+    console.log();
+    console.log("  Describe your project vision. The genesis planner will");
+    console.log("  decompose it into a set of quests.");
+    console.log();
+    rl.question("  Vision: ", (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+
+  if (!vision) {
+    console.log("\n  No vision provided. Returning to quest picker.\n");
+    await sleep(1500);
+    return;
+  }
+
+  // Gather existing quest IDs so the planner can avoid duplicates
+  const existingQuestIds = listQuestIds(projectRoot);
+
+  // Show a planning spinner on the terminal
+  console.log();
+  console.log(`  Running genesis planner agent...`);
+  console.log();
+
+  const spinChars = ["\u2802", "\u2806", "\u2807", "\u2803", "\u2809", "\u280C", "\u280E", "\u280B"];
+  let spinIdx = 0;
+  let lastProgress = "";
+  const spinTimer = setInterval(() => {
+    const ch = spinChars[spinIdx % spinChars.length];
+    spinIdx++;
+    process.stdout.write(`\r  ${ch} ${lastProgress}`);
+  }, 120);
+
+  let genesisResult: GenesisResult;
+
+  try {
+    genesisResult = await runGenesisPlanner(vision, projectRoot, config, {
+      existingQuestIds,
+      model: opts.model,
+      onProgress: (msg) => {
+        lastProgress = msg;
+      },
+    });
+  } catch (err: any) {
+    clearInterval(spinTimer);
+    process.stdout.write("\r" + " ".repeat(80) + "\r");
+    console.error(`\n  Genesis planner error: ${err.message}\n`);
+    await sleep(3000);
+    return;
+  }
+
+  clearInterval(spinTimer);
+  process.stdout.write("\r" + " ".repeat(80) + "\r");
+
+  if (!genesisResult.success && genesisResult.quests.length === 0) {
+    // Total failure — no quests produced
+    console.error(`\n  Genesis planner failed: ${genesisResult.error ?? "No quests produced"}\n`);
+    await sleep(3000);
+    return;
+  }
+
+  console.log(`  Genesis planner produced ${genesisResult.quests.length} quests.`);
+  if (genesisResult.issues.length > 0) {
+    const errors = genesisResult.issues.filter((i) => i.level === "error").length;
+    const warnings = genesisResult.issues.filter((i) => i.level === "warning").length;
+    if (errors > 0) console.log(`  ${errors} validation error(s).`);
+    if (warnings > 0) console.log(`  ${warnings} validation warning(s).`);
+  }
+  console.log(`  Opening genesis review...\n`);
+  await sleep(1000);
+
+  // Clear terminal before showing the genesis review TUI
+  process.stdout.write("\x1B[2J\x1B[H");
+
+  // Show the genesis review TUI
+  const reviewAction = await showGenesisReview(genesisResult);
+
+  if (reviewAction.type === "cancel") {
+    console.log(`\n  Genesis plan discarded.\n`);
+    await sleep(1500);
+    return;
+  }
+
+  // User approved — create quests from accepted proposals
+  const baseBranch = opts.baseBranch ?? config.baseBranch;
+  const created: string[] = [];
+
+  for (const proposed of reviewAction.quests) {
+    const quest = createBlankQuest(proposed.id, proposed.title, proposed.goal, baseBranch, {
+      priority: proposed.priority,
+      difficulty: proposed.difficulty,
+      hitlMode: proposed.hitl_mode,
+    });
+
+    // Apply constraints from the genesis planner
+    quest.constraints.add = proposed.constraints.add ?? [];
+    quest.constraints.ban = proposed.constraints.ban ?? [];
+    quest.depends_on = proposed.depends_on ?? [];
+    quest.notes = proposed.notes ?? [];
+
+    saveQuest(projectRoot, quest);
+    created.push(quest.id);
+  }
+
+  console.log(`\n  Genesis plan approved! Created ${created.length} quests:`);
+  for (const id of created) {
+    console.log(`    - ${id}`);
+  }
+
+  // Save knowledge if the planner produced any (attach to the first quest)
+  const knowledge = reviewAction.knowledge;
+  if (knowledge && created.length > 0) {
+    saveQuestKnowledge(projectRoot, created[0], knowledge);
+    console.log(`  Saved knowledge file (${knowledge.length} chars) to quest "${created[0]}".`);
+  }
+
+  console.log();
+  await sleep(2000);
+}
+
+// ---------------------------------------------------------------------------
+// Genesis Review View -- Promise-based
+// ---------------------------------------------------------------------------
+
+/**
+ * Show the Genesis Review TUI and return a Promise that resolves when the
+ * user approves or cancels.
+ */
+function showGenesisReview(
+  genesisResult: GenesisResult
+): Promise<GenesisReviewAction> {
+  return new Promise<GenesisReviewAction>((resolve) => {
+    const review = new GenesisReview({
+      genesisResult,
+
+      onApprove: (quests, knowledge) => {
+        resolve({ type: "approve", quests, knowledge });
+      },
+
+      onCancel: () => {
+        resolve({ type: "cancel" });
+      },
+    });
+
+    review.start();
+  });
 }
 
 // ---------------------------------------------------------------------------
