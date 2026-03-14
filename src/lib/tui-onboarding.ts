@@ -40,10 +40,13 @@ import { ProgressScreen } from "./tui-progress.js";
 import {
   createBlankProfile,
   normalizeProfile,
+  PROFILE_SECTIONS,
+  type ProfileSection,
   type ProjectProfile,
   type ProjectType,
   type ProjectObjective,
   type ProjectRule,
+  type RuleRigidity,
   type TechStack,
   type ProjectConventions,
 } from "./project-store.js";
@@ -901,6 +904,636 @@ export function runOnboardingWizard(
 
     // Start at step 0
     showStep(currentStep());
+  });
+}
+
+// ---------------------------------------------------------------------------
+// reviewSections — section-by-section review flow
+// ---------------------------------------------------------------------------
+
+/** Human-friendly names for each section. */
+const SECTION_NAMES: Record<ProfileSection, string> = {
+  identity: "Identity",
+  vision: "Vision",
+  objectives: "Objectives",
+  tech_stack: "Tech Stack",
+  conventions: "Conventions",
+  rules: "Rules",
+};
+
+/**
+ * Format a section of the profile as readable text for display using blessed tags.
+ */
+function formatSectionForDisplay(
+  section: ProfileSection,
+  profile: ProjectProfile,
+): string {
+  switch (section) {
+    case "identity": {
+      const lines: string[] = [];
+      lines.push(`{bold}Name:{/bold} ${escapeBlessedTags(profile.name || "(not set)")}`);
+      lines.push(`{bold}Type:{/bold} ${profile.type}`);
+      lines.push(`{bold}Description:{/bold} ${escapeBlessedTags(profile.description || "(not set)")}`);
+      return lines.join("\n");
+    }
+
+    case "vision": {
+      if (!profile.vision) return "{gray-fg}(no vision set){/gray-fg}";
+      return escapeBlessedTags(profile.vision);
+    }
+
+    case "objectives": {
+      if (profile.objectives.length === 0) return "{gray-fg}(no objectives){/gray-fg}";
+      const lines: string[] = [];
+      for (const obj of profile.objectives) {
+        const pColor =
+          obj.priority === "high" ? "yellow" :
+          obj.priority === "low" ? "gray" : "white";
+        lines.push(
+          `  {${pColor}-fg}[${obj.priority}]{/${pColor}-fg} ${escapeBlessedTags(obj.text)} {gray-fg}(${obj.status}){/gray-fg}`
+        );
+      }
+      return lines.join("\n");
+    }
+
+    case "tech_stack": {
+      const ts = profile.tech_stack;
+      const lines: string[] = [];
+      lines.push(`{bold}Runtime:{/bold}    ${escapeBlessedTags(ts.runtime || "(not set)")}`);
+      lines.push(`{bold}Language:{/bold}   ${escapeBlessedTags(ts.language || "(not set)")}`);
+      lines.push(`{bold}Frameworks:{/bold} ${ts.frameworks.length > 0 ? escapeBlessedTags(ts.frameworks.join(", ")) : "(none)"}`);
+      lines.push(`{bold}Tools:{/bold}      ${ts.tools.length > 0 ? escapeBlessedTags(ts.tools.join(", ")) : "(none)"}`);
+      if (ts.notes) lines.push(`{bold}Notes:{/bold}      ${escapeBlessedTags(ts.notes)}`);
+      return lines.join("\n");
+    }
+
+    case "conventions": {
+      const conv = profile.conventions;
+      const lines: string[] = [];
+      lines.push(`{bold}Commits:{/bold}      ${escapeBlessedTags(conv.commits || "(not set)")}`);
+      lines.push(`{bold}Branches:{/bold}     ${escapeBlessedTags(conv.branches || "(not set)")}`);
+      lines.push(`{bold}Testing:{/bold}      ${escapeBlessedTags(conv.testing || "(not set)")}`);
+      lines.push(`{bold}Coding style:{/bold} ${escapeBlessedTags(conv.coding_style || "(not set)")}`);
+      lines.push(`{bold}Naming:{/bold}       ${escapeBlessedTags(conv.naming || "(not set)")}`);
+      return lines.join("\n");
+    }
+
+    case "rules": {
+      if (profile.rules.length === 0) return "{gray-fg}(no rules){/gray-fg}";
+      const lines: string[] = [];
+      for (const rule of profile.rules) {
+        const rColor =
+          rule.rigidity === "hard" ? "red" :
+          rule.rigidity === "preference" ? "gray" : "yellow";
+        lines.push(
+          `  {${rColor}-fg}[${rule.rigidity}]{/${rColor}-fg} {bold}${escapeBlessedTags(rule.scope)}{/bold}: ${escapeBlessedTags(rule.text)}`
+        );
+        if (rule.consequences) {
+          lines.push(`    {gray-fg}Consequences: ${escapeBlessedTags(rule.consequences)}{/gray-fg}`);
+        }
+      }
+      return lines.join("\n");
+    }
+  }
+}
+
+/**
+ * Serialize a section of the profile as editable plain text.
+ * The user edits this in a textarea and the result is parsed back.
+ */
+function serializeSectionForEdit(
+  section: ProfileSection,
+  profile: ProjectProfile,
+): string {
+  switch (section) {
+    case "identity": {
+      const lines: string[] = [];
+      lines.push(`name: ${profile.name}`);
+      lines.push(`type: ${profile.type}`);
+      lines.push(`description: ${profile.description}`);
+      return lines.join("\n");
+    }
+
+    case "vision": {
+      return profile.vision;
+    }
+
+    case "objectives": {
+      if (profile.objectives.length === 0) return "";
+      return profile.objectives
+        .map((obj) => `[${obj.priority}] ${obj.text}`)
+        .join("\n");
+    }
+
+    case "tech_stack": {
+      const ts = profile.tech_stack;
+      const lines: string[] = [];
+      lines.push(`runtime: ${ts.runtime}`);
+      lines.push(`language: ${ts.language}`);
+      lines.push(`frameworks: ${ts.frameworks.join(", ")}`);
+      lines.push(`tools: ${ts.tools.join(", ")}`);
+      if (ts.notes) lines.push(`notes: ${ts.notes}`);
+      return lines.join("\n");
+    }
+
+    case "conventions": {
+      const conv = profile.conventions;
+      const lines: string[] = [];
+      lines.push(`commits: ${conv.commits}`);
+      lines.push(`branches: ${conv.branches}`);
+      lines.push(`testing: ${conv.testing}`);
+      lines.push(`coding_style: ${conv.coding_style}`);
+      lines.push(`naming: ${conv.naming}`);
+      return lines.join("\n");
+    }
+
+    case "rules": {
+      if (profile.rules.length === 0) return "";
+      return profile.rules
+        .map((rule) => {
+          let line = `[${rule.rigidity}] ${rule.scope}: ${rule.text}`;
+          if (rule.consequences) line += ` (consequences: ${rule.consequences})`;
+          return line;
+        })
+        .join("\n");
+    }
+  }
+}
+
+/**
+ * Parse edited text back into profile data for a given section.
+ * Returns a partial profile patch.
+ */
+function parseSectionEdit(
+  section: ProfileSection,
+  text: string,
+  profile: ProjectProfile,
+): Partial<ProjectProfile> {
+  switch (section) {
+    case "identity": {
+      const patch: Partial<ProjectProfile> = {};
+      const lines = text.split("\n");
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const nameMatch = trimmed.match(/^name:\s*(.*)$/i);
+        if (nameMatch) {
+          patch.name = nameMatch[1].trim();
+          continue;
+        }
+        const typeMatch = trimmed.match(/^type:\s*(.*)$/i);
+        if (typeMatch) {
+          const t = typeMatch[1].trim().toLowerCase();
+          if (t === "greenfield" || t === "brownfield") {
+            patch.type = t;
+          }
+          continue;
+        }
+        const descMatch = trimmed.match(/^description:\s*(.*)$/i);
+        if (descMatch) {
+          patch.description = descMatch[1].trim();
+          continue;
+        }
+      }
+      return patch;
+    }
+
+    case "vision": {
+      return { vision: text.trim() };
+    }
+
+    case "objectives": {
+      return { objectives: parseObjectives(text) };
+    }
+
+    case "tech_stack": {
+      return { tech_stack: parseTechStack(text) };
+    }
+
+    case "conventions": {
+      return { conventions: parseConventions(text) };
+    }
+
+    case "rules": {
+      return { rules: parseRulesRich(text) };
+    }
+  }
+}
+
+/**
+ * Parse rules from text that may include rigidity and scope.
+ *
+ * Supports the richer format produced by serializeSectionForEdit:
+ *   [hard] runtime: Always use Bun (consequences: build breaks)
+ *   [soft] general: Keep dependencies minimal
+ *
+ * Falls back to plain parseRules() if the format doesn't match.
+ */
+function parseRulesRich(raw: string): ProjectRule[] {
+  if (!raw || !raw.trim()) return [];
+
+  const lines = raw.split("\n").filter((l) => l.trim().length > 0);
+  const rules: ProjectRule[] = [];
+
+  const RICH_RULE_RE =
+    /^\s*\[(hard|soft|preference)\]\s+([^:]+):\s*(.+?)(?:\s*\(consequences:\s*(.+?)\)\s*)?$/i;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const match = trimmed.match(RICH_RULE_RE);
+    if (match) {
+      const rigidity = match[1].toLowerCase() as RuleRigidity;
+      const scope = match[2].trim();
+      const text = match[3].trim();
+      const consequences = match[4]?.trim() ?? "";
+
+      rules.push({
+        id: `rule-${rules.length + 1}`,
+        text,
+        scope,
+        rigidity,
+        consequences,
+        tags: [],
+      });
+    } else {
+      // Plain text fallback
+      rules.push({
+        id: `rule-${rules.length + 1}`,
+        text: trimmed,
+        scope: "general",
+        rigidity: "soft",
+        consequences: "",
+        tags: [],
+      });
+    }
+  }
+
+  return rules;
+}
+
+/**
+ * Walk the user through a sequential section-by-section review of the
+ * synthesized project profile.
+ *
+ * Uses blessed widgets (not console.log). Creates a full-screen blessed view
+ * (or reuses a provided screen via the ownsScreen pattern).
+ *
+ * Layout:
+ *   - Content box showing the current section's data, nicely formatted
+ *   - Status bar showing "Section N/6 — SectionName" and keybinds
+ *   - Keybinds: A = approve, R = revise, B = back, Q = cancel
+ *
+ * Sections reviewed:
+ *   1. Identity (name, type, description)
+ *   2. Vision
+ *   3. Objectives (formatted list with priorities)
+ *   4. Tech Stack (runtime, language, frameworks, tools)
+ *   5. Conventions (commits, branches, testing, coding_style, naming)
+ *   6. Rules (formatted with scope, rigidity, consequences)
+ *
+ * @param profile  — The synthesized profile to review.
+ * @param screen   — Optional existing blessed screen to reuse.
+ * @returns The approved (possibly edited) profile, or null if cancelled.
+ */
+export function reviewSections(
+  profile: ProjectProfile,
+  screen?: Widgets.Screen,
+): Promise<{ approved: ProjectProfile | null }> {
+  return new Promise<{ approved: ProjectProfile | null }>((resolve) => {
+    // Deep-clone the profile so edits are non-destructive until approved
+    const workingProfile: ProjectProfile = JSON.parse(JSON.stringify(profile));
+
+    const ownsScreen = !screen;
+    const scr = screen ?? blessed.screen({
+      smartCSR: true,
+      title: "wombo-combo -- Profile Review",
+      fullUnicode: true,
+    });
+
+    // Track per-section approval
+    const sections = [...PROFILE_SECTIONS]; // 6 sections
+    const approved: Record<ProfileSection, boolean> = {
+      identity: false,
+      vision: false,
+      objectives: false,
+      tech_stack: false,
+      conventions: false,
+      rules: false,
+    };
+
+    let currentIdx = 0;
+    let editMode = false;
+
+    // -----------------------------------------------------------------------
+    // Cleanup
+    // -----------------------------------------------------------------------
+
+    const destroyScreen = () => {
+      if (!ownsScreen) return;
+      scr.destroy();
+      if (process.stdin.isTTY) {
+        try {
+          process.stdin.removeAllListeners("keypress");
+          process.stdin.removeAllListeners("data");
+          if (typeof process.stdin.setRawMode === "function") {
+            process.stdin.setRawMode(false);
+          }
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      process.stdout.write("\x1B[2J\x1B[H");
+    };
+
+    // -----------------------------------------------------------------------
+    // Layout: full-screen view
+    // -----------------------------------------------------------------------
+
+    const container = blessed.box({
+      parent: scr,
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Header
+    const headerBox = blessed.box({
+      parent: container,
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Content box — shows the section data
+    const contentBox = blessed.box({
+      parent: container,
+      top: 3,
+      left: 0,
+      width: "100%",
+      height: "100%-6",
+      tags: true,
+      scrollable: true,
+      alwaysScroll: true,
+      mouse: true,
+      border: { type: "line" },
+      style: {
+        border: { fg: "gray" },
+        fg: "white",
+        bg: "black",
+      },
+      padding: { left: 1, right: 1 },
+    });
+
+    // Status bar
+    const statusBar = blessed.box({
+      parent: container,
+      bottom: 0,
+      left: 0,
+      width: "100%",
+      height: 3,
+      tags: true,
+      style: { fg: "white", bg: "black" },
+    });
+
+    // Edit textarea (hidden by default)
+    const editArea = blessed.textarea({
+      parent: container,
+      top: 3,
+      left: 0,
+      width: "100%",
+      height: "100%-6",
+      border: { type: "line" },
+      style: {
+        border: { fg: "magenta" },
+        fg: "white",
+        bg: "black",
+        focus: { border: { fg: "cyan" } },
+      },
+      inputOnFocus: true,
+      hidden: true,
+      padding: { left: 1, right: 1 },
+    });
+
+    contentBox.focus();
+
+    // -----------------------------------------------------------------------
+    // Rendering
+    // -----------------------------------------------------------------------
+
+    function currentSection(): ProfileSection {
+      return sections[currentIdx];
+    }
+
+    function refreshView(): void {
+      const sec = currentSection();
+      const secName = SECTION_NAMES[sec];
+      const secNum = currentIdx + 1;
+      const totalSecs = sections.length;
+
+      // Header
+      const approvedCount = Object.values(approved).filter(Boolean).length;
+      let headerLine1 = ` {bold}wombo-combo{/bold} {magenta-fg}Profile Review{/magenta-fg}`;
+      headerLine1 += `  {gray-fg}|{/gray-fg}  {green-fg}${approvedCount}{/green-fg}/{gray-fg}${totalSecs} approved{/gray-fg}`;
+
+      const isApproved = approved[sec];
+      const badge = isApproved
+        ? `  {green-fg}✔ APPROVED{/green-fg}`
+        : `  {yellow-fg}● PENDING{/yellow-fg}`;
+      const headerLine2 = ` {bold}Section ${secNum}/${totalSecs} — ${secName}{/bold}${badge}`;
+
+      headerBox.setContent(`${headerLine1}\n${headerLine2}`);
+
+      // Content
+      const displayContent = formatSectionForDisplay(sec, workingProfile);
+      contentBox.setContent(displayContent);
+      contentBox.setLabel(` {cyan-fg}${secName}{/cyan-fg} `);
+      contentBox.setScrollPerc(0);
+
+      // Status bar
+      let keys = ` {bold}Keys:{/bold}`;
+      keys += `  {green-fg}A{/green-fg} approve`;
+      keys += `  {magenta-fg}R{/magenta-fg} revise`;
+      if (currentIdx > 0) keys += `  {cyan-fg}B{/cyan-fg} back`;
+      keys += `  {red-fg}Q{/red-fg} cancel`;
+
+      let status = ` {gray-fg}Section ${secNum}/${totalSecs} — ${secName}{/gray-fg}`;
+      if (Object.values(approved).every(Boolean)) {
+        status += `  {green-fg}All sections approved — press A on last section to finish{/green-fg}`;
+      }
+
+      statusBar.setContent(`${keys}\n${status}`);
+
+      scr.render();
+    }
+
+    // -----------------------------------------------------------------------
+    // Section navigation
+    // -----------------------------------------------------------------------
+
+    function advanceSection(): void {
+      if (currentIdx < sections.length - 1) {
+        currentIdx++;
+        refreshView();
+      } else {
+        // On last section — check if all approved
+        if (Object.values(approved).every(Boolean)) {
+          finishReview();
+        } else {
+          // Find first unapproved section
+          const firstUnapproved = sections.findIndex((s) => !approved[s]);
+          if (firstUnapproved >= 0) {
+            currentIdx = firstUnapproved;
+            refreshView();
+          }
+        }
+      }
+    }
+
+    function goBack(): void {
+      if (currentIdx > 0) {
+        currentIdx--;
+        refreshView();
+      }
+    }
+
+    function cancelReview(): void {
+      container.destroy();
+      destroyScreen();
+      resolve({ approved: null });
+    }
+
+    function finishReview(): void {
+      // Brief confirmation
+      contentBox.setContent(
+        `{bold}{green-fg}✔ Profile approved!{/green-fg}{/bold}\n\n` +
+        `  All ${sections.length} sections have been reviewed and approved.\n` +
+        `  {gray-fg}Continuing...{/gray-fg}`
+      );
+      statusBar.setContent(` {gray-fg}Finishing...{/gray-fg}`);
+      scr.render();
+
+      setTimeout(() => {
+        container.destroy();
+        destroyScreen();
+        resolve({ approved: workingProfile });
+      }, 1200);
+    }
+
+    // -----------------------------------------------------------------------
+    // Edit mode
+    // -----------------------------------------------------------------------
+
+    function enterEditMode(): void {
+      if (editMode) return;
+      editMode = true;
+
+      const sec = currentSection();
+      const editText = serializeSectionForEdit(sec, workingProfile);
+
+      contentBox.hide();
+      editArea.setValue(editText);
+      editArea.show();
+      editArea.focus();
+
+      // Update status bar for edit mode
+      const secName = SECTION_NAMES[sec];
+      statusBar.setContent(
+        ` {bold}Editing:{/bold} {magenta-fg}${secName}{/magenta-fg}\n` +
+        ` {gray-fg}Enter = save changes  |  Escape = discard changes{/gray-fg}`
+      );
+
+      headerBox.setContent(
+        ` {bold}wombo-combo{/bold} {magenta-fg}Profile Review{/magenta-fg}  {gray-fg}|{/gray-fg}  {magenta-fg}EDITING{/magenta-fg}\n` +
+        ` {bold}Section ${currentIdx + 1}/${sections.length} — ${secName}{/bold}  {magenta-fg}✎ Edit mode{/magenta-fg}`
+      );
+
+      scr.render();
+    }
+
+    function exitEditMode(save: boolean): void {
+      if (!editMode) return;
+      editMode = false;
+
+      if (save) {
+        const editedText = editArea.getValue() ?? "";
+        const sec = currentSection();
+        const patch = parseSectionEdit(sec, editedText, workingProfile);
+
+        // Apply patch to working profile
+        Object.assign(workingProfile, patch);
+
+        // Deep-merge for nested objects
+        if (patch.tech_stack) {
+          workingProfile.tech_stack = { ...workingProfile.tech_stack, ...patch.tech_stack };
+        }
+        if (patch.conventions) {
+          workingProfile.conventions = { ...workingProfile.conventions, ...patch.conventions };
+        }
+
+        // Reset approval for this section since content changed
+        approved[sec] = false;
+      }
+
+      editArea.hide();
+      contentBox.show();
+      contentBox.focus();
+      refreshView();
+    }
+
+    // -----------------------------------------------------------------------
+    // Key bindings
+    // -----------------------------------------------------------------------
+
+    // Edit area keybinds
+    editArea.key(["enter"], () => {
+      exitEditMode(true);
+    });
+
+    editArea.key(["escape"], () => {
+      exitEditMode(false);
+    });
+
+    // Main screen keybinds
+    scr.key(["a"], () => {
+      if (editMode) return;
+      const sec = currentSection();
+      approved[sec] = true;
+      advanceSection();
+    });
+
+    scr.key(["r"], () => {
+      if (editMode) return;
+      enterEditMode();
+    });
+
+    scr.key(["b"], () => {
+      if (editMode) return;
+      goBack();
+    });
+
+    scr.key(["q", "escape"], () => {
+      if (editMode) return;
+      cancelReview();
+    });
+
+    scr.key(["C-c"], () => {
+      if (editMode) {
+        exitEditMode(false);
+        return;
+      }
+      cancelReview();
+    });
+
+    // Initial render
+    refreshView();
   });
 }
 
