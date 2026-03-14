@@ -34,6 +34,9 @@
  *   woco tasks graph [--ascii] [--mermaid]            (alias: t g)
  *   woco completion <bash|zsh|fish>                   (alias: comp)
  *   woco tui                                          (default when no args)
+ *   woco wishlist add "idea" [--tag <t>]               (alias: w a, wl a)
+ *   woco wishlist list                                 (alias: w ls, wl ls)
+ *   woco wishlist delete <id>                          (alias: w rm, wl d)
  *   woco help                                         (alias: -h, --help)
  *   woco version
  *   woco -v
@@ -110,10 +113,11 @@ import { cmdGenesis } from "./commands/genesis.js";
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import type { QuestHitlMode } from "./lib/quest.js";
-import { resolveOutputFormat, outputError, type OutputFormat } from "./lib/output.js";
+import { resolveOutputFormat, output, outputError, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
 import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
 import { buildToonSpec, renderToonLegend } from "./lib/toon-spec.js";
+import { addItem as addWishlistItem, deleteItem as deleteWishlistItem, listItems as listWishlistItems } from "./lib/wishlist-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,6 +187,8 @@ export interface CLIArgs {
   genesisConstraints?: string[];
   /** Skip TUI review (--no-tui for genesis) */
   genesisNoTui?: boolean;
+  /** Tags for wishlist items (--tag, can be repeated) */
+  wishlistTags?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +216,8 @@ export const COMMAND_ALIASES: Record<string, string> = {
   d: "describe",
   comp: "completion",
   tui: "tui",
+  w: "wishlist",
+  wl: "wishlist",
 };
 
 /** Map of short aliases → canonical tasks subcommand names. */
@@ -236,6 +244,15 @@ export const QUEST_SUBCOMMAND_ALIASES: Record<string, string> = {
   p: "pause",
   co: "complete",
   ab: "abandon",
+};
+
+/** Map of short aliases → canonical wishlist subcommand names. */
+export const WISHLIST_SUBCOMMAND_ALIASES: Record<string, string> = {
+  a: "add",
+  ls: "list",
+  rm: "delete",
+  del: "delete",
+  d: "delete",
 };
 
 // ---------------------------------------------------------------------------
@@ -270,6 +287,11 @@ export function parseArgs(argv: string[]): CLIArgs {
     result.subcommand = args[1] || "list";
     // Resolve quest subcommand alias (e.g., "c" → "create", "sh" → "show")
     result.subcommand = QUEST_SUBCOMMAND_ALIASES[result.subcommand] ?? result.subcommand;
+    startIdx = 2;
+  } else if (result.command === "wishlist") {
+    result.subcommand = args[1] || "list";
+    // Resolve wishlist subcommand alias (e.g., "a" → "add", "ls" → "list")
+    result.subcommand = WISHLIST_SUBCOMMAND_ALIASES[result.subcommand] ?? result.subcommand;
     startIdx = 2;
   }
 
@@ -345,7 +367,14 @@ export function parseArgs(argv: string[]): CLIArgs {
         break;
       case "--tag":
       case "--release":
-        result.tag = requireValue(arg);
+        // --tag is overloaded: for 'upgrade' it's a release tag (single string),
+        // for 'wishlist' it's a categorization tag (repeatable array).
+        if (result.command === "wishlist") {
+          if (!result.wishlistTags) result.wishlistTags = [];
+          result.wishlistTags.push(requireValue(arg));
+        } else {
+          result.tag = requireValue(arg);
+        }
         break;
       case "--output":
       case "-o":
@@ -477,6 +506,7 @@ Commands:                        (alias)
   history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
   tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
   quest                          (q)     Manage quests (scoped missions; see below)
+  wishlist                       (w/wl)  Quick-capture ideas and wishes (see below)
   genesis                        (g)     Run genesis planner (project-level decomposition into quests)
   tui                                    Interactive TUI: browse tasks, select, launch, monitor
   upgrade                        (u)     Check for updates and upgrade wombo-combo
@@ -504,6 +534,11 @@ Quest Subcommands:               (alias)
   quest pause <id>               (p)     Pause an active/planning quest
   quest complete <id>            (co)    Complete quest (merges branch into base; --force to skip merge)
   quest abandon <id>              (ab)    Abandon quest without merging (--force to delete branch)
+
+Wishlist Subcommands:            (alias)
+  wishlist add "idea text"       (a)     Add a new wishlist item (--tag <tag> to categorize)
+  wishlist list                  (ls)    List all wishlist items
+  wishlist delete <id>           (rm/d)  Delete a wishlist item (supports short ID prefixes)
 
 Genesis Options:
   --tech-stack <text>      Describe the tech stack (e.g., "React, Node, Postgres")
@@ -559,6 +594,8 @@ Aliases (every command has a short form):
   woco q c my-quest "Quest"      woco quest create my-quest "Quest" --goal "..."
   woco q ls                      woco quest list
   woco q sh my-quest             woco quest show my-quest
+  woco w a "Cool idea"           woco wishlist add "Cool idea"
+  woco wl ls                     woco wishlist list
 
 Shell Completion:
   eval "$(woco completion bash)"    # Bash: add to ~/.bashrc
@@ -605,6 +642,9 @@ Examples:
   woco genesis "Modernize the frontend" --tech-stack "React, TypeScript, Tailwind"
   woco g "Add multi-tenant support" --constraint "No breaking changes" --constraint "Keep backward compat"
   woco genesis "..." --dry-run
+  woco wishlist add "Add dark mode support" --tag ui --tag enhancement
+  woco wishlist list
+  woco wishlist delete a1b2c3d4
 `);
 }
 
@@ -933,6 +973,10 @@ async function main(): Promise<void> {
       });
       break;
 
+    case "wishlist":
+      handleWishlistSubcommand(args, PROJECT_ROOT, config);
+      break;
+
     case "tui":
       await cmdTui({
         projectRoot: PROJECT_ROOT,
@@ -1110,6 +1154,115 @@ async function handleTasksSubcommand(
 
     default:
       outputError(args.outputFmt, `Unknown tasks subcommand: ${args.subcommand}. Run 'woco tasks help' or 'woco help' for usage.`);
+      return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wishlist Subcommand Router
+// ---------------------------------------------------------------------------
+
+function handleWishlistSubcommand(
+  args: CLIArgs,
+  projectRoot: string,
+  _config: import("./config.js").WomboConfig
+): void {
+  switch (args.subcommand) {
+    case "add": {
+      // The wishlist text comes from the first positional arg (featureId)
+      // and optionally continues into the second positional (title).
+      // Combine them if both are present.
+      const textParts: string[] = [];
+      if (args.featureId) textParts.push(args.featureId);
+      if (args.title) textParts.push(args.title);
+      const text = textParts.join(" ");
+
+      if (!text) {
+        outputError(args.outputFmt, 'Usage: woco wishlist add "Your idea here" [--tag <tag>]');
+        return;
+      }
+
+      try {
+        const item = addWishlistItem(projectRoot, text, args.wishlistTags);
+        output(
+          args.outputFmt,
+          item,
+          () => {
+            console.log(`Added wishlist item: ${item.text}`);
+            console.log(`  ID: ${item.id}`);
+            if (item.tags.length > 0) {
+              console.log(`  Tags: ${item.tags.join(", ")}`);
+            }
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        outputError(args.outputFmt, `Failed to add wishlist item: ${msg}`);
+      }
+      break;
+    }
+
+    case "list": {
+      const items = listWishlistItems(projectRoot);
+      output(
+        args.outputFmt,
+        items,
+        () => {
+          if (items.length === 0) {
+            console.log("No wishlist items yet. Add one with: woco wishlist add \"Your idea\"");
+            return;
+          }
+          console.log(`Wishlist (${items.length} item${items.length === 1 ? "" : "s"}):\n`);
+          for (const item of items) {
+            const tags = item.tags.length > 0 ? ` [${item.tags.join(", ")}]` : "";
+            const date = new Date(item.created_at).toLocaleDateString();
+            console.log(`  ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
+          }
+        }
+      );
+      break;
+    }
+
+    case "delete": {
+      if (!args.featureId) {
+        outputError(args.outputFmt, "Usage: woco wishlist delete <id>");
+        return;
+      }
+
+      // Support both full UUIDs and short prefixes
+      const items = listWishlistItems(projectRoot);
+      const match = items.find(
+        (item) => item.id === args.featureId || item.id.startsWith(args.featureId!)
+      );
+
+      if (!match) {
+        outputError(args.outputFmt, `No wishlist item found matching: ${args.featureId}`);
+        return;
+      }
+
+      const deleted = deleteWishlistItem(projectRoot, match.id);
+      if (deleted) {
+        output(
+          args.outputFmt,
+          { deleted: true, id: match.id, text: match.text },
+          () => {
+            console.log(`Deleted wishlist item: ${match.text}`);
+          }
+        );
+      } else {
+        outputError(args.outputFmt, `Failed to delete wishlist item: ${match.id}`);
+      }
+      break;
+    }
+
+    case "help":
+    case "--help":
+    case "-h":
+      cmdHelp();
+      break;
+
+    default:
+      outputError(args.outputFmt, `Unknown wishlist subcommand: ${args.subcommand}. Run 'woco wishlist help' or 'woco help' for usage.`);
       return;
   }
 }
