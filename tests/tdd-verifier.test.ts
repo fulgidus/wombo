@@ -17,6 +17,7 @@ import {
   runTddVerification,
   extractTddErrorSummary,
   renderTddVerificationReport,
+  isNonTestableChangeOnly,
   type TddVerificationResult,
   type TddVerificationOptions,
 } from "../src/lib/tdd-verifier.js";
@@ -467,5 +468,107 @@ describe("renderTddVerificationReport", () => {
       strictMode: true,
     };
     expect(() => renderTddVerificationReport(result)).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNonTestableChangeOnly
+// ---------------------------------------------------------------------------
+
+describe("isNonTestableChangeOnly", () => {
+  test("returns true when no source files changed", () => {
+    const report = {
+      sourceFiles: [],
+      withTests: [],
+      missingTests: [],
+      excludedFiles: [],
+      testableCount: 0,
+      coveredCount: 0,
+      coverageRatio: NaN,
+      coveragePercent: "N/A",
+      comparedTo: "main",
+    };
+    expect(isNonTestableChangeOnly(report)).toBe(true);
+  });
+
+  test("returns true when all source files are excluded", () => {
+    const report = {
+      sourceFiles: [
+        {
+          sourcePath: "src/config.json",
+          hasTest: false,
+          testFiles: [],
+          excluded: true,
+          excludeReason: "Non-testable file type (.json)",
+        },
+        {
+          sourcePath: "src/types.d.ts",
+          hasTest: false,
+          testFiles: [],
+          excluded: true,
+          excludeReason: "Type declaration file (*.d.ts)",
+        },
+      ],
+      withTests: [],
+      missingTests: [],
+      excludedFiles: ["src/config.json", "src/types.d.ts"],
+      testableCount: 0,
+      coveredCount: 0,
+      coverageRatio: NaN,
+      coveragePercent: "N/A",
+      comparedTo: "main",
+    };
+    expect(isNonTestableChangeOnly(report)).toBe(true);
+  });
+
+  test("returns false when at least one source file is not excluded", () => {
+    const report = {
+      sourceFiles: [
+        {
+          sourcePath: "src/lib/utils.ts",
+          hasTest: true,
+          testFiles: ["tests/utils.test.ts"],
+          excluded: false,
+        },
+        {
+          sourcePath: "src/config.json",
+          hasTest: false,
+          testFiles: [],
+          excluded: true,
+          excludeReason: "Non-testable file type (.json)",
+        },
+      ],
+      withTests: ["src/lib/utils.ts"],
+      missingTests: [],
+      excludedFiles: ["src/config.json"],
+      testableCount: 1,
+      coveredCount: 1,
+      coverageRatio: 1,
+      coveragePercent: "100.0%",
+      comparedTo: "main",
+    };
+    expect(isNonTestableChangeOnly(report)).toBe(false);
+  });
+
+  test("returns false when a testable file is missing tests", () => {
+    const report = {
+      sourceFiles: [
+        {
+          sourcePath: "src/lib/new-feature.ts",
+          hasTest: false,
+          testFiles: [],
+          excluded: false,
+        },
+      ],
+      withTests: [],
+      missingTests: ["src/lib/new-feature.ts"],
+      excludedFiles: [],
+      testableCount: 1,
+      coveredCount: 0,
+      coverageRatio: 0,
+      coveragePercent: "0.0%",
+      comparedTo: "main",
+    };
+    expect(isNonTestableChangeOnly(report)).toBe(false);
   });
 });

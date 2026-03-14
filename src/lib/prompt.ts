@@ -165,9 +165,13 @@ export function generatePrompt(
   // TDD instructions — deterministic injection based on config
   if (config.tdd?.enabled) {
     const testCmd = config.tdd.testCommand || "bun test";
+    const strictLabel = config.tdd.strictTdd
+      ? "**Strict TDD is ON** — every new source file MUST have a corresponding test file, or verification will fail."
+      : "TDD is enabled in advisory mode. Missing tests produce warnings but do not block verification. Use `--strict-tdd` to enforce.";
     sections.push(`\n## Test-Driven Development (TDD)\n`);
+    sections.push(strictLabel);
     sections.push(
-      "You MUST follow the **red-green-refactor** TDD cycle for all implementation work:\n"
+      "\nYou MUST follow the **red-green-refactor** TDD cycle for all implementation work:\n"
     );
     sections.push("### Workflow\n");
     sections.push(`1. **🔴 Red** — Write a failing test first. Run \`${testCmd}\` to confirm it fails.`);
@@ -181,6 +185,29 @@ export function generatePrompt(
     sections.push(`- **Run tests frequently.** Run \`${testCmd}\` after every meaningful change.`);
     sections.push("- Use `import { describe, test, expect } from \"bun:test\";` for test files.");
     sections.push("- Place tests next to source: `src/foo.ts` → `src/foo.test.ts` (or `tests/foo.test.ts`).");
+    sections.push("\n### Non-Testable Changes\n");
+    sections.push(
+      "The following types of files are **exempt** from TDD requirements — " +
+      "you do NOT need to write tests for them:\n"
+    );
+    sections.push("- Documentation files (`.md`, `.mdx`, `.txt`)");
+    sections.push("- Configuration files (`.json`, `.yml`, `.yaml`, `.toml`, `.env`)");
+    sections.push("- Type declaration files (`.d.ts`)");
+    sections.push("- Re-export barrel files (`index.ts` with only `export ... from` statements)");
+    sections.push("- Types-only files (containing only `type`, `interface`, or `enum` declarations)");
+    sections.push("- Asset files (images, SVGs, CSS)");
+    sections.push("\n### Verification\n");
+    sections.push(
+      "After all changes are complete, the verification pipeline will automatically:"
+    );
+    sections.push(`1. Run \`${testCmd}\` and verify all tests pass`);
+    sections.push("2. Check that every new/modified source file has a corresponding test file");
+    sections.push("3. Report coverage ratio of tested vs untested files");
+    if (config.tdd.strictTdd) {
+      sections.push(
+        "\n**⚠️ Strict mode is active.** Verification will FAIL if any testable source file is missing a test."
+      );
+    }
   }
 
   // Commit guidelines

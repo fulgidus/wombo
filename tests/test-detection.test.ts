@@ -20,10 +20,12 @@ import {
   isExcludedFile,
   isBarrelFile,
   isTypesOnlyFile,
+  isNonTestableFile,
   filterSourceFiles,
   findTestFiles,
   detectTests,
   DEFAULT_TEST_DETECTION_CONFIG,
+  NON_TESTABLE_EXTENSIONS,
   type DiffFile,
   type TestDetectionConfig,
 } from "../src/lib/test-detection.js";
@@ -459,5 +461,185 @@ describe("DEFAULT_TEST_DETECTION_CONFIG", () => {
 
   test("has empty excludePatterns by default", () => {
     expect(DEFAULT_TEST_DETECTION_CONFIG.excludePatterns).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isNonTestableFile
+// ---------------------------------------------------------------------------
+
+describe("isNonTestableFile", () => {
+  test("marks .md files as non-testable", () => {
+    const result = isNonTestableFile("docs/README.md");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".md");
+  });
+
+  test("marks .json files as non-testable", () => {
+    const result = isNonTestableFile("config/settings.json");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".json");
+  });
+
+  test("marks .yml files as non-testable", () => {
+    const result = isNonTestableFile("src/config.yml");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".yml");
+  });
+
+  test("marks .yaml files as non-testable", () => {
+    const result = isNonTestableFile(".github/workflows/ci.yaml");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".yaml");
+  });
+
+  test("marks .css files as non-testable", () => {
+    const result = isNonTestableFile("src/styles/main.css");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".css");
+  });
+
+  test("marks .svg files as non-testable", () => {
+    const result = isNonTestableFile("public/logo.svg");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".svg");
+  });
+
+  test("marks .toml files as non-testable", () => {
+    const result = isNonTestableFile("Cargo.toml");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".toml");
+  });
+
+  test("marks .env files as non-testable", () => {
+    const result = isNonTestableFile(".env");
+    expect(result.nonTestable).toBe(true);
+  });
+
+  test("marks .lock files as non-testable", () => {
+    const result = isNonTestableFile("bun.lock");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".lock");
+  });
+
+  test("marks LICENSE as non-testable", () => {
+    const result = isNonTestableFile("LICENSE");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain("LICENSE");
+  });
+
+  test("marks Dockerfile as non-testable", () => {
+    const result = isNonTestableFile("Dockerfile");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain("Dockerfile");
+  });
+
+  test("marks Makefile as non-testable", () => {
+    const result = isNonTestableFile("Makefile");
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain("Makefile");
+  });
+
+  test("does NOT mark .ts files as non-testable", () => {
+    const result = isNonTestableFile("src/lib/utils.ts");
+    expect(result.nonTestable).toBe(false);
+  });
+
+  test("does NOT mark .tsx files as non-testable", () => {
+    const result = isNonTestableFile("src/components/Button.tsx");
+    expect(result.nonTestable).toBe(false);
+  });
+
+  test("does NOT mark .js files as non-testable", () => {
+    const result = isNonTestableFile("src/index.js");
+    expect(result.nonTestable).toBe(false);
+  });
+
+  test("supports custom nonTestableExtensions via config", () => {
+    const config: TestDetectionConfig = {
+      ...DEFAULT_TEST_DETECTION_CONFIG,
+      nonTestableExtensions: [".custom"],
+    };
+    const result = isNonTestableFile("src/data.custom", config);
+    expect(result.nonTestable).toBe(true);
+    expect(result.reason).toContain(".custom");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// NON_TESTABLE_EXTENSIONS
+// ---------------------------------------------------------------------------
+
+describe("NON_TESTABLE_EXTENSIONS", () => {
+  test("includes documentation extensions", () => {
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".md");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".mdx");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".txt");
+  });
+
+  test("includes configuration extensions", () => {
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".json");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".yml");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".yaml");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".toml");
+  });
+
+  test("includes asset extensions", () => {
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".svg");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".png");
+    expect(NON_TESTABLE_EXTENSIONS).toContain(".jpg");
+  });
+
+  test("does NOT include code extensions", () => {
+    expect(NON_TESTABLE_EXTENSIONS).not.toContain(".ts");
+    expect(NON_TESTABLE_EXTENSIONS).not.toContain(".tsx");
+    expect(NON_TESTABLE_EXTENSIONS).not.toContain(".js");
+    expect(NON_TESTABLE_EXTENSIONS).not.toContain(".jsx");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isExcludedFile — non-testable integration
+// ---------------------------------------------------------------------------
+
+describe("isExcludedFile — non-testable files", () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "test-detection-nontestable-"));
+  });
+
+  afterEach(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  test("excludes .md files via non-testable detection", () => {
+    const result = isExcludedFile("src/README.md", tempDir);
+    expect(result.excluded).toBe(true);
+    expect(result.reason).toContain(".md");
+  });
+
+  test("excludes .json files via non-testable detection", () => {
+    const result = isExcludedFile("src/data/schema.json", tempDir);
+    expect(result.excluded).toBe(true);
+    expect(result.reason).toContain(".json");
+  });
+
+  test("excludes .yml files via non-testable detection", () => {
+    const result = isExcludedFile("src/templates/tasks.yml", tempDir);
+    expect(result.excluded).toBe(true);
+    expect(result.reason).toContain(".yml");
+  });
+
+  test("does NOT exclude .ts source files", () => {
+    // Create a .ts file with runtime code so it's not types-only
+    const srcDir = join(tempDir, "src", "lib");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(
+      join(srcDir, "utils.ts"),
+      'export function greet() { return "hello"; }\n'
+    );
+    const result = isExcludedFile("src/lib/utils.ts", tempDir);
+    expect(result.excluded).toBe(false);
   });
 });

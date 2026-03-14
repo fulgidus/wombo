@@ -259,6 +259,52 @@ describe("generatePrompt — TDD section", () => {
     const prompt = generatePrompt(makeFeature(), "main", config);
     expect(prompt).toContain("bun:test");
   });
+
+  test("includes non-testable changes section", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: false, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).toContain("Non-Testable Changes");
+    expect(prompt).toContain("exempt");
+    expect(prompt).toContain(".md");
+    expect(prompt).toContain(".json");
+    expect(prompt).toContain(".yml");
+    expect(prompt).toContain(".d.ts");
+    expect(prompt).toContain("barrel");
+  });
+
+  test("includes verification section describing the pipeline", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: false, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).toContain("### Verification");
+    expect(prompt).toContain("verification pipeline");
+    expect(prompt).toContain("coverage ratio");
+  });
+
+  test("includes strict mode label when strictTdd is true", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: true, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).toContain("Strict TDD is ON");
+    expect(prompt).toContain("verification will fail");
+  });
+
+  test("includes advisory mode label when strictTdd is false", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: false, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).toContain("advisory mode");
+    expect(prompt).toContain("warnings");
+  });
+
+  test("does NOT include strict warning when strictTdd is false", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: false, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).not.toContain("Strict mode is active");
+  });
+
+  test("includes strict warning when strictTdd is true", () => {
+    const config = makeConfig({ tdd: { enabled: true, testCommand: "bun test", strictTdd: true, testTimeout: 120_000 } });
+    const prompt = generatePrompt(makeFeature(), "main", config);
+    expect(prompt).toContain("Strict mode is active");
+  });
 });
 
 // ---------------------------------------------------------------------------
