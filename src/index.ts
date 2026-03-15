@@ -98,6 +98,7 @@ import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdHistory } from "./commands/history.js";
 import { cmdCompletion } from "./commands/completion.js";
+import { isCittyCommand, runCittyCommand } from "./commands/citty/router.js";
 import { cmdTasksList } from "./commands/tasks/list.js";
 import { cmdTasksAdd } from "./commands/tasks/add.js";
 import { cmdTasksSetStatus } from "./commands/tasks/set-status.js";
@@ -111,8 +112,6 @@ import { cmdTui } from "./commands/tui.js";
 import { handleQuestSubcommand } from "./commands/quest.js";
 import { cmdGenesis } from "./commands/genesis.js";
 import { cmdUsage, type UsageGroupBy } from "./commands/usage.js";
-
-import { isCittyCommand, runCittyCommand } from "./commands/citty/router.js";
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import type { QuestHitlMode } from "./lib/quest.js";
@@ -237,13 +236,27 @@ export function parseArgs(argv: string[]): CLIArgs {
 
   // Pre-scan for global flags that can appear before the command.
   // Strip them from the args array so args[0] is always the command.
-  const globalFlags: { dev?: boolean; help?: boolean } = {};
+  // Global flags: --dev, --force, --output/-o <value>, -h/--help
+  const globalFlags: { dev?: boolean; help?: boolean; force?: boolean; output?: string } = {};
   const filtered: string[] = [];
-  for (const a of args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
     if (a === "--dev") {
       globalFlags.dev = true;
     } else if (a === "-h" || a === "--help") {
       globalFlags.help = true;
+    } else if (a === "--force") {
+      globalFlags.force = true;
+    } else if (a === "--output" || a === "-o") {
+      // Only consume as a global flag if followed by a value (not another flag)
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) {
+        globalFlags.output = next;
+        i++; // skip the value
+      } else {
+        // No value follows — pass through for command-level parsing
+        filtered.push(a);
+      }
     } else {
       filtered.push(a);
     }
@@ -256,9 +269,9 @@ export function parseArgs(argv: string[]): CLIArgs {
     noTui: false,
     autoPush: false,
     requeue: false,
-    force: false,
+    force: globalFlags.force ?? false,
     checkOnly: false,
-    outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
+    outputFmt: resolveOutputFormat(globalFlags.output), // use global --output if provided
     dev: globalFlags.dev,
     help: globalFlags.help,
   };
@@ -505,6 +518,30 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv);
 
   // -----------------------------------------------------------------------
+  // Citty-routed commands — delegate to citty for arg parsing & execution
+  // -----------------------------------------------------------------------
+  // Commands migrated to citty handle their own config loading, validation,
+  // and arg parsing. We only use parseArgs() here for alias resolution
+  // (e.g., "l" → "launch") and --dev detection.
+  const CITTY_ROUTED = new Set(["launch", "resume", "retry"]);
+  if (CITTY_ROUTED.has(args.command)) {
+    // Build rawArgs for citty: everything after the command name.
+    // parseArgs strips --dev from the arg list, so we need to re-add it
+    // for citty commands that define --dev as a flag.
+    const rawArgv = process.argv.slice(2); // skip 'bun' and script path
+    const cmdIdx = rawArgv.findIndex(
+      (a) => a !== "--dev" && a !== "-h" && a !== "--help" && !a.startsWith("-")
+    );
+    const rawArgs = cmdIdx >= 0 ? rawArgv.slice(cmdIdx + 1) : [];
+    // Ensure --dev is passed through if it was present
+    if (args.dev && !rawArgs.includes("--dev")) {
+      rawArgs.push("--dev");
+    }
+    await runCittyCommand(args.command, rawArgs);
+    return;
+  }
+
+  // -----------------------------------------------------------------------
   // Input validation at the CLI boundary
   // -----------------------------------------------------------------------
   // Skip ID validation for wishlist — its first positional is free-form text, not a kebab-case ID.
@@ -583,7 +620,21 @@ async function main(): Promise<void> {
     const parentCmdsWithSubs = new Set(["tasks", "quest", "wishlist"]);
     let effectiveSubcommand = args.subcommand;
     if (parentCmdsWithSubs.has(args.command)) {
-      const rawArgs = process.argv.slice(2).filter((a) => a !== "--dev" && a !== "-h" && a !== "--help");
+      // Filter out all global flags (and their values) from raw args to detect
+      // if an explicit subcommand was typed.
+      const rawArgsFull = process.argv.slice(2);
+      const rawArgs: string[] = [];
+      for (let ri = 0; ri < rawArgsFull.length; ri++) {
+        const ra = rawArgsFull[ri];
+        if (ra === "--dev" || ra === "--force" || ra === "-h" || ra === "--help") {
+          continue; // skip boolean global flags
+        }
+        if (ra === "--output" || ra === "-o") {
+          ri++; // skip the value too
+          continue;
+        }
+        rawArgs.push(ra);
+      }
       const explicitSub = rawArgs[1] && !rawArgs[1].startsWith("-") ? rawArgs[1] : undefined;
       // If no explicit subcommand was typed, show parent help.
       // Otherwise, use the resolved subcommand (alias-expanded by parseArgs).
@@ -649,6 +700,12 @@ async function main(): Promise<void> {
     return;
   }
 
+  // -----------------------------------------------------------------------
+  // Citty-managed commands: route through the citty router for typed args
+  // -----------------------------------------------------------------------
+  // Commands migrated to citty handle their own arg parsing, config loading,
+  // and validation. Extract raw CLI args (without --dev and -h/--help which
+  // parseArgs already consumed) and delegate to the citty router.
   // -----------------------------------------------------------------------
   // Citty-managed commands: route through the citty router for typed args
   // -----------------------------------------------------------------------
