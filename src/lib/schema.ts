@@ -417,7 +417,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
   // --- tasks (parent with subcommands) ------------------------------------
   {
     name: "tasks",
-    aliases: ["t"],
+    aliases: ["t", "features"],
     summary: "Manage tasks file",
     completionSummary: "Manage tasks",
     positionals: [],
@@ -505,7 +505,7 @@ export const COMMAND_REGISTRY: CommandDef[] = [
       },
       {
         name: "tasks check",
-        aliases: ["ch"],
+        aliases: ["ch", "validate"],
         summary: "Validate tasks file (schema, deps, duplicates, cycles)",
         completionSummary: "Validate tasks",
         positionals: [],

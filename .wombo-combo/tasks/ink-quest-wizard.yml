@@ -1,9 +1,10 @@
 id: ink-quest-wizard
 title: Migrate quest creation wizard to Ink
 description: "Migrate tui-quest-wizard.ts (546 lines) to an Ink component. 6-step wizard: ID, Title, Goal, Priority,
-  Difficulty, HITL mode. Supports two render modes: overlay (renders on existing screen) and standalone (creates/destroys
-  own screen). Uses the TextInput component from ink-input-system for text fields, and a SelectInput-style component for
-  enum fields (priority, difficulty, hitlMode). Must preserve both overlay and standalone modes."
+  Difficulty, HITL mode. Supports two render modes: overlay (renders on existing screen) and standalone
+  (creates/destroys own screen). Uses the TextInput component from ink-input-system for text fields, and a
+  SelectInput-style component for enum fields (priority, difficulty, hitlMode). Must preserve both overlay and
+  standalone modes."
 status: backlog
 completion: 0
 difficulty: easy

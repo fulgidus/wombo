@@ -2,14 +2,14 @@
  * worktree.test.ts — Unit tests for worktree listing, filtering, and safety guards.
  *
  * Critical coverage:
- *   - listWomboWorktrees must use basename matching, NOT full-path .includes()
+ *   - listWomboWorktrees filters by -worktrees directory containment and branch prefix
  *   - removeWorktree must refuse to remove the project root
  *   - cleanupAllWorktrees must never touch the project root
  *   - The "wombo-combo" prefix collision bug (project dir name contains worktree prefix)
  */
 
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
-import { resolve, basename } from "node:path";
+import { resolve } from "node:path";
 import type { WomboConfig } from "../src/config.js";
 import type { WorktreeInfo } from "../src/lib/worktree.js";
 
@@ -26,7 +26,6 @@ function makeConfig(overrides?: Partial<WomboConfig["git"]>): WomboConfig {
     install: { command: "bun install", timeout: 120_000 },
     git: {
       branchPrefix: "feature/",
-      worktreePrefix: "wombo-",
       remote: "origin",
       mergeStrategy: "--no-ff",
       ...overrides,
@@ -64,7 +63,10 @@ function makeConfig(overrides?: Partial<WomboConfig["git"]>): WomboConfig {
     tdd: {
       enabled: false,
       testCommand: "bun test",
+      strictTdd: false,
+      testTimeout: 60_000,
     },
+    devMode: false,
   };
 }
 
@@ -92,22 +94,22 @@ describe("featureBranchName", () => {
 });
 
 describe("worktreePath", () => {
-  test("generates sibling directory path with prefix", () => {
+  test("generates path inside project-worktrees directory", () => {
     const config = makeConfig();
     const result = worktreePath("/home/user/projects/my-app", "auth", config);
-    expect(result).toBe(resolve("/home/user/projects", "wombo-auth"));
+    expect(result).toBe(resolve("/home/user/projects/my-app-worktrees", "auth"));
   });
 
-  test("uses custom worktree prefix", () => {
-    const config = makeConfig({ worktreePrefix: "wt-" });
+  test("ignores config overrides (uses project-name-worktrees layout)", () => {
+    const config = makeConfig({ branchPrefix: "wt-" });
     const result = worktreePath("/home/user/projects/my-app", "auth", config);
-    expect(result).toBe(resolve("/home/user/projects", "wt-auth"));
+    expect(result).toBe(resolve("/home/user/projects/my-app-worktrees", "auth"));
   });
 
   test("works with deeply nested project root", () => {
     const config = makeConfig();
     const result = worktreePath("/a/b/c/d/project", "feat1", config);
-    expect(result).toBe(resolve("/a/b/c/d", "wombo-feat1"));
+    expect(result).toBe(resolve("/a/b/c/d/project-worktrees", "feat1"));
   });
 });
 
@@ -115,15 +117,17 @@ describe("worktreePath", () => {
 // Tests for listWomboWorktrees filtering logic
 // ---------------------------------------------------------------------------
 
-describe("listWomboWorktrees — basename filtering", () => {
-  // We test the filtering logic by mocking the module. The critical test is
-  // that a project directory named "wombo-combo" (whose name starts with
-  // "wombo-") does NOT get included in the filtered list when it is the
-  // project root itself.
+describe("listWomboWorktrees — worktrees-dir and branch-prefix filtering", () => {
+  // We test the filtering logic by reimplementing it locally. The production
+  // implementation (listWomboWorktrees) uses three criteria:
+  //   1. Path is inside the `<project>-worktrees/` directory
+  //   2. Branch starts with config.git.branchPrefix (e.g. "feature/")
+  //   3. Branch starts with "quest/"
+  // The project root is always excluded.
 
   /**
    * Simulate the filtering logic from listWomboWorktrees.
-   * This mirrors the implementation exactly so we can test edge cases.
+   * This mirrors the production implementation so we can test edge cases.
    */
   function filterWomboWorktrees(
     worktrees: WorktreeInfo[],
@@ -131,26 +135,17 @@ describe("listWomboWorktrees — basename filtering", () => {
     config: WomboConfig
   ): WorktreeInfo[] {
     const resolvedRoot = resolve(projectRoot);
+    const wtDir = resolve(projectRoot + "-worktrees");
     return worktrees.filter((wt) => {
       // Never include the main project root
       if (resolve(wt.path) === resolvedRoot) return false;
-      // Match only worktrees whose directory name starts with the prefix
-      return basename(wt.path).startsWith(config.git.worktreePrefix);
-    });
-  }
-
-  /**
-   * A BUGGY version of the filter that used .includes() on full path.
-   * This is what caused the rm -rf bug. We test that it WOULD match
-   * the project root, proving the fix is necessary.
-   */
-  function buggyFilter(
-    worktrees: WorktreeInfo[],
-    projectRoot: string,
-    config: WomboConfig
-  ): WorktreeInfo[] {
-    return worktrees.filter((wt) => {
-      return wt.path.includes(config.git.worktreePrefix);
+      // Match worktrees inside the -worktrees directory
+      if (resolve(wt.path).startsWith(wtDir + "/")) return true;
+      // Match worktrees whose branch starts with the branch prefix
+      if (wt.branch && wt.branch.startsWith(config.git.branchPrefix)) return true;
+      // Match quest branches
+      if (wt.branch && wt.branch.startsWith("quest/")) return true;
+      return false;
     });
   }
 
@@ -165,50 +160,82 @@ describe("listWomboWorktrees — basename filtering", () => {
       bare: false,
     },
     {
-      path: "/home/user/projects/wombo-auth-flow",
+      path: "/home/user/projects/wombo-combo-worktrees/auth-flow",
       branch: "feature/auth-flow",
       head: "def456",
       bare: false,
     },
     {
-      path: "/home/user/projects/wombo-search-api",
+      path: "/home/user/projects/wombo-combo-worktrees/search-api",
       branch: "feature/search-api",
       head: "ghi789",
       bare: false,
     },
   ];
 
-  test("excludes project root even when its name starts with worktree prefix", () => {
+  test("excludes project root", () => {
     const result = filterWomboWorktrees(worktrees, projectRoot, config);
     expect(result.map((w) => w.path)).not.toContain(projectRoot);
     expect(result).toHaveLength(2);
   });
 
-  test("includes legitimate worktrees", () => {
+  test("includes worktrees inside -worktrees directory", () => {
     const result = filterWomboWorktrees(worktrees, projectRoot, config);
     expect(result.map((w) => w.path)).toContain(
-      "/home/user/projects/wombo-auth-flow"
+      "/home/user/projects/wombo-combo-worktrees/auth-flow"
     );
     expect(result.map((w) => w.path)).toContain(
-      "/home/user/projects/wombo-search-api"
+      "/home/user/projects/wombo-combo-worktrees/search-api"
     );
   });
 
-  test("buggy .includes() filter WOULD match project root (proving fix is needed)", () => {
-    const buggyResult = buggyFilter(worktrees, projectRoot, config);
-    // The buggy filter includes the project root because "wombo-combo"
-    // contains "wombo-" as a substring
-    expect(buggyResult.map((w) => w.path)).toContain(projectRoot);
-    expect(buggyResult).toHaveLength(3); // all three match!
+  test("includes worktrees with matching branch prefix even outside -worktrees dir", () => {
+    const orphanWorktrees: WorktreeInfo[] = [
+      {
+        path: "/home/user/projects/wombo-combo",
+        branch: "main",
+        head: "abc123",
+        bare: false,
+      },
+      {
+        path: "/tmp/some-random-dir",
+        branch: "feature/orphan",
+        head: "zzz999",
+        bare: false,
+      },
+    ];
+    const result = filterWomboWorktrees(orphanWorktrees, projectRoot, config);
+    expect(result).toHaveLength(1);
+    expect(result[0].branch).toBe("feature/orphan");
   });
 
-  test("handles project root without prefix in name", () => {
+  test("includes quest branches", () => {
+    const questWorktrees: WorktreeInfo[] = [
+      {
+        path: "/home/user/projects/wombo-combo",
+        branch: "main",
+        head: "abc123",
+        bare: false,
+      },
+      {
+        path: "/tmp/quest-dir",
+        branch: "quest/onboarding",
+        head: "qqq111",
+        bare: false,
+      },
+    ];
+    const result = filterWomboWorktrees(questWorktrees, projectRoot, config);
+    expect(result).toHaveLength(1);
+    expect(result[0].branch).toBe("quest/onboarding");
+  });
+
+  test("handles project root without matching branch", () => {
     const root = "/home/user/projects/my-app";
     const result = filterWomboWorktrees(worktrees, root, config);
-    // Project root "/my-app" is not in worktrees list and has no prefix match.
-    // "wombo-combo" basename starts with "wombo-" and is NOT the project root,
-    // so all three worktrees with "wombo-" prefix in basename are included.
-    expect(result).toHaveLength(3);
+    // "wombo-combo" is not the project root so not excluded, but its branch
+    // is "main" which doesn't match "feature/" prefix. The other two have
+    // "feature/" branches so they match.
+    expect(result).toHaveLength(2);
   });
 
   test("handles empty worktree list", () => {
@@ -216,7 +243,7 @@ describe("listWomboWorktrees — basename filtering", () => {
     expect(result).toHaveLength(0);
   });
 
-  test("handles worktrees with no matching prefix", () => {
+  test("excludes worktrees with non-matching branches outside -worktrees dir", () => {
     const unrelatedWorktrees: WorktreeInfo[] = [
       {
         path: "/home/user/projects/wombo-combo",
@@ -226,7 +253,7 @@ describe("listWomboWorktrees — basename filtering", () => {
       },
       {
         path: "/home/user/projects/other-project",
-        branch: "feature/other",
+        branch: "other/something",
         head: "xyz000",
         bare: false,
       },
@@ -239,37 +266,6 @@ describe("listWomboWorktrees — basename filtering", () => {
     expect(result).toHaveLength(0);
   });
 
-  test("matches with custom worktree prefix", () => {
-    const customConfig = makeConfig({ worktreePrefix: "wt-" });
-    const customWorktrees: WorktreeInfo[] = [
-      {
-        path: "/home/user/projects/my-app",
-        branch: "main",
-        head: "abc123",
-        bare: false,
-      },
-      {
-        path: "/home/user/projects/wt-auth",
-        branch: "feature/auth",
-        head: "def456",
-        bare: false,
-      },
-      {
-        path: "/home/user/projects/wombo-stale",
-        branch: "feature/stale",
-        head: "ghi789",
-        bare: false,
-      },
-    ];
-    const result = filterWomboWorktrees(
-      customWorktrees,
-      "/home/user/projects/my-app",
-      customConfig
-    );
-    expect(result).toHaveLength(1);
-    expect(result[0].path).toBe("/home/user/projects/wt-auth");
-  });
-
   test("bare worktrees are not special-cased", () => {
     const bareWorktrees: WorktreeInfo[] = [
       {
@@ -279,7 +275,7 @@ describe("listWomboWorktrees — basename filtering", () => {
         bare: true,
       },
       {
-        path: "/home/user/projects/wombo-feat",
+        path: "/home/user/projects/wombo-combo-worktrees/feat",
         branch: "feature/feat",
         head: "def456",
         bare: false,
@@ -287,11 +283,10 @@ describe("listWomboWorktrees — basename filtering", () => {
     ];
     const result = filterWomboWorktrees(bareWorktrees, projectRoot, config);
     expect(result).toHaveLength(1);
-    expect(result[0].path).toBe("/home/user/projects/wombo-feat");
+    expect(result[0].path).toBe("/home/user/projects/wombo-combo-worktrees/feat");
   });
 
   test("resolves symlinks/relative paths in project root comparison", () => {
-    // Test with trailing slash and relative components
     const messyRoot = "/home/user/projects/./wombo-combo/";
     const result = filterWomboWorktrees(
       [
@@ -302,7 +297,7 @@ describe("listWomboWorktrees — basename filtering", () => {
           bare: false,
         },
         {
-          path: "/home/user/projects/wombo-feat",
+          path: "/home/user/projects/wombo-combo-worktrees/feat",
           branch: "feature/feat",
           head: "def456",
           bare: false,
@@ -313,7 +308,7 @@ describe("listWomboWorktrees — basename filtering", () => {
     );
     // The resolve() call should normalize the path, excluding the project root
     expect(result).toHaveLength(1);
-    expect(result[0].path).toBe("/home/user/projects/wombo-feat");
+    expect(result[0].path).toBe("/home/user/projects/wombo-combo-worktrees/feat");
   });
 });
 

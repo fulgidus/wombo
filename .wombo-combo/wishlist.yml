@@ -6,3 +6,11 @@
   text: Add dashboard with graphs and useful realtime status
   created_at: 2026-03-14T10:45:41.101Z
   tags: []
+- id: 8b44f390-1670-4ca5-8d1b-d1085cf23ff9
+  text: AGENTS.md is out of sync with actual project config — references outdated constraints (e.g. 'no external CLI
+    frameworks', 'neo-blessed is the only large dependency') that conflict with planned Ink and Citty migrations. Revise
+    AGENTS.md to point to .wombo-combo/config.json for authoritative settings and reflect current tooling direction.
+  created_at: 2026-03-15T18:00:00.000Z
+  tags:
+    - docs
+    - config

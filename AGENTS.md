@@ -64,6 +64,18 @@ under `.wombo-combo/` **are tracked in git**:
 - `tui-session.json` — TUI session state
 - `usage.jsonl` — token usage data
 
+### 5. Never silently work around bugs
+
+When you encounter unexpected behavior, errors, or bugs in the codebase or
+tooling during your work, you must either:
+
+1. **Fix it** immediately if the fix is straightforward, or
+2. **Track it** — create a task (`bun dev tasks add`) or wishlist item before
+   proceeding with a workaround.
+
+Silent workarounds are forbidden. A workaround without a tracking item means the
+bug is invisible and will never be fixed.
+
 ---
 
 ## Project structure

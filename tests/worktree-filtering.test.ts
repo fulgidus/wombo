@@ -3,11 +3,10 @@
  * and safety guards using real temporary git repositories.
  *
  * Critical coverage:
- *   - listWomboWorktrees(): filters by config.git.worktreePrefix, excludes project root
- *     even when project dir name starts with the prefix (e.g. "wombo-combo" with prefix
- *     "wombo-", and the dangerous case "woco-something" with prefix "woco-")
+ *   - listWomboWorktrees(): filters by -worktrees directory containment and branch prefix,
+ *     excludes project root
  *   - removeWorktree(): safety guard must never remove project root or non-worktree dirs
- *   - cleanupAllWorktrees(): removes all woco worktrees, skips non-woco ones
+ *   - cleanupAllWorktrees(): removes matching worktrees, skips non-matching ones
  *   - verifyConfigFiles(): ensures config files are copied into worktrees
  */
 
@@ -20,7 +19,7 @@ import {
   rmSync,
   readFileSync,
 } from "node:fs";
-import { join, resolve, basename } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execSync } from "node:child_process";
 import type { WomboConfig } from "../src/config.js";
@@ -49,7 +48,6 @@ function git(cmd: string, cwd: string): string {
 
 /**
  * Create a minimal WomboConfig for testing.
- * worktreePrefix defaults to "woco-" to test the dangerous prefix collision cases.
  */
 function makeConfig(
   overrides?: Partial<WomboConfig["git"]>,
@@ -63,7 +61,6 @@ function makeConfig(
     install: { command: "echo install", timeout: 120_000 },
     git: {
       branchPrefix: "feature/",
-      worktreePrefix: "woco-",
       remote: "origin",
       mergeStrategy: "--no-ff",
       ...overrides,
@@ -102,7 +99,10 @@ function makeConfig(
     tdd: {
       enabled: false,
       testCommand: "bun test",
+      strictTdd: false,
+      testTimeout: 60_000,
     },
+    devMode: false,
   };
 }
 
@@ -199,42 +199,38 @@ describe("listWomboWorktrees — real git integration", () => {
     expect(result[0].branch).toBe("feature/auth");
   });
 
-  test("excludes worktrees that don't match the prefix", () => {
+  test("excludes worktrees that don't match the branch prefix", () => {
     repoDir = createTempGitRepo("my-project");
     parentDir = resolve(repoDir, "..");
     const config = makeConfig();
 
-    // Create worktrees with and without matching prefix
+    // Create worktrees: one with matching branch prefix, one without
     git("branch feature/auth main", repoDir);
-    git("branch feature/other main", repoDir);
+    git("branch other/unrelated main", repoDir);
     const wocoPath = join(parentDir, "woco-auth");
     const otherPath = join(parentDir, "other-worktree");
     git(`worktree add "${wocoPath}" feature/auth`, repoDir);
-    git(`worktree add "${otherPath}" feature/other`, repoDir);
+    git(`worktree add "${otherPath}" other/unrelated`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
     expect(result).toHaveLength(1);
-    expect(result[0].path).toBe(wocoPath);
+    expect(result[0].branch).toBe("feature/auth");
   });
 
-  test("excludes project root even when its name starts with the prefix", () => {
-    // DANGEROUS CASE: project directory is named "woco-something"
-    // and prefix is "woco-". The project root basename starts with the prefix!
+  test("excludes project root even when its name contains the branch prefix pattern", () => {
+    // Project root is excluded regardless of naming
     repoDir = createTempGitRepo("woco-something");
     parentDir = resolve(repoDir, "..");
     const config = makeConfig();
 
-    // Project root basename is "woco-something" which starts with "woco-"
-    expect(basename(repoDir).startsWith(config.git.worktreePrefix)).toBe(true);
-
-    // Create a legitimate woco worktree
+    // Create a legitimate worktree with a feature branch
     git("branch feature/auth main", repoDir);
     const wtPath = join(parentDir, "woco-auth");
     git(`worktree add "${wtPath}" feature/auth`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
 
-    // The project root "woco-something" must NOT be in the result
+    // The project root must NOT be in the result
     const resultPaths = result.map((w) => resolve(w.path));
     expect(resultPaths).not.toContain(resolve(repoDir));
 
@@ -243,13 +239,11 @@ describe("listWomboWorktrees — real git integration", () => {
     expect(result[0].path).toBe(wtPath);
   });
 
-  test("excludes project root named 'wombo-combo' with prefix 'wombo-'", () => {
-    // Classic case: "wombo-combo" project dir name contains "wombo-" prefix
+  test("excludes project root named 'wombo-combo'", () => {
+    // Classic case: project root is always excluded
     repoDir = createTempGitRepo("wombo-combo");
     parentDir = resolve(repoDir, "..");
-    const config = makeConfig({ worktreePrefix: "wombo-" });
-
-    expect(basename(repoDir).startsWith(config.git.worktreePrefix)).toBe(true);
+    const config = makeConfig();
 
     // Create two legitimate worktrees
     git("branch feature/auth main", repoDir);
@@ -271,47 +265,48 @@ describe("listWomboWorktrees — real git integration", () => {
     expect(resultPaths).toContain(resolve(wt2));
   });
 
-  test("handles multiple worktrees with mixed prefixes", () => {
+  test("handles multiple worktrees with mixed branch prefixes", () => {
     repoDir = createTempGitRepo("my-project");
     parentDir = resolve(repoDir, "..");
     const config = makeConfig();
 
-    // Create branches
+    // Create branches: 2 with feature/ prefix, 1 without
     git("branch feature/a main", repoDir);
     git("branch feature/b main", repoDir);
-    git("branch feature/c main", repoDir);
+    git("branch other/c main", repoDir);
 
-    // Create worktrees: 2 match "woco-", 1 does not
+    // Create worktrees
     const wt1 = join(parentDir, "woco-a");
     const wt2 = join(parentDir, "woco-b");
     const wt3 = join(parentDir, "other-c");
     git(`worktree add "${wt1}" feature/a`, repoDir);
     git(`worktree add "${wt2}" feature/b`, repoDir);
-    git(`worktree add "${wt3}" feature/c`, repoDir);
+    git(`worktree add "${wt3}" other/c`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
     expect(result).toHaveLength(2);
-    const paths = result.map((w) => w.path);
-    expect(paths).toContain(wt1);
-    expect(paths).toContain(wt2);
-    expect(paths).not.toContain(wt3);
+    const branches = result.map((w) => w.branch);
+    expect(branches).toContain("feature/a");
+    expect(branches).toContain("feature/b");
+    expect(branches).not.toContain("other/c");
   });
 
-  test("works with custom worktree prefix", () => {
+  test("works with custom branch prefix", () => {
     repoDir = createTempGitRepo("my-project");
     parentDir = resolve(repoDir, "..");
-    const config = makeConfig({ worktreePrefix: "wt-" });
+    const config = makeConfig({ branchPrefix: "wt-" });
 
-    git("branch feature/auth main", repoDir);
+    git("branch wt-auth main", repoDir);
     git("branch feature/other main", repoDir);
     const wtMatch = join(parentDir, "wt-auth");
     const wtNoMatch = join(parentDir, "woco-other");
-    git(`worktree add "${wtMatch}" feature/auth`, repoDir);
+    git(`worktree add "${wtMatch}" wt-auth`, repoDir);
     git(`worktree add "${wtNoMatch}" feature/other`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
+    // wt-auth matches branchPrefix "wt-", feature/other does not
     expect(result).toHaveLength(1);
-    expect(result[0].path).toBe(wtMatch);
+    expect(result[0].branch).toBe("wt-auth");
   });
 });
 
@@ -456,24 +451,24 @@ describe("cleanupAllWorktrees — selective cleanup", () => {
     expect(existsSync(wt2)).toBe(false);
   });
 
-  test("skips worktrees that don't match the prefix", () => {
+  test("skips worktrees that don't match the branch prefix", () => {
     repoDir = createTempGitRepo("my-project");
     const parentDir = resolve(repoDir, "..");
     const config = makeConfig();
 
-    // Create one woco and one non-woco worktree
+    // Create one feature branch and one non-feature branch worktree
     git("branch feature/woco main", repoDir);
-    git("branch feature/other main", repoDir);
+    git("branch other/unrelated main", repoDir);
     const wocoWt = join(parentDir, "woco-feature");
     const otherWt = join(parentDir, "other-feature");
     git(`worktree add "${wocoWt}" feature/woco`, repoDir);
-    git(`worktree add "${otherWt}" feature/other`, repoDir);
+    git(`worktree add "${otherWt}" other/unrelated`, repoDir);
 
     const removed = cleanupAllWorktrees(repoDir, config);
 
     expect(removed).toBe(1);
     expect(existsSync(wocoWt)).toBe(false);
-    // Non-woco worktree should still exist
+    // Non-matching worktree should still exist
     expect(existsSync(otherWt)).toBe(true);
   });
 
@@ -503,15 +498,15 @@ describe("cleanupAllWorktrees — selective cleanup", () => {
     expect(removed).toBe(0);
   });
 
-  test("returns 0 when all worktrees have non-matching prefix", () => {
+  test("returns 0 when all worktrees have non-matching branch prefix", () => {
     repoDir = createTempGitRepo("my-project");
     const parentDir = resolve(repoDir, "..");
-    const config = makeConfig(); // prefix is "woco-"
+    const config = makeConfig(); // branchPrefix is "feature/"
 
-    // Create worktrees with different prefix
-    git("branch feature/x main", repoDir);
+    // Create worktrees with non-matching branch prefix
+    git("branch other/x main", repoDir);
     const wtPath = join(parentDir, "other-x");
-    git(`worktree add "${wtPath}" feature/x`, repoDir);
+    git(`worktree add "${wtPath}" other/x`, repoDir);
 
     const removed = cleanupAllWorktrees(repoDir, config);
     expect(removed).toBe(0);
@@ -786,7 +781,7 @@ describe("createWorktree — config file copying integration", () => {
 // Edge case: prefix that is a substring of another prefix
 // ---------------------------------------------------------------------------
 
-describe("listWomboWorktrees — prefix substring edge cases", () => {
+describe("listWomboWorktrees — branch prefix edge cases", () => {
   let repoDir: string;
 
   afterEach(() => {
@@ -809,23 +804,23 @@ describe("listWomboWorktrees — prefix substring edge cases", () => {
     }
   });
 
-  test("prefix 'woco-' does not match 'woc-something'", () => {
+  test("branch prefix 'feature/' does not match 'feat/something'", () => {
     repoDir = createTempGitRepo("my-project");
     const parentDir = resolve(repoDir, "..");
-    const config = makeConfig({ worktreePrefix: "woco-" });
+    const config = makeConfig({ branchPrefix: "feature/" });
 
-    git("branch feature/x main", repoDir);
-    const wtPath = join(parentDir, "woc-something");
-    git(`worktree add "${wtPath}" feature/x`, repoDir);
+    git("branch feat/x main", repoDir);
+    const wtPath = join(parentDir, "feat-something");
+    git(`worktree add "${wtPath}" feat/x`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
     expect(result).toHaveLength(0);
   });
 
-  test("prefix 'woco-' matches 'woco-' exactly (e.g. woco-a)", () => {
+  test("branch prefix 'feature/' matches feature branches", () => {
     repoDir = createTempGitRepo("my-project");
     const parentDir = resolve(repoDir, "..");
-    const config = makeConfig({ worktreePrefix: "woco-" });
+    const config = makeConfig({ branchPrefix: "feature/" });
 
     git("branch feature/a main", repoDir);
     const wtPath = join(parentDir, "woco-a");
@@ -835,19 +830,18 @@ describe("listWomboWorktrees — prefix substring edge cases", () => {
     expect(result).toHaveLength(1);
   });
 
-  test("handles project root exactly matching prefix (edge case 'woco-')", () => {
-    // What if the project dir is literally "woco-" (just the prefix, no suffix)?
-    repoDir = createTempGitRepo("woco-");
+  test("quest/ branches are always matched regardless of branchPrefix", () => {
+    repoDir = createTempGitRepo("my-project");
     const parentDir = resolve(repoDir, "..");
-    const config = makeConfig({ worktreePrefix: "woco-" });
+    const config = makeConfig({ branchPrefix: "feature/" });
 
-    git("branch feature/test main", repoDir);
-    const wtPath = join(parentDir, "woco-test");
-    git(`worktree add "${wtPath}" feature/test`, repoDir);
+    git("branch quest/test main", repoDir);
+    const wtPath = join(parentDir, "quest-test");
+    git(`worktree add "${wtPath}" quest/test`, repoDir);
 
     const result = listWomboWorktrees(repoDir, config);
 
-    // Project root "woco-" must be excluded, only "woco-test" should match
+    // quest/ branches are always included
     expect(result).toHaveLength(1);
     expect(result[0].path).toBe(wtPath);
     expect(result.map((w) => resolve(w.path))).not.toContain(resolve(repoDir));

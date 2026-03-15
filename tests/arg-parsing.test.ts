@@ -33,9 +33,9 @@ describe("parseArgs — basic commands", () => {
     expect(result.command).toBe("help");
   });
 
-  test("defaults to help when no args given", () => {
+  test("defaults to tui when no args given", () => {
     const result = parseArgs(argv());
-    expect(result.command).toBe("help");
+    expect(result.command).toBe("tui");
   });
 
   test("parses launch command", () => {

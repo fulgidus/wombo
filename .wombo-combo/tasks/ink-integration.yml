@@ -1,12 +1,12 @@
 id: ink-integration
 title: Integrate Ink TUI shell, routing, and remove neo-blessed
-description: "Final integration task. (1) Migrate src/commands/tui.ts (1088 lines) — the TUI orchestrator that manages
+description: Final integration task. (1) Migrate src/commands/tui.ts (1088 lines) — the TUI orchestrator that manages
   view transitions (Quest Picker -> Task Browser -> Wave Monitor -> Plan Review -> Genesis Review), stdin cleanup, and
   screen lifecycle. Replace blessed program singleton pattern with Ink's component-based routing. (2) Update launch.ts
   and resume.ts WomboTUI integration — the tuiRef pattern (create, updateState, markWaveComplete, waitForQuit, stop,
   setPendingQuestions). (3) Delete blessed-textarea-patch.ts (413 lines) — no longer needed. (4) Remove neo-blessed from
   package.json and delete all old tui-*.ts files that have been replaced. (5) Verify all keybinds, HITL gates, and
-  screen transitions work end-to-end."
+  screen transitions work end-to-end.
 status: backlog
 completion: 0
 difficulty: hard

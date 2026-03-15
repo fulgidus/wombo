@@ -1,12 +1,12 @@
 id: ink-complex-screens
 title: Migrate quest picker, task browser, and wave monitor to Ink
 description: "Migrate the three largest interactive views to Ink: (1) tui-quest-picker.ts (1315 lines) — quest list with
-  create (C), activate/pause (A), navigate to browser on Enter. Contains modals for quest creation/editing.
-  (2) tui-browser.ts (1435 lines) — task browser with checkboxes (Space), stream-select (S), all (A), launch (L), sort
-  (O), priority (+/-), filter done (D), concurrency (C), quit (Q). Has inline edit modals. (3) tui.ts (1096 lines) —
-  wave monitor dashboard with header, selectable agent table, preview pane (activity stream), status bar. Keybinds:
-  up/down navigate, Enter attach, r retry, b build log, p pause auto-scroll, q quit. These are the most complex views
-  and depend on all simpler components being ready."
+  create (C), activate/pause (A), navigate to browser on Enter. Contains modals for quest creation/editing. (2)
+  tui-browser.ts (1435 lines) — task browser with checkboxes (Space), stream-select (S), all (A), launch (L), sort (O),
+  priority (+/-), filter done (D), concurrency (C), quit (Q). Has inline edit modals. (3) tui.ts (1096 lines) — wave
+  monitor dashboard with header, selectable agent table, preview pane (activity stream), status bar. Keybinds: up/down
+  navigate, Enter attach, r retry, b build log, p pause auto-scroll, q quit. These are the most complex views and depend
+  on all simpler components being ready."
 status: backlog
 completion: 0
 difficulty: hard

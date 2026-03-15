@@ -1,0 +1,22 @@
+id: ink-init
+title: Revamp woco init as Ink confirmation screen
+description: "Replace the 20+ prompt interactive wizard with a minimal Ink form. Auto-detect project name from folder,
+  base branch from git, build/install commands from package.json. Show all defaults in a confirmation screen with only
+  2-3 editable fields (baseBranch, build.command, install.command). On confirm, write only essential files: config.json,
+  tasks/, archive/. Remove creation of runtime artifacts (logs/, history/), auto-install of shell completions, and
+  inline dependency checking. This task depends on ink-spike for the base Ink infrastructure and ink-input-system for
+  text input."
+status: backlog
+completion: 0
+difficulty: medium
+priority: high
+depends_on:
+  - ink-input-system
+effort: PT6H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

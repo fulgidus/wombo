@@ -13,9 +13,8 @@
 
 import { existsSync, mkdirSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
-import { createInterface } from "node:readline";
 import type { WomboConfig } from "../config.js";
-import { WOMBO_DIR } from "../config.js";
+import { WOMBO_DIR, isProjectInitialized } from "../config.js";
 import {
   loadTasksFromStore,
   loadArchiveFromStore,
@@ -196,22 +195,13 @@ function womboPath(projectRoot: string, filename: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Prompt the user with a yes/no question via stdin.
- */
-function promptYesNo(question: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim().toLowerCase().startsWith("y"));
-    });
-  });
-}
-
-/**
  * Ensure the tasks store exists before any command that needs it.
- * If the folder is missing, prompt the user to generate one from scratch
- * or auto-migrate from a legacy single-file tasks.yml.
+ *
+ * If the project hasn't been initialized at all (no .wombo-combo/config.json),
+ * tell the user to run `woco init` and exit — don't patch individual pieces.
+ *
+ * If the project IS initialized but the tasks store directory is missing,
+ * auto-create it (this can happen after manual config edits or migration).
  */
 export async function ensureTasksFile(
   projectRoot: string,
@@ -223,20 +213,20 @@ export async function ensureTasksFile(
   const data = loadTasksFromStore(projectRoot, config);
   if (data.tasks.length > 0 || tasksStoreExists(projectRoot, config)) return;
 
-  console.log(`\nTasks store not found: ${WOMBO_DIR}/${config.tasksDir}/`);
-
-  const generate = await promptYesNo(
-    "Generate a new tasks store from template? (y/N): "
-  );
-
-  if (!generate) {
+  // Project not initialized at all — tell the user to run init
+  if (!isProjectInitialized(projectRoot)) {
     console.error(
-      `Cannot proceed without a tasks store. Create one manually or run again and accept the prompt.`
+      `\nThis project hasn't been initialized yet.\n` +
+      `Run \`woco init\` to set up ${WOMBO_DIR}/ with config, tasks, and archive stores.\n`
     );
     process.exit(1);
   }
 
-  // Ensure .wombo-combo/ directory exists
+  // Project IS initialized (config.json exists) but tasks store is missing.
+  // Auto-create it — this is a partial state, not a "never initialized" state.
+  console.log(`\nTasks store not found: ${WOMBO_DIR}/${config.tasksDir}/`);
+  console.log(`Creating empty tasks store...`);
+
   ensureWomboDir(projectRoot);
 
   const now = new Date().toISOString();
@@ -250,20 +240,24 @@ export async function ensureTasksFile(
       maintainer: "unknown",
     },
   });
-  console.log(`Created ${WOMBO_DIR}/${config.tasksDir}/ with empty task store.\n`);
+  console.log(`Created ${WOMBO_DIR}/${config.tasksDir}/ with empty task store.`);
 
-  // Also create empty archive store
-  saveArchiveMetaToStore(projectRoot, config, {
-    version: "1.0",
-    meta: {
-      created_at: now,
-      updated_at: now,
-      project: "unknown",
-      generator: "wombo-combo",
-      maintainer: "unknown",
-    },
-  });
-  console.log(`Created ${WOMBO_DIR}/${config.archiveDir}/.\n`);
+  // Also create empty archive store if missing
+  const archivePath = resolve(projectRoot, WOMBO_DIR, config.archiveDir);
+  if (!existsSync(archivePath)) {
+    saveArchiveMetaToStore(projectRoot, config, {
+      version: "1.0",
+      meta: {
+        created_at: now,
+        updated_at: now,
+        project: "unknown",
+        generator: "wombo-combo",
+        maintainer: "unknown",
+      },
+    });
+    console.log(`Created ${WOMBO_DIR}/${config.archiveDir}/.`);
+  }
+  console.log(); // trailing blank line
 }
 
 // Backward-compat alias
@@ -408,6 +402,7 @@ export function getReadyTasks(data: TasksFile, archive?: Task[]): Task[] {
   return data.tasks.filter(
     (t) =>
       t.status === "backlog" &&
+      (t.completion === undefined || t.completion === 0) &&
       areDependenciesMet(t, doneIds)
   );
 }

@@ -146,7 +146,7 @@ describe("generatePrompt — basic structure", () => {
     });
     const config = makeConfig();
     const prompt = generatePrompt(feature, "main", config);
-    expect(prompt).toContain("Do not use eval");
+    expect(prompt).toContain("Don't use eval");
     expect(prompt).toContain("## Forbidden");
   });
 

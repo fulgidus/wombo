@@ -222,6 +222,19 @@ rules:
       - dependencies
       - architecture
       - approval
+  - id: rule-11
+    text: Never silently work around bugs — when you encounter unexpected behavior or errors in the codebase or tooling,
+      either fix the issue immediately or track it (create a task or wishlist item) before proceeding with a workaround.
+      Workarounds without tracking are forbidden.
+    scope: development
+    rigidity: hard
+    consequences: Bugs accumulate silently; issues that could be fixed in minutes become forgotten tech debt; workarounds
+      mask root causes and make the project harder to maintain over time
+    tags:
+      - development
+      - quality
+      - tracking
+      - discipline
 codebase_summary: |-
   schemas/ (3 files)
     config.schema.json

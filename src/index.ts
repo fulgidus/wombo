@@ -45,7 +45,7 @@
 
 import { resolve } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { loadConfig, validateConfig } from "./config.js";
+import { loadConfig, validateConfig, isProjectInitialized, WOMBO_DIR } from "./config.js";
 import { loadState, saveState } from "./lib/state.js";
 
 // ---------------------------------------------------------------------------
@@ -506,7 +506,9 @@ async function main(): Promise<void> {
   // -----------------------------------------------------------------------
   // Input validation at the CLI boundary
   // -----------------------------------------------------------------------
-  if (args.featureId) {
+  // Skip ID validation for wishlist — its first positional is free-form text, not a kebab-case ID.
+  const needsIdValidation = args.command !== "wishlist";
+  if (args.featureId && needsIdValidation) {
     assertValid(validateId(args.featureId, "feature ID"));
   }
   if (args.title) {
@@ -692,6 +694,15 @@ async function main(): Promise<void> {
   // Everything else requires config
   const config = loadConfig(PROJECT_ROOT);
   validateConfig(config);
+
+  // Guard: project must be initialized for all config-dependent commands
+  if (!isProjectInitialized(PROJECT_ROOT)) {
+    console.error(
+      `\nThis project hasn't been initialized yet.\n` +
+      `Run \`woco init\` to set up ${WOMBO_DIR}/ with config, tasks, and archive stores.\n`
+    );
+    process.exit(1);
+  }
 
   // Apply --dev flag (CLI override for devMode, merges with config.devMode)
   if (args.dev) {
@@ -1208,7 +1219,11 @@ process.on("unhandledRejection", (reason: any) => {
   process.exit(1);
 });
 
-main().catch((err) => {
-  console.error("Fatal error:", err.message);
-  process.exit(1);
-});
+// Only run main() when executed directly, not when imported as a module
+// (e.g. by tests that import parseArgs).
+if (import.meta.main) {
+  main().catch((err) => {
+    console.error("Fatal error:", err.message);
+    process.exit(1);
+  });
+}

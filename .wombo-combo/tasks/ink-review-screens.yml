@@ -1,10 +1,10 @@
 id: ink-review-screens
 title: Migrate genesis review and plan review as shared ReviewList component
-description: "Migrate tui-genesis-review.ts (1017 lines) and tui-plan-review.ts (1017 lines) to Ink. These two files
-  are near-identical — extract a shared ReviewList Ink component that handles: selectable list with accept/reject toggle
+description: "Migrate tui-genesis-review.ts (1017 lines) and tui-plan-review.ts (1017 lines) to Ink. These two files are
+  near-identical — extract a shared ReviewList Ink component that handles: selectable list with accept/reject toggle
   (Space), edit modal (E), reorder (K/J move up/down), approve (A), validation issues (V), toggle all (R), quit/cancel
-  (Q). Genesis review shows proposed quests, plan review shows proposed tasks — the only difference is the data shape and
-  labels. Deduplication should cut ~1000 lines of code."
+  (Q). Genesis review shows proposed quests, plan review shows proposed tasks — the only difference is the data shape
+  and labels. Deduplication should cut ~1000 lines of code."
 status: backlog
 completion: 0
 difficulty: medium

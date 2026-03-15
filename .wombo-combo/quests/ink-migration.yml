@@ -25,6 +25,7 @@ taskIds:
   - ink-wishlist
   - ink-complex-screens
   - ink-onboarding
+  - ink-init
   - ink-integration
 created_at: 2026-03-15T13:15:32.640Z
 updated_at: 2026-03-15T13:15:32.640Z

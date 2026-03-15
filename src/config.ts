@@ -352,6 +352,14 @@ export function validateConfig(config: WomboConfig): void {
 }
 
 /**
+ * Check whether the project has been initialized (i.e. .wombo-combo/config.json exists).
+ * This is the canonical "is this a wombo-combo project?" check.
+ */
+export function isProjectInitialized(projectRoot: string): boolean {
+  return existsSync(resolve(projectRoot, CONFIG_FILE));
+}
+
+/**
  * Generate the default .wombo-combo/config.json content string (for `woco init`).
  */
 export function generateDefaultConfig(): string {

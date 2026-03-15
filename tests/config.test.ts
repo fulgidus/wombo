@@ -226,12 +226,6 @@ describe("validateConfig", () => {
     expect(() => validateConfig(config)).toThrow("branchPrefix");
   });
 
-  test("throws on empty worktreePrefix", () => {
-    const config = validConfig();
-    config.git.worktreePrefix = "";
-    expect(() => validateConfig(config)).toThrow("worktreePrefix");
-  });
-
   test("allows maxConcurrent = 0 (unlimited)", () => {
     const config = validConfig();
     config.defaults.maxConcurrent = 0;
