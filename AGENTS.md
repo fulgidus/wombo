@@ -32,13 +32,17 @@ bun dev launch --dry-run --all-ready
 bun dev init --force
 ```
 
-### 2. Never publish to npm
+### 2. Always publish to npm
 
-Distribution is GitHub-only. Users install via:
+Publishing is handled by the release workflow, which triggers on git tag pushes.
+
+Just make sure package.json version is updated and tagged correctly.
+
+Users install via:
+
 ```sh
-bun install -g github:fulgidus/wombo
+bun a -g wombo-combo
 ```
-Do not add `publishConfig`, do not run `npm publish`, do not add `.npmrc`.
 
 ### 3. Keep bun.lock committed
 
@@ -134,12 +138,7 @@ All wombo-combo files live under `.wombo-combo/`:
 - **Language:** TypeScript, strict mode. Run `bun run typecheck` to verify.
 - **Modules:** ESM only (`"type": "module"` in package.json). Use `.js`
   extensions in import paths (TypeScript resolves them to `.ts` at runtime in Bun).
-- **No external CLI frameworks.** Arg parsing is hand-rolled in `index.ts`.
-  This is intentional — it keeps the dependency tree minimal and gives full
-  control for agent-readiness features (schema introspection, etc.).
 - **YAML library:** `yaml` (v2). Use `YAML.parse()` / `YAML.stringify()`.
-- **No npm registry dependencies** for core functionality. `neo-blessed` is
-  the only large dependency (TUI). Keep it that way.
 
 ## Testing and verification
 
@@ -170,7 +169,7 @@ There is no test suite yet. When adding tests, use Bun's built-in test runner
 
 ## Feature backlog
 
-The active backlog lives in `.wombo-combo/tasks.yml` (local, gitignored). Use
+The active backlog lives in `.wombo-combo/tasks.yml`. Use
 `bun dev tasks list` to see it. The canonical template is at
 `src/templates/tasks.yml`.
 
