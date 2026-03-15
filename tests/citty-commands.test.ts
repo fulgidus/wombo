@@ -227,8 +227,28 @@ describe("citty router", () => {
 
   test("isCittyCommand returns false for non-citty commands", async () => {
     const { isCittyCommand } = await import("../src/commands/citty/router.js");
-    expect(isCittyCommand("tasks")).toBe(false);
     expect(isCittyCommand("tui")).toBe(false);
+    expect(isCittyCommand("genesis")).toBe(false);
+  });
+
+  test("isCittyCommand returns true for tasks and aliases", async () => {
+    const { isCittyCommand } = await import("../src/commands/citty/router.js");
+    expect(isCittyCommand("tasks")).toBe(true);
+    expect(isCittyCommand("t")).toBe(true);
+    expect(isCittyCommand("features")).toBe(true);
+  });
+
+  test("isCittyCommand returns true for quest and aliases", async () => {
+    const { isCittyCommand } = await import("../src/commands/citty/router.js");
+    expect(isCittyCommand("quest")).toBe(true);
+    expect(isCittyCommand("q")).toBe(true);
+  });
+
+  test("isCittyCommand returns true for wishlist and aliases", async () => {
+    const { isCittyCommand } = await import("../src/commands/citty/router.js");
+    expect(isCittyCommand("wishlist")).toBe(true);
+    expect(isCittyCommand("w")).toBe(true);
+    expect(isCittyCommand("wl")).toBe(true);
   });
 
   test("isCittyCommand returns true for migrated core commands", async () => {

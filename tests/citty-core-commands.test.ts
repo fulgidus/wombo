@@ -401,11 +401,8 @@ describe("citty router — core commands", () => {
 
   test("isCittyCommand returns false for non-citty commands", async () => {
     const { isCittyCommand } = await import("../src/commands/citty/router.js");
-    expect(isCittyCommand("launch")).toBe(false);
-    expect(isCittyCommand("resume")).toBe(false);
-    expect(isCittyCommand("retry")).toBe(false);
-    expect(isCittyCommand("tasks")).toBe(false);
     expect(isCittyCommand("tui")).toBe(false);
+    expect(isCittyCommand("genesis")).toBe(false);
   });
 
   test("isCittyCommand identifies aliases for migrated commands", async () => {

@@ -132,8 +132,8 @@ describe("isCittyCommand — with global flags context", () => {
     expect(isCittyCommand("describe")).toBe(true);
   });
 
-  test("launch is NOT a citty command", () => {
-    expect(isCittyCommand("launch")).toBe(false);
+  test("launch IS a citty command", () => {
+    expect(isCittyCommand("launch")).toBe(true);
   });
 
   test("tui is NOT a citty command", () => {

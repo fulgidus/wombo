@@ -30,6 +30,9 @@ import { completionCommand } from "./completion.js";
 import { launchCommand } from "./launch.js";
 import { resumeCommand } from "./resume.js";
 import { retryCommand } from "./retry.js";
+import { tasksCommand } from "./tasks.js";
+import { questCommand } from "./quest.js";
+import { wishlistCommand } from "./wishlist.js";
 
 /**
  * Set of all command names / aliases that are handled by citty.
@@ -73,6 +76,15 @@ const CITTY_COMMANDS = new Set([
   "r",
   "retry",
   "re",
+  // Subcommand groups
+  "tasks",
+  "t",          // alias for tasks
+  "features",   // alias for tasks (backward compat)
+  "quest",
+  "q",          // alias for quest
+  "wishlist",
+  "w",          // alias for wishlist
+  "wl",         // alias for wishlist
 ]);
 
 /**
@@ -213,6 +225,23 @@ export async function runCittyCommand(
     case "retry":
     case "re":
       await runCommand(retryCommand, { rawArgs });
+      break;
+
+    case "tasks":
+    case "t":
+    case "features":
+      await runCommand(tasksCommand, { rawArgs });
+      break;
+
+    case "quest":
+    case "q":
+      await runCommand(questCommand, { rawArgs });
+      break;
+
+    case "wishlist":
+    case "w":
+    case "wl":
+      await runCommand(wishlistCommand, { rawArgs });
       break;
 
     default:
