@@ -1,0 +1,7 @@
+/**
+ * ink/index.ts — Barrel re-exports for the Ink app shell.
+ */
+
+export { App, type AppProps } from "./app.js";
+export { Shell, type ShellProps } from "./shell.js";
+export { runApp, type RunAppOptions } from "./run-app.js";
