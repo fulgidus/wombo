@@ -46,3 +46,12 @@ export {
   WishlistOverlay,
   type WishlistOverlayProps,
 } from "./wishlist-overlay";
+export { InitForm, FIELDS, type InitFormProps, type InitFormDefaults, type FieldDef } from "./init-form";
+export { InitApp, renderInitApp, type InitAppProps } from "./init-app";
+export {
+  detectProjectName,
+  detectBaseBranch,
+  detectBuildCommand,
+  detectInstallCommand,
+} from "./init-detect";
+export { writeInitFiles, type InitWriterConfig, type InitWriterResult } from "./init-writer";
