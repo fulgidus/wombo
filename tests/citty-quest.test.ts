@@ -1,7 +1,7 @@
 /**
  * citty-quest.test.ts — Tests for the citty quest command definition.
  *
- * Verifies that the quest parent command and its 8 subcommands are correctly
+ * Verifies that the quest parent command and its 9 subcommands are correctly
  * defined as citty commands with proper metadata, args, and subCommands.
  */
 
@@ -36,7 +36,7 @@ describe("citty quest command", () => {
     expect(meta.description!.length).toBeGreaterThan(0);
   });
 
-  test("questCommand has all 8 subcommands defined (plus aliases)", async () => {
+  test("questCommand has all 9 subcommands defined (plus aliases)", async () => {
     const { questCommand } = await import("../src/commands/citty/quest");
     const subCommands = await resolveValue(questCommand.subCommands!);
     const subCommandNames = Object.keys(subCommands);
@@ -48,8 +48,9 @@ describe("citty quest command", () => {
     expect(subCommandNames).toContain("pause");
     expect(subCommandNames).toContain("complete");
     expect(subCommandNames).toContain("abandon");
-    // Also has aliases: c, ls, sh, pl, a, p, co, ab
-    expect(subCommandNames.length).toBe(16);
+    expect(subCommandNames).toContain("archive");
+    // Also has aliases: c, ls, sh, pl, a, p, co, ab, ar
+    expect(subCommandNames.length).toBe(18);
   });
 
   test("questCommand has a run handler for default subcommand behavior", async () => {
@@ -154,6 +155,17 @@ describe("citty quest subcommands structure", () => {
     expect(args.questId).toBeDefined();
     expect(args.questId.type).toBe("positional");
     expect(args.force).toBeDefined();
+  });
+
+  test("archive subcommand has questId positional and dryRun flag", async () => {
+    const { questCommand } = await import("../src/commands/citty/quest.js");
+    const subCommands = await resolveValue(questCommand.subCommands!);
+    const cmd = await resolveValue(subCommands["archive"]);
+    expect(cmd).toBeDefined();
+    const args = await resolveValue(cmd.args!);
+    expect(args.questId).toBeDefined();
+    expect(args.questId.type).toBe("positional");
+    expect(args.dryRun).toBeDefined();
   });
 
   test("each subcommand has a run handler", async () => {

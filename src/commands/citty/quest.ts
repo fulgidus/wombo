@@ -406,6 +406,47 @@ const abandonCommand = defineCommand({
 });
 
 // ---------------------------------------------------------------------------
+// Subcommand: archive
+// ---------------------------------------------------------------------------
+
+const archiveCommand = defineCommand({
+  meta: {
+    name: "archive",
+    description: "Archive completed/abandoned quests",
+  },
+  args: {
+    questId: {
+      type: "positional",
+      description: "Quest ID to archive (omit to archive all completed/abandoned)",
+      required: false,
+    },
+    dryRun: {
+      type: "boolean",
+      description: "Show what would be archived without doing it",
+      required: false,
+    },
+    output: {
+      type: "string",
+      alias: "o",
+      description: "Output format: text (default), json, or toon",
+      required: false,
+    },
+  },
+  async run({ args }) {
+    const projectRoot = resolve(process.cwd());
+    const config = loadProjectConfigSync(projectRoot);
+    await handleQuestSubcommand({
+      projectRoot,
+      config,
+      subcommand: "archive",
+      questId: args.questId,
+      dryRun: args.dryRun,
+      outputFmt: resolveOutputFormat(args.output),
+    });
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Parent command: quest
 // ---------------------------------------------------------------------------
 
@@ -439,6 +480,7 @@ export const questCommand = defineCommand({
     pause: pauseCommand,
     complete: completeCommand,
     abandon: abandonCommand,
+    archive: archiveCommand,
     // Aliases
     c: createCommand,
     ls: listCommand,
@@ -448,5 +490,6 @@ export const questCommand = defineCommand({
     p: pauseCommand,
     co: completeCommand,
     ab: abandonCommand,
+    ar: archiveCommand,
   },
 });

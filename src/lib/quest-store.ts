@@ -38,6 +38,9 @@ import { normalizeQuest, validateQuest } from "./quest";
 /** Directory name for quests inside .wombo-combo/ */
 const QUESTS_DIR = "quests";
 
+/** Directory name for archived quests inside .wombo-combo/ */
+const QUEST_ARCHIVE_DIR = "quest-archive";
+
 const YAML_OPTS = {
   lineWidth: 120,
   defaultKeyType: "PLAIN" as const,
@@ -62,6 +65,22 @@ function knowledgeDir(projectRoot: string, questId: string): string {
 
 function knowledgeFilePath(projectRoot: string, questId: string): string {
   return join(knowledgeDir(projectRoot, questId), "knowledge.md");
+}
+
+function questArchiveDir(projectRoot: string): string {
+  return resolve(projectRoot, WOMBO_DIR, QUEST_ARCHIVE_DIR);
+}
+
+function archivedQuestFilePath(projectRoot: string, questId: string): string {
+  return join(questArchiveDir(projectRoot), `${questId}.yml`);
+}
+
+function archivedKnowledgeDir(projectRoot: string, questId: string): string {
+  return join(questArchiveDir(projectRoot), questId);
+}
+
+function archivedKnowledgeFilePath(projectRoot: string, questId: string): string {
+  return join(archivedKnowledgeDir(projectRoot, questId), "knowledge.md");
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +254,98 @@ export function saveQuestKnowledge(
   ensureDir(dir);
   const filePath = knowledgeFilePath(projectRoot, questId);
   atomicWrite(filePath, content);
+}
+
+// ---------------------------------------------------------------------------
+// Public API — Archive
+// ---------------------------------------------------------------------------
+
+/**
+ * Archive a quest — moves it from quests/ to quest-archive/,
+ * including its knowledge directory if present.
+ * The quest must be in a terminal state (completed or abandoned).
+ */
+export function archiveQuest(
+  projectRoot: string,
+  questId: string
+): void {
+  const srcFile = questFilePath(projectRoot, questId);
+  if (!existsSync(srcFile)) {
+    throw new Error(`Quest "${questId}" not found in active quests`);
+  }
+
+  const destDir = questArchiveDir(projectRoot);
+  ensureDir(destDir);
+
+  // Move quest file
+  const destFile = archivedQuestFilePath(projectRoot, questId);
+  renameSync(srcFile, destFile);
+
+  // Move knowledge directory if it exists
+  const srcKDir = knowledgeDir(projectRoot, questId);
+  if (existsSync(srcKDir)) {
+    const destKDir = archivedKnowledgeDir(projectRoot, questId);
+    ensureDir(destKDir);
+    // Move knowledge.md
+    const srcKFile = knowledgeFilePath(projectRoot, questId);
+    if (existsSync(srcKFile)) {
+      const destKFile = archivedKnowledgeFilePath(projectRoot, questId);
+      renameSync(srcKFile, destKFile);
+    }
+    // Remove the now-empty source knowledge dir
+    try {
+      rmdirSync(srcKDir);
+    } catch {
+      // Not critical — leave if non-empty
+    }
+  }
+}
+
+/**
+ * Load a single archived quest by ID. Returns null if not found.
+ */
+export function loadArchivedQuest(
+  projectRoot: string,
+  questId: string
+): Quest | null {
+  const filePath = archivedQuestFilePath(projectRoot, questId);
+  if (!existsSync(filePath)) return null;
+
+  try {
+    const raw = readFileSync(filePath, "utf-8");
+    const parsed = parseYaml(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    normalizeQuest(parsed as Quest);
+    return parsed as Quest;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * List all archived quest IDs (sorted alphabetically).
+ */
+export function listArchivedQuestIds(projectRoot: string): string[] {
+  const dir = questArchiveDir(projectRoot);
+  if (!existsSync(dir)) return [];
+
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".yml"))
+    .map((f) => f.replace(/\.yml$/, ""))
+    .sort();
+}
+
+/**
+ * Load all archived quests.
+ */
+export function loadAllArchivedQuests(projectRoot: string): Quest[] {
+  const ids = listArchivedQuestIds(projectRoot);
+  const quests: Quest[] = [];
+  for (const id of ids) {
+    const quest = loadArchivedQuest(projectRoot, id);
+    if (quest) quests.push(quest);
+  }
+  return quests;
 }
 
 // ---------------------------------------------------------------------------

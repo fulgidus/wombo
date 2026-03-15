@@ -90,11 +90,11 @@ describe("BRIDGE_REGISTRY subcommands", () => {
     expect(subNames).toContain("tasks graph");
   });
 
-  test("quest command has 8 subcommands", () => {
+  test("quest command has 9 subcommands", () => {
     const quest = BRIDGE_REGISTRY.find((c) => c.name === "quest");
     expect(quest).toBeDefined();
     expect(quest!.subcommands).toBeDefined();
-    expect(quest!.subcommands!.length).toBe(8);
+    expect(quest!.subcommands!.length).toBe(9);
   });
 
   test("wishlist command has 4 subcommands", () => {

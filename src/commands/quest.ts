@@ -29,6 +29,8 @@ import {
   listQuestIds,
   deleteQuest,
   loadQuestKnowledge,
+  archiveQuest,
+  loadAllArchivedQuests,
 } from "../lib/quest-store";
 import {
   createQuestBranch,
@@ -793,6 +795,79 @@ async function questPlan(opts: QuestCommandOptions): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Archive
+// ---------------------------------------------------------------------------
+
+async function questArchive(opts: QuestCommandOptions): Promise<void> {
+  const { projectRoot, questId, dryRun, outputFmt } = opts;
+
+  // If a specific quest ID is given, archive just that one.
+  // Otherwise, archive all completed+abandoned quests.
+  const allQuests = loadAllQuests(projectRoot);
+
+  let toArchive: Quest[];
+  if (questId) {
+    const quest = allQuests.find((q) => q.id === questId);
+    if (!quest) {
+      // Check if already archived
+      const archived = loadAllArchivedQuests(projectRoot);
+      if (archived.some((q) => q.id === questId)) {
+        outputError(outputFmt ?? "text", `Quest "${questId}" is already archived.`);
+        return;
+      }
+      outputError(outputFmt ?? "text", `Quest "${questId}" not found.`);
+      return;
+    }
+    if (quest.status !== "completed" && quest.status !== "abandoned") {
+      outputError(
+        outputFmt ?? "text",
+        `Quest "${questId}" is ${quest.status} — only completed or abandoned quests can be archived.`
+      );
+      return;
+    }
+    toArchive = [quest];
+  } else {
+    toArchive = allQuests.filter(
+      (q) => q.status === "completed" || q.status === "abandoned"
+    );
+    if (toArchive.length === 0) {
+      outputMessage(outputFmt ?? "text", "No completed or abandoned quests to archive.");
+      return;
+    }
+  }
+
+  if (dryRun) {
+    output(outputFmt ?? "text", {
+      action: "quest-archive-dry-run",
+      quests: toArchive.map((q) => ({ id: q.id, status: q.status, title: q.title })),
+    }, () => {
+      console.log(`\n  Would archive ${toArchive.length} quest(s):`);
+      for (const q of toArchive) {
+        console.log(`    ${GREEN}${q.id}${RESET} — ${q.title} ${DIM}[${q.status}]${RESET}`);
+      }
+      console.log();
+    });
+    return;
+  }
+
+  // Archive each quest
+  for (const q of toArchive) {
+    archiveQuest(projectRoot, q.id);
+  }
+
+  output(outputFmt ?? "text", {
+    action: "quest-archived",
+    quests: toArchive.map((q) => ({ id: q.id, status: q.status, title: q.title })),
+  }, () => {
+    console.log(`\n  Archived ${toArchive.length} quest(s):`);
+    for (const q of toArchive) {
+      console.log(`    ${GREEN}${q.id}${RESET} — ${q.title} ${DIM}[${q.status}]${RESET}`);
+    }
+    console.log();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -822,10 +897,13 @@ export async function handleQuestSubcommand(opts: QuestCommandOptions): Promise<
     case "plan":
       await questPlan(opts);
       break;
+    case "archive":
+      await questArchive(opts);
+      break;
     case "help":
     case "--help":
     case "-h": {
-      const { renderCommandHelp } = await import("../lib/schema.js");
+      const { renderCommandHelp } = await import("../lib/schema");
       const helpText = renderCommandHelp("quest");
       if (helpText) {
         console.log(helpText);
@@ -858,6 +936,7 @@ Quest Subcommands:                (alias)
   quest pause <id>                (p)     Pause an active quest
   quest complete <id>             (co)    Complete quest (merges branch into base, --force to skip merge)
   quest abandon <id>              (ab)    Abandon quest without merging (--force to delete branch)
+  quest archive [id]              (ar)    Archive completed/abandoned quests (or all if no id)
 
 Options:
   --goal <text>             Quest goal (required for create)

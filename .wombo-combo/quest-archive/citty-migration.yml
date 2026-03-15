@@ -4,7 +4,7 @@ goal: Replace hand-rolled arg parsing in index.ts with citty framework. Citty pr
   definitions, typed args, auto-generated usage, and built-in completion support. The migration should preserve all
   existing commands, aliases, flags, output formats, and the schema introspection layer (describe/TOON). Must not break
   any existing CLI behavior.
-status: active
+status: completed
 priority: high
 difficulty: hard
 depends_on: []
@@ -16,7 +16,7 @@ constraints:
   ban: []
   override: {}
 created_at: 2026-03-15T13:15:26.473Z
-updated_at: 2026-03-15T17:53:43.393Z
+updated_at: 2026-03-15T22:02:10.511Z
 started_at: 2026-03-15T17:53:43.393Z
-ended_at: null
+ended_at: 2026-03-15T22:02:10.511Z
 notes: []

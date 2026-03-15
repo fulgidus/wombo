@@ -701,6 +701,19 @@ const ENTRIES: RegistryEntry[] = [
           },
         },
       },
+      {
+        subKey: "archive",
+        parentName: "quest",
+        meta: {
+          summary: "Archive completed/abandoned quests",
+          aliases: ["ar"],
+          mutating: true,
+          supportsDryRun: true,
+          positionalOverrides: {
+            questId: { name: "quest-id", description: "Quest ID to archive (omit to archive all completed/abandoned)" },
+          },
+        },
+      },
     ],
   },
 
