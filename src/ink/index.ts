@@ -18,6 +18,20 @@ export {
   getEditorCommand,
   type OpenEditorOptions,
 } from "./open-editor";
+export {
+  SelectInput,
+  type SelectInputItem,
+  type SelectInputProps,
+} from "./select-input";
+export {
+  QuestWizard,
+  type QuestWizardProps,
+  type QuestWizardPrefill,
+} from "./quest-wizard";
+export {
+  runQuestWizardInk,
+  type RunQuestWizardOptions,
+} from "./run-quest-wizard";
 export { InitForm, FIELDS, type InitFormProps, type InitFormDefaults, type FieldDef } from "./init-form";
 export { InitApp, renderInitApp, type InitAppProps } from "./init-app";
 export {
