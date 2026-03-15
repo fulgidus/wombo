@@ -216,11 +216,17 @@ describe("citty router", () => {
     expect(isCittyCommand("--help")).toBe(true);
     expect(isCittyCommand("-h")).toBe(true);
     expect(isCittyCommand("describe")).toBe(true);
+    // New citty commands
+    expect(isCittyCommand("launch")).toBe(true);
+    expect(isCittyCommand("l")).toBe(true);
+    expect(isCittyCommand("resume")).toBe(true);
+    expect(isCittyCommand("r")).toBe(true);
+    expect(isCittyCommand("retry")).toBe(true);
+    expect(isCittyCommand("re")).toBe(true);
   });
 
   test("isCittyCommand returns false for non-citty commands", async () => {
     const { isCittyCommand } = await import("../src/commands/citty/router.js");
-    expect(isCittyCommand("launch")).toBe(false);
     expect(isCittyCommand("init")).toBe(false);
     expect(isCittyCommand("tasks")).toBe(false);
     expect(isCittyCommand("tui")).toBe(false);
