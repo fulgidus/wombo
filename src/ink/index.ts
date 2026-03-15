@@ -13,3 +13,8 @@ export {
   type UseTextInputOptions,
   type UseTextInputResult,
 } from "./use-text-input";
+export {
+  openEditor,
+  getEditorCommand,
+  type OpenEditorOptions,
+} from "./open-editor";

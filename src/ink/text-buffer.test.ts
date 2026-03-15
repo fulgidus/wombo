@@ -345,4 +345,101 @@ describe("TextBuffer edge cases", () => {
     buf.moveUp();   // 'b', col 1
     expect(buf.cursorPos).toBe(1);
   });
+
+  test("cursor stays valid after multiple operations", () => {
+    const buf = new TextBuffer("hello world");
+    // Move to middle
+    buf.moveLeft();
+    buf.moveLeft();
+    buf.moveLeft();
+    buf.moveLeft();
+    buf.moveLeft();
+    // Delete and insert in middle
+    buf.deleteBack();
+    buf.insert("X");
+    expect(buf.value).toBe("helloXworld");
+    expect(buf.cursorPos).toBe(6);
+  });
+
+  test("handles single character buffer", () => {
+    const buf = new TextBuffer("x");
+    expect(buf.cursorPos).toBe(1);
+    buf.moveLeft();
+    expect(buf.cursorPos).toBe(0);
+    buf.deleteForward();
+    expect(buf.value).toBe("");
+    expect(buf.cursorPos).toBe(0);
+  });
+
+  test("insert at beginning of multiline text", () => {
+    const buf = new TextBuffer("abc\ndef", 0);
+    buf.insert("X");
+    expect(buf.value).toBe("Xabc\ndef");
+    expect(buf.cursorPos).toBe(1);
+  });
+
+  test("delete at newline boundary joins lines", () => {
+    const buf = new TextBuffer("abc\ndef", 3);
+    buf.deleteForward(); // Delete the newline
+    expect(buf.value).toBe("abcdef");
+    expect(buf.cursorPos).toBe(3);
+  });
+
+  test("backspace at start of second line joins lines", () => {
+    const buf = new TextBuffer("abc\ndef", 4);
+    buf.deleteBack(); // Delete the newline
+    expect(buf.value).toBe("abcdef");
+    expect(buf.cursorPos).toBe(3);
+  });
+
+  test("moveUp with column clamping preserves original col on moveDown", () => {
+    // Line 0: "abcdef" (6 chars)
+    // Line 1: "gh"     (2 chars)
+    // Line 2: "ijklmn" (6 chars)
+    const buf = new TextBuffer("abcdef\ngh\nijklmn");
+    // Put cursor at end of last line (position = 6+1+2+1+5 = 15... let me calculate)
+    // "abcdef\ngh\nijklmn" has positions:
+    //   a=0 b=1 c=2 d=3 e=4 f=5 \n=6 g=7 h=8 \n=9 i=10 j=11 k=12 l=13 m=14 n=15
+    buf.moveHome(); // Go to start of "ijklmn" (position 10)
+    // Move right 5 times to position 15 (at 'n')
+    for (let i = 0; i < 5; i++) buf.moveRight();
+    expect(buf.cursorPos).toBe(15);
+    
+    // Move up to "gh" — col 5 should clamp to 2 (end of "gh")
+    buf.moveUp();
+    // lineColToPos for line 1, col 2 = 7 + min(5, 2) = 9 (end-of-line position)
+    expect(buf.cursorPos).toBe(9);
+    
+    // Move up again to "abcdef" — uses current col (2), goes to col 2 on line 0
+    buf.moveUp();
+    expect(buf.cursorPos).toBe(2); // at 'c'
+  });
+
+  test("handles trailing newline", () => {
+    const buf = new TextBuffer("abc\n");
+    expect(buf.lineCount).toBe(2);
+    expect(buf.lines).toEqual(["abc", ""]);
+    expect(buf.cursorPos).toBe(4); // After the newline
+    buf.moveUp();
+    expect(buf.lineCol.line).toBe(0);
+  });
+
+  test("handles multiple consecutive newlines", () => {
+    const buf = new TextBuffer("a\n\n\nb", 2);
+    expect(buf.lineCol).toEqual({ line: 1, col: 0 });
+    buf.moveDown();
+    expect(buf.lineCol).toEqual({ line: 2, col: 0 });
+    buf.moveDown();
+    expect(buf.lineCol).toEqual({ line: 3, col: 0 });
+  });
+
+  test("unicode characters work correctly", () => {
+    const buf = new TextBuffer("héllo 🌍");
+    // Note: JS string length counts code units, not codepoints
+    expect(buf.value).toBe("héllo 🌍");
+    buf.moveLeft();
+    buf.moveLeft();
+    buf.insert("!");
+    expect(buf.value).toContain("!");
+  });
 });

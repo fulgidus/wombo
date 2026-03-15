@@ -34,6 +34,12 @@ export interface TextInputProps {
   onChange?: (value: string) => void;
   /** Called when the user presses Ctrl+S to submit. */
   onSubmit?: (value: string) => void;
+  /**
+   * Called when the user presses Ctrl+E to open an external editor.
+   * The parent component should handle spawning the editor and updating
+   * the value via onChange when the editor returns.
+   */
+  onEditorRequest?: (currentValue: string) => void;
   /** Placeholder text shown when the input is empty. */
   placeholder?: string;
   /** Whether the input accepts multiple lines. Default: false. */
@@ -98,6 +104,7 @@ export function TextInput({
   value = "",
   onChange,
   onSubmit,
+  onEditorRequest,
   placeholder,
   multiline = false,
   focus = true,
@@ -122,9 +129,9 @@ export function TextInput({
         return;
       }
 
-      // Ctrl+E — open external editor (placeholder for now)
+      // Ctrl+E — open external editor
       if (key.ctrl && input === "e") {
-        // TODO: spawn $EDITOR with buffer.value, replace on return
+        onEditorRequest?.(buffer.value);
         return;
       }
 
@@ -215,7 +222,7 @@ export function TextInput({
         onChange?.(buffer.value);
       }
     },
-    [buffer, onChange, onSubmit, multiline]
+    [buffer, onChange, onSubmit, onEditorRequest, multiline]
   );
 
   useInput(handleInput, { isActive: focus });
