@@ -494,3 +494,112 @@ describe("TextInput multiline rendering", () => {
     expect(output).toContain("line3");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Edge cases
+// ---------------------------------------------------------------------------
+
+describe("TextInput edge cases", () => {
+  test("renders without any props", () => {
+    const output = renderToString(<TextInput />);
+    expect(typeof output).toBe("string");
+  });
+
+  test("handles rapid sequential typing", async () => {
+    const onChange = mock(() => {});
+    const { stdin, cleanup } = renderLive(
+      <TextInput value="" onChange={onChange} />
+    );
+
+    stdin.write("a");
+    stdin.write("b");
+    stdin.write("c");
+    await new Promise((r) => setTimeout(r, 100));
+
+    // At minimum, onChange should have been called
+    expect(onChange).toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("control characters are filtered out", async () => {
+    const onChange = mock(() => {});
+    const { stdin, cleanup } = renderLive(
+      <TextInput value="hello" onChange={onChange} />
+    );
+
+    // Send Ctrl+A (not a mapped control key)
+    stdin.write("\x01");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // onChange should not have been called since ctrl chars are filtered
+    expect(onChange).not.toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("Tab key is ignored", async () => {
+    const onChange = mock(() => {});
+    const { stdin, cleanup } = renderLive(
+      <TextInput value="hello" onChange={onChange} />
+    );
+
+    stdin.write("\t");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onChange).not.toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("Escape key is ignored", async () => {
+    const onChange = mock(() => {});
+    const onSubmit = mock(() => {});
+    const { stdin, cleanup } = renderLive(
+      <TextInput value="hello" onChange={onChange} onSubmit={onSubmit} />
+    );
+
+    stdin.write("\x1b");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await cleanup();
+  });
+
+  test("backspace on empty value is a no-op", async () => {
+    const onChange = mock(() => {});
+    const { stdin, cleanup } = renderLive(
+      <TextInput value="" onChange={onChange} />
+    );
+
+    stdin.write("\x08");
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Buffer has nothing to delete, so onChange should not fire
+    // (value is still empty)
+    const calls = onChange.mock.calls;
+    if (calls.length > 0) {
+      // If onChange was called, it should still be empty
+      const lastCall = calls[calls.length - 1] as any;
+      expect(lastCall[0]).toBe("");
+    }
+
+    await cleanup();
+  });
+
+  test("placeholder is shown when unfocused and empty", () => {
+    const output = renderToString(
+      <TextInput value="" placeholder="Enter text..." focus={false} />
+    );
+    expect(output).toContain("Enter text...");
+  });
+
+  test("placeholder is shown with cursor when focused and empty", () => {
+    const output = renderToString(
+      <TextInput value="" placeholder="Enter text..." focus={true} />
+    );
+    expect(output).toContain("Enter text...");
+  });
+});
