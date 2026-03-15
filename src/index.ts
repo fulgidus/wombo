@@ -236,13 +236,27 @@ export function parseArgs(argv: string[]): CLIArgs {
 
   // Pre-scan for global flags that can appear before the command.
   // Strip them from the args array so args[0] is always the command.
-  const globalFlags: { dev?: boolean; help?: boolean } = {};
+  // Global flags: --dev, --force, --output/-o <value>, -h/--help
+  const globalFlags: { dev?: boolean; help?: boolean; force?: boolean; output?: string } = {};
   const filtered: string[] = [];
-  for (const a of args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
     if (a === "--dev") {
       globalFlags.dev = true;
     } else if (a === "-h" || a === "--help") {
       globalFlags.help = true;
+    } else if (a === "--force") {
+      globalFlags.force = true;
+    } else if (a === "--output" || a === "-o") {
+      // Only consume as a global flag if followed by a value (not another flag)
+      const next = args[i + 1];
+      if (next && !next.startsWith("-")) {
+        globalFlags.output = next;
+        i++; // skip the value
+      } else {
+        // No value follows — pass through for command-level parsing
+        filtered.push(a);
+      }
     } else {
       filtered.push(a);
     }
@@ -255,9 +269,9 @@ export function parseArgs(argv: string[]): CLIArgs {
     noTui: false,
     autoPush: false,
     requeue: false,
-    force: false,
+    force: globalFlags.force ?? false,
     checkOnly: false,
-    outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
+    outputFmt: resolveOutputFormat(globalFlags.output), // use global --output if provided
     dev: globalFlags.dev,
     help: globalFlags.help,
   };
