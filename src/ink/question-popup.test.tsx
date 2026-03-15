@@ -382,4 +382,191 @@ describe("QuestionPopupView (interactions)", () => {
     instance.unmount();
     await instance.waitUntilExit();
   });
+
+  test("character input calls onAnswerChange with appended char", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onAnswerChange = mock(() => {});
+
+    const instance = render(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText="hel"
+        onClose={() => {}}
+        onAnswer={() => {}}
+        onNavigate={() => {}}
+        onAnswerChange={onAnswerChange}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("l");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onAnswerChange).toHaveBeenCalledWith("hell");
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("backspace calls onAnswerChange with last char removed", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onAnswerChange = mock(() => {});
+
+    const instance = render(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText="hello"
+        onClose={() => {}}
+        onAnswer={() => {}}
+        onNavigate={() => {}}
+        onAnswerChange={onAnswerChange}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\x7f"); // Backspace
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onAnswerChange).toHaveBeenCalledWith("hell");
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("return key inserts newline", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onAnswerChange = mock(() => {});
+
+    const instance = render(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText="line1"
+        onClose={() => {}}
+        onAnswer={() => {}}
+        onNavigate={() => {}}
+        onAnswerChange={onAnswerChange}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\r"); // Return/Enter
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onAnswerChange).toHaveBeenCalledWith("line1\n");
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("Tab with single question does not call onNavigate", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onNavigate = mock(() => {});
+
+    const instance = render(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText=""
+        onClose={() => {}}
+        onAnswer={() => {}}
+        onNavigate={onNavigate}
+        onAnswerChange={() => {}}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\t");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("displays current answer text in the input area", () => {
+    const output = renderToString(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText="my current answer"
+        onClose={() => {}}
+        onAnswer={() => {}}
+        onNavigate={() => {}}
+        onAnswerChange={() => {}}
+      />
+    );
+    expect(output).toContain("my current answer");
+  });
+
+  test("shows error hint when submitting empty answer", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const chunks: string[] = [];
+    stdout.on("data", (chunk: Buffer) => chunks.push(chunk.toString()));
+    const onAnswer = mock(() => {});
+
+    const instance = render(
+      <QuestionPopupView
+        questions={[makeQuestion()]}
+        currentIndex={0}
+        answerText=""
+        onClose={() => {}}
+        onAnswer={onAnswer}
+        onNavigate={() => {}}
+        onAnswerChange={() => {}}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\x13"); // Ctrl+S
+    await new Promise((r) => setTimeout(r, 100));
+
+    // onAnswer should NOT have been called
+    expect(onAnswer).not.toHaveBeenCalled();
+
+    // Should show some indication of empty answer rejection
+    const output = chunks.join("");
+    expect(output).toContain("empty");
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
 });

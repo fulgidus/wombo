@@ -203,13 +203,13 @@ export function UsageOverlayView({
       return;
     }
 
-    if (key.downArrow && groups.length > 0) {
+    if ((key.downArrow || input === "j") && groups.length > 0) {
       const next = Math.min(selectedIndex + 1, groups.length - 1);
       onSelectIndex(next);
       return;
     }
 
-    if (key.upArrow && groups.length > 0) {
+    if ((key.upArrow || input === "k") && groups.length > 0) {
       const prev = Math.max(selectedIndex - 1, 0);
       onSelectIndex(prev);
       return;

@@ -25,7 +25,7 @@
  *   />
  */
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Text, useInput } from "ink";
 import { Modal } from "./modal";
 import type { HitlQuestion } from "../lib/hitl-channel";
@@ -85,6 +85,17 @@ export function QuestionPopupView({
   onAnswerChange,
 }: QuestionPopupViewProps): React.ReactElement {
   const currentQ = questions.length > 0 ? questions[currentIndex] : null;
+  const [emptyError, setEmptyError] = useState(false);
+  const emptyErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear error timer on unmount
+  useEffect(() => {
+    return () => {
+      if (emptyErrorTimerRef.current) {
+        clearTimeout(emptyErrorTimerRef.current);
+      }
+    };
+  }, []);
 
   useInput((input, key) => {
     // Escape — close
@@ -97,6 +108,15 @@ export function QuestionPopupView({
     if (key.ctrl && input === "s") {
       if (currentQ && answerText.trim()) {
         onAnswer(currentQ.agentId, currentQ.id, answerText.trim());
+      } else if (currentQ) {
+        // Show empty answer error briefly
+        setEmptyError(true);
+        if (emptyErrorTimerRef.current) {
+          clearTimeout(emptyErrorTimerRef.current);
+        }
+        emptyErrorTimerRef.current = setTimeout(() => {
+          setEmptyError(false);
+        }, 2000);
       }
       return;
     }
@@ -118,8 +138,8 @@ export function QuestionPopupView({
     }
 
     // Character input for the answer field
-    // Backspace
-    if (key.backspace) {
+    // Backspace or Delete
+    if (key.backspace || key.delete) {
       if (answerText.length > 0) {
         onAnswerChange(answerText.slice(0, -1));
       }
@@ -205,12 +225,15 @@ export function QuestionPopupView({
             </Text>
             <Box
               borderStyle="single"
-              borderColor="cyan"
+              borderColor={emptyError ? "red" : "cyan"}
               paddingX={1}
               minHeight={3}
             >
               <Text>{answerText || " "}</Text>
             </Box>
+            {emptyError && (
+              <Text color="red">Answer cannot be empty</Text>
+            )}
           </Box>
         </Box>
       )}

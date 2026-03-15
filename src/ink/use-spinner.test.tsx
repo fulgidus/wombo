@@ -104,4 +104,69 @@ describe("useSpinner", () => {
       expect(f).toBe(0);
     }
   });
+
+  test("respects custom intervalMs parameter", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const frames: number[] = [];
+
+    // Use a custom spinner with a very short interval (50ms)
+    function FastSpinner({ onFrame }: { onFrame: (f: number) => void }) {
+      const frame = useSpinner(true, 50);
+      useEffect(() => {
+        onFrame(frame);
+      }, [frame, onFrame]);
+      return <Text>frame:{frame}</Text>;
+    }
+
+    const instance = render(
+      <FastSpinner onFrame={(f) => frames.push(f)} />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    // Wait 350ms — with 50ms interval, should see ~7 increments
+    await new Promise((r) => setTimeout(r, 350));
+
+    instance.unmount();
+    await instance.waitUntilExit();
+
+    // Should have more frames than with the default 120ms interval
+    const maxFrame = Math.max(...frames);
+    expect(maxFrame).toBeGreaterThanOrEqual(4);
+  });
+
+  test("cleans up interval on unmount", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const frames: number[] = [];
+
+    const instance = render(
+      <SpinnerDisplay active={true} onFrame={(f) => frames.push(f)} />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    // Let it run briefly
+    await new Promise((r) => setTimeout(r, 200));
+
+    // Unmount
+    instance.unmount();
+    await instance.waitUntilExit();
+
+    const frameCountAtUnmount = frames.length;
+
+    // Wait more — no new frames should appear after unmount
+    await new Promise((r) => setTimeout(r, 300));
+
+    expect(frames.length).toBe(frameCountAtUnmount);
+  });
 });

@@ -232,6 +232,119 @@ describe("UsageOverlayView (static rendering)", () => {
     );
     expect(output).toContain("Model");
   });
+
+  test("shows cache count when cache_read > 0", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals({ cache_read: 800000 })}
+        groups={[]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    expect(output).toContain("Cache");
+    expect(output).toContain("800.0k");
+  });
+
+  test("hides cache count when cache_read is 0", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals({ cache_read: 0 })}
+        groups={[]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    // "Cache" label should not appear (no cache data)
+    expect(output).not.toContain("Cache");
+  });
+
+  test("shows reasoning tokens when reasoning_tokens > 0", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals({ reasoning_tokens: 50200 })}
+        groups={[]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    expect(output).toContain("Reasoning");
+    expect(output).toContain("50.2k");
+  });
+
+  test("hides reasoning label when reasoning_tokens is 0", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals({ reasoning_tokens: 0 })}
+        groups={[]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    expect(output).not.toContain("Reasoning");
+  });
+
+  test("truncates long group keys with ellipsis", () => {
+    const longKey = "this-is-a-very-long-task-id-that-exceeds-24-chars";
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={[{ key: longKey, totals: makeTotals() }]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    // Should truncate to 23 chars + ellipsis
+    expect(output).toContain("…");
+    // Full key should NOT appear
+    expect(output).not.toContain(longKey);
+  });
+
+  test("shows 'No usage data to group' when groups is empty but overall exists", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={[]}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    expect(output).toContain("No usage data to group");
+  });
+
+  test("renders selected item with indicator", () => {
+    const output = renderToString(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={makeGroups()}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={() => {}}
+      />
+    );
+    // Selected item should have the ▸ indicator
+    expect(output).toContain("▸");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -396,6 +509,139 @@ describe("UsageOverlayView (interactions)", () => {
 
     await new Promise((r) => setTimeout(r, 50));
     (stdin as any as PassThrough).write("\x1b[A"); // Up arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onSelectIndex).toHaveBeenCalledWith(0);
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("Up arrow at index 0 clamps to 0", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onSelectIndex = mock(() => {});
+
+    const instance = render(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={makeGroups()}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={onSelectIndex}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\x1b[A"); // Up arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onSelectIndex).toHaveBeenCalledWith(0);
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("Down arrow at last index clamps to last", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onSelectIndex = mock(() => {});
+    const groups = makeGroups();
+
+    const instance = render(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={groups}
+        groupField="task_id"
+        selectedIndex={groups.length - 1}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={onSelectIndex}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("\x1b[B"); // Down arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onSelectIndex).toHaveBeenCalledWith(groups.length - 1);
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("j key navigates down (vi keys)", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onSelectIndex = mock(() => {});
+
+    const instance = render(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={makeGroups()}
+        groupField="task_id"
+        selectedIndex={0}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={onSelectIndex}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("j");
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(onSelectIndex).toHaveBeenCalledWith(1);
+
+    instance.unmount();
+    await instance.waitUntilExit();
+  });
+
+  test("k key navigates up (vi keys)", async () => {
+    const { stdin, stdout } = createTestStreams();
+    const onSelectIndex = mock(() => {});
+
+    const instance = render(
+      <UsageOverlayView
+        overall={makeTotals()}
+        groups={makeGroups()}
+        groupField="task_id"
+        selectedIndex={1}
+        onClose={() => {}}
+        onCycleGrouping={() => {}}
+        onSelectIndex={onSelectIndex}
+      />,
+      {
+        stdout,
+        stdin,
+        debug: true,
+        exitOnCtrlC: false,
+        patchConsole: false,
+      }
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+    (stdin as any as PassThrough).write("k");
     await new Promise((r) => setTimeout(r, 50));
 
     expect(onSelectIndex).toHaveBeenCalledWith(0);
