@@ -706,12 +706,6 @@ async function main(): Promise<void> {
   // Commands migrated to citty handle their own arg parsing, config loading,
   // and validation. Extract raw CLI args (without --dev and -h/--help which
   // parseArgs already consumed) and delegate to the citty router.
-  // -----------------------------------------------------------------------
-  // Citty-managed commands: route through the citty router for typed args
-  // -----------------------------------------------------------------------
-  // Commands migrated to citty handle their own arg parsing, config loading,
-  // and validation. Extract raw CLI args (without --dev and -h/--help which
-  // parseArgs already consumed) and delegate to the citty router.
   if (isCittyCommand(args.command)) {
     const rawCliArgs = process.argv.slice(2).filter(
       (a) => a !== "--dev" && a !== "-h" && a !== "--help"
