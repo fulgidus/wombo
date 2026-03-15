@@ -875,7 +875,11 @@ export function commandToSchema(cmd: CommandDef): Record<string, unknown> {
   });
 
   if (cmd.subcommands?.length) {
-    schema.subcommands = cmd.subcommands.map((sc) => sc.name);
+    schema.subcommands = cmd.subcommands.map((sc) => {
+      const scEntry: Record<string, unknown> = { name: sc.name };
+      if (sc.aliases?.length) scEntry.aliases = sc.aliases;
+      return scEntry;
+    });
   }
 
   return schema;
@@ -895,12 +899,18 @@ export function allCommandSchemas(): Record<string, unknown> {
       supports_dry_run: cmd.supportsDryRun,
     };
     if (cmd.subcommands) {
-      entry.subcommands = cmd.subcommands.map((sc) => ({
-        name: sc.name,
-        summary: sc.summary,
-        mutating: sc.mutating,
-        supports_dry_run: sc.supportsDryRun,
-      }));
+      entry.subcommands = cmd.subcommands.map((sc) => {
+        const scEntry: Record<string, unknown> = {
+          name: sc.name,
+          summary: sc.summary,
+          mutating: sc.mutating,
+          supports_dry_run: sc.supportsDryRun,
+        };
+        if (sc.aliases?.length) {
+          scEntry.aliases = sc.aliases;
+        }
+        return scEntry;
+      });
     }
     commands.push(entry);
   }
@@ -945,11 +955,18 @@ export function renderCommandHelp(cmdName: string, subcommand?: string): string 
   return renderSingleCommandHelp(cmd);
 }
 
+/** Compact alias hint like "(ls)" or "(rm/del/d)". Returns "" if no aliases. */
+function aliasHint(cmd: CommandDef): string {
+  if (!cmd.aliases?.length) return "";
+  return `(${cmd.aliases.join("/")})`;
+}
+
 function renderParentHelp(cmd: CommandDef): string {
   const lines: string[] = [];
 
+  const parentHint = aliasHint(cmd);
   lines.push("");
-  lines.push(`woco ${cmd.name} — ${cmd.summary}`);
+  lines.push(`woco ${cmd.name}${parentHint ? ` ${parentHint}` : ""} — ${cmd.summary}`);
   if (cmd.description) {
     lines.push("");
     lines.push(`  ${cmd.description}`);
@@ -958,12 +975,26 @@ function renderParentHelp(cmd: CommandDef): string {
   lines.push("");
   lines.push("Subcommands:");
 
-  // Find the longest subcommand name for alignment
-  const maxLen = Math.max(...cmd.subcommands!.map((sc) => sc.name.length));
+  // Extract the short name from compound names ("tasks list" -> "list")
+  const shortName = (sc: CommandDef) => {
+    const parts = sc.name.split(" ");
+    return parts[parts.length - 1];
+  };
 
-  for (const sc of cmd.subcommands!) {
-    const padded = sc.name.padEnd(maxLen + 2);
-    lines.push(`  ${padded}${sc.summary}`);
+  // Build display entries: "name  (alias)  summary" with alignment
+  const entries = cmd.subcommands!.map((sc) => {
+    const name = shortName(sc);
+    const hint = aliasHint(sc);
+    return { name, hint, summary: sc.summary };
+  });
+
+  const maxNameLen = Math.max(...entries.map((e) => e.name.length));
+  const maxHintLen = Math.max(...entries.map((e) => e.hint.length));
+
+  for (const e of entries) {
+    const paddedName = e.name.padEnd(maxNameLen + 2);
+    const paddedHint = e.hint.padEnd(maxHintLen ? maxHintLen + 2 : 0);
+    lines.push(`  ${paddedName}${paddedHint}${e.summary}`);
   }
 
   lines.push("");
@@ -981,8 +1012,9 @@ function renderSingleCommandHelp(cmd: CommandDef): string {
     .map((p) => (p.required ? `<${p.name}>` : `[${p.name}]`))
     .join(" ");
   const flagHint = cmd.flags.length > 0 ? " [options]" : "";
+  const hint = aliasHint(cmd);
   lines.push("");
-  lines.push(`woco ${cmd.name}${positionalStr ? " " + positionalStr : ""}${flagHint}`);
+  lines.push(`woco ${cmd.name}${hint ? ` ${hint}` : ""}${positionalStr ? " " + positionalStr : ""}${flagHint}`);
   lines.push("");
   lines.push(`  ${cmd.summary}`);
   if (cmd.description) {

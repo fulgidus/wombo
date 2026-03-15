@@ -314,10 +314,172 @@ function detectShell(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Bash completion
+// Registry-driven completion helpers
+// ---------------------------------------------------------------------------
+
+/** Extract short name from compound name: "tasks list" → "list" */
+function cmdShortName(cmd: CommandDef): string {
+  return cmd.name.includes(" ") ? cmd.name.split(" ").pop()! : cmd.name;
+}
+
+/** Get the description for shell completion menus */
+function completionDesc(cmd: CommandDef): string {
+  return cmd.completionSummary ?? cmd.summary;
+}
+
+/** Get alias hint string like " (l)" for descriptions */
+function aliasHint(cmd: CommandDef): string {
+  if (!cmd.aliases?.length) return "";
+  return ` (${cmd.aliases.join(", ")})`;
+}
+
+/** Get all flag tokens (--name and -alias) for a command's flags */
+function flagTokens(flags: FlagDef[]): string[] {
+  const tokens: string[] = [];
+  for (const f of flags) {
+    tokens.push(f.name);
+    if (f.alias) tokens.push(f.alias);
+  }
+  return tokens;
+}
+
+/** Commands that have subcommands (tasks, quest, wishlist) */
+function parentCommands(): CommandDef[] {
+  return COMMAND_REGISTRY.filter((c) => c.subcommands?.length);
+}
+
+/** Collect unique enum flag value completions across all commands */
+function collectEnumFlags(): Map<string, readonly string[]> {
+  const map = new Map<string, readonly string[]>();
+  function walk(cmds: CommandDef[]) {
+    for (const cmd of cmds) {
+      for (const flag of getCommandFlags(cmd)) {
+        if (flag.enum?.length) {
+          map.set(flag.name, flag.enum);
+          if (flag.alias) map.set(flag.alias, flag.enum);
+        }
+      }
+      if (cmd.subcommands) walk(cmd.subcommands);
+    }
+  }
+  walk(COMMAND_REGISTRY);
+  return map;
+}
+
+/** Collect free-form flags (take a value but no enum) — suppress completions */
+function collectFreeFormFlags(): string[] {
+  const flags = new Set<string>();
+  function walk(cmds: CommandDef[]) {
+    for (const cmd of cmds) {
+      for (const flag of getCommandFlags(cmd)) {
+        if (flag.type !== "boolean" && !flag.enum?.length) {
+          flags.add(flag.name);
+          if (flag.alias) flags.add(flag.alias);
+        }
+      }
+      if (cmd.subcommands) walk(cmd.subcommands);
+    }
+  }
+  walk(COMMAND_REGISTRY);
+  return [...flags];
+}
+
+/** All canonical command names (for describe completions) */
+function allCommandNames(): string[] {
+  return COMMAND_REGISTRY.map((c) => c.name);
+}
+
+// ---------------------------------------------------------------------------
+// Bash completion (generated from COMMAND_REGISTRY)
 // ---------------------------------------------------------------------------
 
 function bashScript(): string {
+  // Alias resolution cases
+  const aliasCases = COMMAND_REGISTRY
+    .filter((c) => c.aliases?.length)
+    .map((c) => `        ${c.aliases!.join("|")}) cmd="${c.name}" ;;`)
+    .join("\n");
+
+  // Enum flag value cases
+  const enumFlags = collectEnumFlags();
+  const enumCases = [...enumFlags]
+    .map(([flag, values]) =>
+      `        ${flag})\n            COMPREPLY=(\$(compgen -W "${values.join(" ")}" -- "\$cur")); return ;;`,
+    )
+    .join("\n");
+
+  // Free-form flag tokens (suppress completions)
+  const freeFormList = collectFreeFormFlags().join("|");
+
+  // Command word list (canonical names + aliases — bash has no descriptions so aliases are harmless)
+  const cmdWordList = COMMAND_REGISTRY
+    .flatMap((c) => [c.name, ...(c.aliases ?? [])])
+    .join(" ");
+
+  // Parent command sections (tasks, quest, wishlist)
+  let parentSections = "";
+  for (const parent of parentCommands()) {
+    const subs = parent.subcommands!;
+
+    // Subcommand alias resolution
+    const subAliasCases = subs
+      .filter((sc) => sc.aliases?.length)
+      .map((sc) => `            ${sc.aliases!.join("|")}) subcmd="${cmdShortName(sc)}" ;;`)
+      .join("\n");
+
+    // Subcommand word list
+    const subWordList = subs
+      .flatMap((sc) => [cmdShortName(sc), ...(sc.aliases ?? [])])
+      .concat(["help"])
+      .join(" ");
+
+    // Per-subcommand flags
+    const subFlagCases = subs
+      .map((sc) => {
+        const tokens = flagTokens(getCommandFlags(sc)).join(" ");
+        if (!tokens) return null;
+        return `            ${cmdShortName(sc)})\n                COMPREPLY=(\$(compgen -W "${tokens}" -- "\$cur")) ;;`;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    parentSections += `
+    # ${parent.name} → subcommands
+    if [[ "\$cmd" == "${parent.name}" ]]; then
+        for ((j=i+1; j < COMP_CWORD; j++)); do
+            if [[ "\${COMP_WORDS[j]}" != -* ]]; then
+                subcmd="\${COMP_WORDS[j]}"
+                break
+            fi
+        done
+        case "\$subcmd" in
+${subAliasCases}
+        esac
+        if [[ -z "\$subcmd" ]]; then
+            COMPREPLY=(\$(compgen -W "${subWordList}" -- "\$cur"))
+            return
+        fi
+        case "\$subcmd" in
+${subFlagCases}
+        esac
+        return
+    fi
+`;
+  }
+
+  // Per-command flags (non-parent commands only)
+  const cmdFlagCases = COMMAND_REGISTRY
+    .filter((c) => !c.subcommands?.length)
+    .map((c) => {
+      const tokens = flagTokens(getCommandFlags(c)).join(" ");
+      if (!tokens) return null;
+      return `        ${c.name})\n            COMPREPLY=(\$(compgen -W "${tokens}" -- "\$cur")) ;;`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  const describeWords = allCommandNames().join(" ");
+
   return `# woco (wombo-combo) bash completion
 # Generated by: woco completion bash
 # Install: eval "$(woco completion bash)"  — add to ~/.bashrc
@@ -338,121 +500,38 @@ _woco_completions() {
     done
 
     # Resolve top-level aliases
-    case "$cmd" in
-        i) cmd="init" ;; l) cmd="launch" ;; r) cmd="resume" ;;
-        s) cmd="status" ;; v) cmd="verify" ;; m) cmd="merge" ;;
-        re) cmd="retry" ;; a) cmd="abort" ;; c) cmd="cleanup" ;;
-        h) cmd="history" ;; lo) cmd="logs" ;; t|features) cmd="tasks" ;;
-        u) cmd="upgrade" ;; d) cmd="describe" ;; comp) cmd="completion" ;;
-        us) cmd="usage" ;;
+    case "\$cmd" in
+${aliasCases}
     esac
 
     # Flag value completions (context-independent)
-    case "$prev" in
-        --priority)
-            COMPREPLY=($(compgen -W "critical high medium low wishlist" -- "$cur")); return ;;
-        --difficulty)
-            COMPREPLY=($(compgen -W "trivial easy medium hard very_hard" -- "$cur")); return ;;
-        --status)
-            COMPREPLY=($(compgen -W "backlog planned in_progress blocked in_review done cancelled" -- "$cur")); return ;;
-        --output|-o)
-            COMPREPLY=($(compgen -W "text json toon" -- "$cur")); return ;;
-        --by)
-            COMPREPLY=($(compgen -W "task quest model provider harness" -- "$cur")); return ;;
-        --format)
-            COMPREPLY=($(compgen -W "table json" -- "$cur")); return ;;
-        --model|-m|--top-priority|--quickest-wins|--max-concurrent|--max-retries|--tail|--base-branch|--tag|--release|--tasks|--features|--fields|--desc|--description|--effort|--depends-on|--title|--since|--until)
+    case "\$prev" in
+${enumCases}
+        ${freeFormList})
             return ;;  # free-form / numeric — no completions, let readline handle it
     esac
 
     # No command yet → complete commands
-    if [[ -z "$cmd" ]]; then
-        COMPREPLY=($(compgen -W "init i launch l resume r status s verify v merge m retry re abort a cleanup c history h logs lo tasks t usage us upgrade u describe d completion comp version help" -- "$cur"))
+    if [[ -z "\$cmd" ]]; then
+        COMPREPLY=(\$(compgen -W "${cmdWordList}" -- "\$cur"))
         return
     fi
-
-    # tasks / t → subcommands
-    if [[ "$cmd" == "tasks" ]]; then
-        # Find the subcommand
-        for ((j=i+1; j < COMP_CWORD; j++)); do
-            if [[ "\${COMP_WORDS[j]}" != -* ]]; then
-                subcmd="\${COMP_WORDS[j]}"
-                break
-            fi
-        done
-
-        # Resolve subcommand aliases
-        case "$subcmd" in
-            ls) subcmd="list" ;; a) subcmd="add" ;; ss) subcmd="set-status" ;;
-            sp) subcmd="set-priority" ;; sd) subcmd="set-difficulty" ;;
-            ch|validate) subcmd="check" ;; ar) subcmd="archive" ;;
-            sh) subcmd="show" ;; g) subcmd="graph" ;;
-        esac
-
-        # No subcommand yet → complete subcommands
-        if [[ -z "$subcmd" ]]; then
-            COMPREPLY=($(compgen -W "list ls add a set-status ss set-priority sp set-difficulty sd check ch validate archive ar show sh graph g help" -- "$cur"))
-            return
-        fi
-
-        # Flags per tasks subcommand
-        case "$subcmd" in
-            list)
-                COMPREPLY=($(compgen -W "--status --priority --difficulty --ready --include-archive --output -o --fields" -- "$cur")) ;;
-            add)
-                COMPREPLY=($(compgen -W "--desc --description --priority --difficulty --effort --depends-on --dry-run --output -o" -- "$cur")) ;;
-            set-status|set-priority|set-difficulty)
-                COMPREPLY=($(compgen -W "--output -o --dry-run" -- "$cur")) ;;
-            archive)
-                COMPREPLY=($(compgen -W "--dry-run --output -o" -- "$cur")) ;;
-            show)
-                COMPREPLY=($(compgen -W "--output -o --fields" -- "$cur")) ;;
-            graph)
-                COMPREPLY=($(compgen -W "--ascii --mermaid --subtasks --status --output -o" -- "$cur")) ;;
-        esac
-        return
-    fi
-
+${parentSections}
     # completion → shell names
-    if [[ "$cmd" == "completion" ]]; then
-        COMPREPLY=($(compgen -W "bash zsh fish" -- "$cur"))
+    if [[ "\$cmd" == "completion" ]]; then
+        COMPREPLY=(\$(compgen -W "bash zsh fish install uninstall" -- "\$cur"))
         return
     fi
 
     # describe → command names (for introspection)
-    if [[ "$cmd" == "describe" ]]; then
-        COMPREPLY=($(compgen -W "init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help" -- "$cur"))
+    if [[ "\$cmd" == "describe" ]]; then
+        COMPREPLY=(\$(compgen -W "${describeWords}" -- "\$cur"))
         return
     fi
 
     # Flags per top-level command
-    case "$cmd" in
-        init)
-            COMPREPLY=($(compgen -W "--force" -- "$cur")) ;;
-        launch)
-            COMPREPLY=($(compgen -W "--top-priority --quickest-wins --priority --difficulty --tasks --features --all-ready --max-concurrent --model -m --interactive --no-tui --auto-push --base-branch --max-retries --browser --dry-run --output -o --force" -- "$cur")) ;;
-        resume)
-            COMPREPLY=($(compgen -W "--max-concurrent --model -m --interactive --no-tui --auto-push --base-branch --max-retries" -- "$cur")) ;;
-        status)
-            COMPREPLY=($(compgen -W "--output -o" -- "$cur")) ;;
-        verify)
-            COMPREPLY=($(compgen -W "--model -m --max-retries --browser" -- "$cur")) ;;
-        merge)
-            COMPREPLY=($(compgen -W "--auto-push --dry-run --model -m" -- "$cur")) ;;
-        retry)
-            COMPREPLY=($(compgen -W "--model -m --interactive --dry-run" -- "$cur")) ;;
-        abort)
-            COMPREPLY=($(compgen -W "--requeue --output -o" -- "$cur")) ;;
-        cleanup)
-            COMPREPLY=($(compgen -W "--dry-run" -- "$cur")) ;;
-        history)
-            COMPREPLY=($(compgen -W "--output -o" -- "$cur")) ;;
-        usage)
-            COMPREPLY=($(compgen -W "--by --since --until --format --output -o" -- "$cur")) ;;
-        logs)
-            COMPREPLY=($(compgen -W "--tail --follow -f --output -o" -- "$cur")) ;;
-        upgrade)
-            COMPREPLY=($(compgen -W "--check --tag --release --force" -- "$cur")) ;;
+    case "\$cmd" in
+${cmdFlagCases}
     esac
 }
 
@@ -461,10 +540,103 @@ complete -o default -F _woco_completions woco
 }
 
 // ---------------------------------------------------------------------------
-// Zsh completion
+// Zsh completion (generated from COMMAND_REGISTRY)
 // ---------------------------------------------------------------------------
 
 function zshScript(): string {
+  // _describe array: canonical commands only, with alias hint in description
+  const cmdEntries = COMMAND_REGISTRY
+    .map((c) => `            '${c.name}:${completionDesc(c)}${aliasHint(c)}'`)
+    .join("\n");
+
+  // All alias tokens for bare compadd (hidden from menu, but tab-completable)
+  const allAliases = COMMAND_REGISTRY
+    .flatMap((c) => c.aliases ?? [])
+    .join(" ");
+
+  // Alias resolution cases
+  const aliasCases = COMMAND_REGISTRY
+    .filter((c) => c.aliases?.length)
+    .map((c) => `        ${c.aliases!.join("|")}) cmd=${c.name} ;;`)
+    .join("\n");
+
+  // Enum flag value cases
+  const enumFlags = collectEnumFlags();
+  const enumCases = [...enumFlags]
+    .map(([flag, values]) => `        ${flag})    compadd ${values.join(" ")}; return ;;`)
+    .join("\n");
+
+  // Parent command sections
+  let parentSections = "";
+  for (const parent of parentCommands()) {
+    const subs = parent.subcommands!;
+
+    // Subcommand _describe entries (canonical only, with alias hint)
+    const subEntries = subs
+      .map((sc) => `                '${cmdShortName(sc)}:${completionDesc(sc)}${aliasHint(sc)}'`)
+      .join("\n");
+
+    // Subcommand aliases for bare compadd
+    const subAliases = subs
+      .flatMap((sc) => sc.aliases ?? [])
+      .join(" ");
+
+    // Subcommand alias resolution
+    const subAliasCases = subs
+      .filter((sc) => sc.aliases?.length)
+      .map((sc) => `            ${sc.aliases!.join("|")}) subcmd=${cmdShortName(sc)} ;;`)
+      .join("\n");
+
+    // Per-subcommand flags
+    const subFlagCases = subs
+      .map((sc) => {
+        const tokens = flagTokens(getCommandFlags(sc)).join(" ");
+        if (!tokens) return null;
+        return `            ${cmdShortName(sc)})\n                compadd -- ${tokens} ;;`;
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    parentSections += `
+    # ${parent.name} → subcommands
+    if [[ "\$cmd" == "${parent.name}" ]]; then
+        if (( CURRENT == 3 )); then
+            local -a subcmds
+            subcmds=(
+${subEntries}
+                'help:Show help'
+            )
+            _describe 'subcommand' subcmds
+${subAliases ? `            compadd -Q -- ${subAliases}` : ""}
+            return
+        fi
+
+        subcmd="\${words[3]}"
+        case "\$subcmd" in
+${subAliasCases}
+        esac
+
+        case "\$subcmd" in
+${subFlagCases}
+        esac
+        return
+    fi
+`;
+  }
+
+  // Per-command flags (non-parent commands)
+  const cmdFlagCases = COMMAND_REGISTRY
+    .filter((c) => !c.subcommands?.length)
+    .map((c) => {
+      const tokens = flagTokens(getCommandFlags(c)).join(" ");
+      if (!tokens) return null;
+      return `        ${c.name})   compadd -- ${tokens} ;;`;
+    })
+    .filter(Boolean)
+    .join("\n");
+
+  const describeWords = allCommandNames().join(" ");
+
   return `#compdef woco
 # woco (wombo-combo) zsh completion
 # Generated by: woco completion zsh
@@ -477,151 +649,43 @@ _woco() {
     if (( CURRENT == 2 )); then
         local -a cmds
         cmds=(
-            'init:Generate .wombo-combo/config.json (i)'
-            'i:→ init'
-            'launch:Launch a wave of agents (l)'
-            'l:→ launch'
-            'resume:Resume a stopped wave (r)'
-            'r:→ resume'
-            'status:Show wave status (s)'
-            's:→ status'
-            'verify:Run build verification (v)'
-            'v:→ verify'
-            'merge:Merge verified branches (m)'
-            'm:→ merge'
-            'retry:Retry a failed agent (re)'
-            're:→ retry'
-            'abort:Kill a running agent (a)'
-            'a:→ abort'
-            'cleanup:Remove worktrees and sessions (c)'
-            'c:→ cleanup'
-            'history:List/view past waves (h)'
-            'h:→ history'
-            'logs:Pretty-print agent logs (lo)'
-            'lo:→ logs'
-            'tasks:Manage tasks file (t)'
-            't:→ tasks'
-            'usage:Show token usage stats (us)'
-            'us:→ usage'
-            'upgrade:Check for updates (u)'
-            'u:→ upgrade'
-            'describe:Emit JSON schema (d)'
-            'd:→ describe'
-            'completion:Generate shell completions (comp)'
-            'comp:→ completion'
-            'version:Print version'
-            'help:Show help'
+${cmdEntries}
         )
         _describe 'command' cmds
+        # Aliases: complete when typed but don't clutter the menu
+${allAliases ? `        compadd -Q -- ${allAliases}` : ""}
         return
     fi
 
     cmd="\${words[2]}"
 
     # Resolve top-level aliases
-    case "$cmd" in
-        i) cmd=init ;; l) cmd=launch ;; r) cmd=resume ;;
-        s) cmd=status ;; v) cmd=verify ;; m) cmd=merge ;;
-        re) cmd=retry ;; a) cmd=abort ;; c) cmd=cleanup ;;
-        h) cmd=history ;; lo) cmd=logs ;; t|features) cmd=tasks ;;
-        us) cmd=usage ;;
-        u) cmd=upgrade ;; d) cmd=describe ;; comp) cmd=completion ;;
+    case "\$cmd" in
+${aliasCases}
     esac
 
     # Flag value completions
     case "\${words[CURRENT-1]}" in
-        --priority)    compadd critical high medium low wishlist; return ;;
-        --difficulty)  compadd trivial easy medium hard very_hard; return ;;
-        --status)      compadd backlog planned in_progress blocked in_review done cancelled; return ;;
-        --output|-o)   compadd text json toon; return ;;
-        --by)          compadd task quest model provider harness; return ;;
-        --format)      compadd table json; return ;;
+${enumCases}
     esac
-
-    # tasks → subcommands
-    if [[ "$cmd" == "tasks" ]]; then
-        if (( CURRENT == 3 )); then
-            local -a subcmds
-            subcmds=(
-                'list:List tasks (ls)'
-                'ls:→ list'
-                'add:Add a new task (a)'
-                'a:→ add'
-                'set-status:Change task status (ss)'
-                'ss:→ set-status'
-                'set-priority:Change task priority (sp)'
-                'sp:→ set-priority'
-                'set-difficulty:Change task difficulty (sd)'
-                'sd:→ set-difficulty'
-                'check:Validate tasks file (ch)'
-                'ch:→ check'
-                'validate:→ check'
-                'archive:Move done/cancelled to archive (ar)'
-                'ar:→ archive'
-                'show:Show task details (sh)'
-                'sh:→ show'
-                'graph:Visualize dependency graph (g)'
-                'g:→ graph'
-                'help:Show help'
-            )
-            _describe 'subcommand' subcmds
-            return
-        fi
-
-        subcmd="\${words[3]}"
-        case "$subcmd" in
-            ls) subcmd=list ;; a) subcmd=add ;; ss) subcmd=set-status ;;
-            sp) subcmd=set-priority ;; sd) subcmd=set-difficulty ;;
-            ch|validate) subcmd=check ;; ar) subcmd=archive ;;
-            sh) subcmd=show ;; g) subcmd=graph ;;
-        esac
-
-        case "$subcmd" in
-            list)
-                compadd -- --status --priority --difficulty --ready --include-archive --output -o --fields ;;
-            add)
-                compadd -- --desc --description --priority --difficulty --effort --depends-on --dry-run --output -o ;;
-            set-status|set-priority|set-difficulty)
-                compadd -- --output -o --dry-run ;;
-            archive)
-                compadd -- --dry-run --output -o ;;
-            show)
-                compadd -- --output -o --fields ;;
-            graph)
-                compadd -- --ascii --mermaid --subtasks --status --output -o ;;
-        esac
-        return
-    fi
-
+${parentSections}
     # completion → shell names
-    if [[ "$cmd" == "completion" ]]; then
+    if [[ "\$cmd" == "completion" ]]; then
         if (( CURRENT == 3 )); then
-            compadd bash zsh fish
+            compadd bash zsh fish install uninstall
         fi
         return
     fi
 
     # describe → command names
-    if [[ "$cmd" == "describe" ]]; then
-        compadd -- init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help
+    if [[ "\$cmd" == "describe" ]]; then
+        compadd -- ${describeWords}
         return
     fi
 
     # Flags per command
-    case "$cmd" in
-        init)     compadd -- --force ;;
-        launch)   compadd -- --top-priority --quickest-wins --priority --difficulty --tasks --features --all-ready --max-concurrent --model -m --interactive --no-tui --auto-push --base-branch --max-retries --browser --dry-run --output -o --force ;;
-        resume)   compadd -- --max-concurrent --model -m --interactive --no-tui --auto-push --base-branch --max-retries ;;
-        status)   compadd -- --output -o ;;
-        verify)   compadd -- --model -m --max-retries --browser ;;
-        merge)    compadd -- --auto-push --dry-run --model -m ;;
-        retry)    compadd -- --model -m --interactive --dry-run ;;
-        abort)    compadd -- --requeue --output -o ;;
-        cleanup)  compadd -- --dry-run ;;
-        history)  compadd -- --output -o ;;
-        usage)    compadd -- --by --since --until --format --output -o ;;
-        logs)     compadd -- --tail --follow -f --output -o ;;
-        upgrade)  compadd -- --check --tag --release --force ;;
+    case "\$cmd" in
+${cmdFlagCases}
     esac
 }
 
@@ -630,247 +694,155 @@ compdef _woco woco
 }
 
 // ---------------------------------------------------------------------------
-// Fish completion
+// Fish completion (generated from COMMAND_REGISTRY)
 // ---------------------------------------------------------------------------
 
 function fishScript(): string {
-  return `# woco (wombo-combo) fish completion
-# Generated by: woco completion fish
-# Install: woco completion fish | source
-# Persist: woco completion fish > ~/.config/fish/completions/woco.fish
+  const lines: string[] = [];
 
-# Helper: true when the tasks/t/features subcommand has a specific sub-subcommand
-function __woco_tasks_subcmd
-    set -l tokens (commandline -opc)
-    if test (count $tokens) -ge 3
-        switch $tokens[2]
-            case tasks t features
-                for sub in $argv
-                    if test "$tokens[3]" = "$sub"
-                        return 0
-                    end
-                end
-        end
-    end
-    return 1
-end
+  lines.push("# woco (wombo-combo) fish completion");
+  lines.push("# Generated by: woco completion fish");
+  lines.push("# Install: woco completion fish | source");
+  lines.push("# Persist: woco completion fish > ~/.config/fish/completions/woco.fish");
+  lines.push("");
 
-# Helper: true when we need a tasks subcommand (exactly: woco tasks <cursor>)
-function __woco_needs_tasks_subcmd
-    set -l tokens (commandline -opc)
-    if test (count $tokens) -eq 2
-        switch $tokens[2]
-            case tasks t features
-                return 0
-        end
-    end
-    return 1
-end
+  // Generate helper functions for each parent command
+  for (const parent of parentCommands()) {
+    const names = [parent.name, ...(parent.aliases ?? [])].join(" ");
 
-# Disable file completions by default
-for cmd in woco
-    complete -c $cmd -f
+    lines.push(`# Helper: true when the ${parent.name} subcommand has a specific sub-subcommand`);
+    lines.push(`function __woco_${parent.name}_subcmd`);
+    lines.push("    set -l tokens (commandline -opc)");
+    lines.push("    if test (count $tokens) -ge 3");
+    lines.push("        switch $tokens[2]");
+    lines.push(`            case ${names}`);
+    lines.push("                for sub in $argv");
+    lines.push('                    if test "$tokens[3]" = "$sub"');
+    lines.push("                        return 0");
+    lines.push("                    end");
+    lines.push("                end");
+    lines.push("        end");
+    lines.push("    end");
+    lines.push("    return 1");
+    lines.push("end");
+    lines.push("");
 
-    # --- Top-level commands ---
-    complete -c $cmd -n '__fish_use_subcommand' -a 'init'       -d 'Generate config'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'i'          -d '→ init'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'launch'     -d 'Launch agents'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'l'          -d '→ launch'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'resume'     -d 'Resume wave'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'r'          -d '→ resume'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'status'     -d 'Show wave status'
-    complete -c $cmd -n '__fish_use_subcommand' -a 's'          -d '→ status'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'verify'     -d 'Build verification'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'v'          -d '→ verify'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'merge'      -d 'Merge branches'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'm'          -d '→ merge'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'retry'      -d 'Retry failed agent'
-    complete -c $cmd -n '__fish_use_subcommand' -a 're'         -d '→ retry'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'abort'      -d 'Kill running agent'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'a'          -d '→ abort'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'cleanup'    -d 'Remove worktrees'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'c'          -d '→ cleanup'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'history'    -d 'View past waves'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'h'          -d '→ history'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'logs'       -d 'Agent logs'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'lo'         -d '→ logs'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'tasks'      -d 'Manage tasks'
-    complete -c $cmd -n '__fish_use_subcommand' -a 't'          -d '→ tasks'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'usage'      -d 'Token usage stats'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'us'         -d '→ usage'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'upgrade'    -d 'Check for updates'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'u'          -d '→ upgrade'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'describe'   -d 'Emit JSON schema'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'd'          -d '→ describe'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'completion' -d 'Shell completions'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'comp'       -d '→ completion'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'version'    -d 'Print version'
-    complete -c $cmd -n '__fish_use_subcommand' -a 'help'       -d 'Show help'
+    lines.push(`# Helper: true when we need a ${parent.name} subcommand`);
+    lines.push(`function __woco_needs_${parent.name}_subcmd`);
+    lines.push("    set -l tokens (commandline -opc)");
+    lines.push("    if test (count $tokens) -eq 2");
+    lines.push("        switch $tokens[2]");
+    lines.push(`            case ${names}`);
+    lines.push("                return 0");
+    lines.push("        end");
+    lines.push("    end");
+    lines.push("    return 1");
+    lines.push("end");
+    lines.push("");
+  }
 
-    # --- tasks subcommands ---
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'list'           -d 'List tasks'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'ls'             -d '→ list'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'add'            -d 'Add task'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'a'              -d '→ add'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'set-status'     -d 'Change status'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'ss'             -d '→ set-status'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'set-priority'   -d 'Change priority'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'sp'             -d '→ set-priority'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'set-difficulty' -d 'Change difficulty'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'sd'             -d '→ set-difficulty'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'check'          -d 'Validate tasks'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'ch'             -d '→ check'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'validate'       -d '→ check'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'archive'        -d 'Archive done tasks'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'ar'             -d '→ archive'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'show'           -d 'Show task details'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'sh'             -d '→ show'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'graph'          -d 'Dependency graph'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'g'              -d '→ graph'
-    complete -c $cmd -n '__woco_needs_tasks_subcmd' -a 'help'           -d 'Show help'
+  lines.push("# Disable file completions by default");
+  lines.push("for cmd in woco");
+  lines.push("    complete -c $cmd -f");
+  lines.push("");
 
-    # --- completion subcommand ---
-    complete -c $cmd -n '__fish_seen_subcommand_from completion comp' -a 'bash zsh fish'
+  // --- Top-level commands (canonical only, no alias entries) ---
+  lines.push("    # --- Top-level commands ---");
+  for (const cmd of COMMAND_REGISTRY) {
+    const desc = completionDesc(cmd);
+    const hint = aliasHint(cmd);
+    const pad = " ".repeat(Math.max(1, 14 - cmd.name.length));
+    lines.push(`    complete -c $cmd -n '__fish_use_subcommand' -a '${cmd.name}'${pad}-d '${desc}${hint}'`);
+  }
+  lines.push("");
 
-    # --- describe subcommand ---
-    complete -c $cmd -n '__fish_seen_subcommand_from describe d' -a 'init launch resume status verify merge retry abort cleanup history usage logs tasks upgrade describe completion version help'
+  // --- Subcommands for parent commands ---
+  for (const parent of parentCommands()) {
+    const subs = parent.subcommands!;
 
-    # --- Flags: init ---
-    complete -c $cmd -n '__fish_seen_subcommand_from init i' -l force -d 'Force overwrite'
+    lines.push(`    # --- ${parent.name} subcommands ---`);
+    for (const sc of subs) {
+      const name = cmdShortName(sc);
+      const desc = completionDesc(sc);
+      const hint = aliasHint(sc);
+      const pad = " ".repeat(Math.max(1, 16 - name.length));
+      lines.push(`    complete -c $cmd -n '__woco_needs_${parent.name}_subcmd' -a '${name}'${pad}-d '${desc}${hint}'`);
+    }
+    lines.push(`    complete -c $cmd -n '__woco_needs_${parent.name}_subcmd' -a 'help'            -d 'Show help'`);
+    lines.push("");
+  }
 
-    # --- Flags: launch ---
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l top-priority    -d 'Select top N by priority' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l quickest-wins   -d 'Select N lowest effort' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l priority        -d 'Filter by priority' -xa 'critical high medium low wishlist'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l difficulty      -d 'Filter by difficulty' -xa 'trivial easy medium hard very_hard'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l tasks           -d 'Select tasks by ID' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l features        -d '→ --tasks' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l all-ready       -d 'All ready tasks'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l max-concurrent  -d 'Max parallel agents' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l model           -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -s m               -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l interactive     -d 'Multiplexer TUI mode'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l no-tui          -d 'Headless mode'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l auto-push       -d 'Push after merges'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l base-branch     -d 'Base branch' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l max-retries     -d 'Max retries' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l browser         -d 'Browser verification'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l dry-run         -d 'Show without launching'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l output          -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -s o               -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from launch l' -l force           -d 'Force'
+  // --- Special: completion subcommand ---
+  const completionParents = ["completion", ...(COMMAND_REGISTRY.find((c) => c.name === "completion")?.aliases ?? [])].join(" ");
+  lines.push(`    # --- completion subcommand ---`);
+  lines.push(`    complete -c $cmd -n '__fish_seen_subcommand_from ${completionParents}' -a 'bash zsh fish install uninstall'`);
+  lines.push("");
 
-    # --- Flags: resume ---
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l max-concurrent -d 'Max parallel agents' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l model          -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -s m              -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l interactive    -d 'Multiplexer TUI mode'
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l no-tui         -d 'Headless mode'
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l auto-push      -d 'Push after merges'
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l base-branch    -d 'Base branch' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from resume r' -l max-retries    -d 'Max retries' -x
+  // --- Special: describe subcommand ---
+  const describeParents = ["describe", ...(COMMAND_REGISTRY.find((c) => c.name === "describe")?.aliases ?? [])].join(" ");
+  lines.push(`    # --- describe subcommand ---`);
+  lines.push(`    complete -c $cmd -n '__fish_seen_subcommand_from ${describeParents}' -a '${allCommandNames().join(" ")}'`);
+  lines.push("");
 
-    # --- Flags: status ---
-    complete -c $cmd -n '__fish_seen_subcommand_from status s' -l output -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from status s' -s o      -d 'Output format' -xa 'text json toon'
+  // --- Per-command flags ---
+  for (const cmd of COMMAND_REGISTRY) {
+    if (cmd.subcommands?.length) continue; // parent flags handled via subcommands
 
-    # --- Flags: verify ---
-    complete -c $cmd -n '__fish_seen_subcommand_from verify v' -l model       -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from verify v' -s m           -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from verify v' -l max-retries -d 'Max retries' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from verify v' -l browser     -d 'Browser verification'
+    const flags = getCommandFlags(cmd);
+    if (flags.length === 0) continue;
 
-    # --- Flags: merge ---
-    complete -c $cmd -n '__fish_seen_subcommand_from merge m' -l auto-push -d 'Push after merge'
-    complete -c $cmd -n '__fish_seen_subcommand_from merge m' -l dry-run   -d 'Show without merging'
-    complete -c $cmd -n '__fish_seen_subcommand_from merge m' -l model     -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from merge m' -s m         -d 'Model to use' -x
+    const seenFrom = [cmd.name, ...(cmd.aliases ?? [])].join(" ");
+    lines.push(`    # --- Flags: ${cmd.name} ---`);
 
-    # --- Flags: retry ---
-    complete -c $cmd -n '__fish_seen_subcommand_from retry re' -l model       -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from retry re' -s m           -d 'Model to use' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from retry re' -l interactive -d 'Interactive mode'
-    complete -c $cmd -n '__fish_seen_subcommand_from retry re' -l dry-run     -d 'Dry run'
+    for (const flag of flags) {
+      const longName = flag.name.replace(/^--/, "");
+      const desc = flag.description;
+      const needsValue = flag.type !== "boolean";
+      const enumVals = flag.enum?.length ? ` -xa '${flag.enum.join(" ")}'` : "";
+      const valueFlag = needsValue && !flag.enum?.length ? " -x" : "";
 
-    # --- Flags: abort ---
-    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -l requeue -d 'Return task to queue'
-    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -l output  -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from abort a' -s o       -d 'Output format' -xa 'text json toon'
+      lines.push(`    complete -c $cmd -n '__fish_seen_subcommand_from ${seenFrom}' -l ${longName}${" ".repeat(Math.max(1, 16 - longName.length))}-d '${desc}'${valueFlag}${enumVals}`);
 
-    # --- Flags: cleanup ---
-    complete -c $cmd -n '__fish_seen_subcommand_from cleanup c' -l dry-run -d 'Show without cleaning'
+      if (flag.alias) {
+        const shortChar = flag.alias.replace(/^-/, "");
+        lines.push(`    complete -c $cmd -n '__fish_seen_subcommand_from ${seenFrom}' -s ${shortChar}${" ".repeat(Math.max(1, 18 - shortChar.length))}-d '${desc}'${valueFlag}${enumVals}`);
+      }
+    }
+    lines.push("");
+  }
 
-    # --- Flags: history ---
-    complete -c $cmd -n '__fish_seen_subcommand_from history h' -l output -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from history h' -s o      -d 'Output format' -xa 'text json toon'
+  // --- Per-subcommand flags ---
+  for (const parent of parentCommands()) {
+    const subs = parent.subcommands!;
 
-    # --- Flags: usage ---
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l by     -d 'Group by field' -xa 'task quest model provider harness'
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l since  -d 'Start date (ISO)' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l until  -d 'End date (ISO)' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l format -d 'Output format' -xa 'table json'
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -l output -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from usage us' -s o      -d 'Output format' -xa 'text json toon'
+    lines.push(`    # --- Flags: ${parent.name} subcommand-specific ---`);
+    for (const sc of subs) {
+      const flags = getCommandFlags(sc);
+      if (flags.length === 0) continue;
 
-    # --- Flags: logs ---
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l tail   -d 'Show last N lines' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l follow -d 'Stream output'
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -s f      -d 'Stream output'
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -l output -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__fish_seen_subcommand_from logs lo' -s o      -d 'Output format' -xa 'text json toon'
+      const scName = cmdShortName(sc);
+      const scAliases = sc.aliases ?? [];
+      const condition = `'__woco_${parent.name}_subcmd ${[scName, ...scAliases].join(" ")}'`;
 
-    # --- Flags: upgrade ---
-    complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l check   -d 'Check only'
-    complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l tag     -d 'Specific version' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l release -d '→ --tag' -x
-    complete -c $cmd -n '__fish_seen_subcommand_from upgrade u' -l force   -d 'Skip prompts'
+      for (const flag of flags) {
+        const longName = flag.name.replace(/^--/, "");
+        const desc = flag.description;
+        const needsValue = flag.type !== "boolean";
+        const enumVals = flag.enum?.length ? ` -xa '${flag.enum.join(" ")}'` : "";
+        const valueFlag = needsValue && !flag.enum?.length ? " -x" : "";
 
-    # --- Flags: tasks subcommand-specific ---
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l status          -d 'Filter by status' -xa 'backlog planned in_progress blocked in_review done cancelled'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l priority        -d 'Filter by priority' -xa 'critical high medium low wishlist'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l difficulty      -d 'Filter by difficulty' -xa 'trivial easy medium hard very_hard'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l ready           -d 'Only ready tasks'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l include-archive -d 'Include archived'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l output          -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -s o               -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd list ls'   -l fields          -d 'Fields to show' -x
+        lines.push(`    complete -c $cmd -n ${condition} -l ${longName}${" ".repeat(Math.max(1, 16 - longName.length))}-d '${desc}'${valueFlag}${enumVals}`);
 
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l desc            -d 'Description' -x
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l description     -d 'Description' -x
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l priority        -d 'Priority' -xa 'critical high medium low wishlist'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l difficulty      -d 'Difficulty' -xa 'trivial easy medium hard very_hard'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l effort          -d 'Effort estimate' -x
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l depends-on      -d 'Dependencies' -x
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l dry-run         -d 'Dry run'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -l output          -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd add a'     -s o               -d 'Output format' -xa 'text json toon'
+        if (flag.alias) {
+          const shortChar = flag.alias.replace(/^-/, "");
+          lines.push(`    complete -c $cmd -n ${condition} -s ${shortChar}${" ".repeat(Math.max(1, 18 - shortChar.length))}-d '${desc}'${valueFlag}${enumVals}`);
+        }
+      }
+    }
+    lines.push("");
+  }
 
-    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -l output  -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -s o       -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-status ss'     -l dry-run -d 'Dry run'
+  lines.push("end");
 
-    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -l output  -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -s o       -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-priority sp'   -l dry-run -d 'Dry run'
-
-    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -l output  -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -s o       -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd set-difficulty sd'  -l dry-run -d 'Dry run'
-
-    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -l dry-run -d 'Dry run'
-    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -l output  -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd archive ar' -s o       -d 'Output format' -xa 'text json toon'
-
-    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -l output -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -s o      -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd show sh'    -l fields -d 'Fields to show' -x
-
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l ascii    -d 'ASCII output'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l mermaid  -d 'Mermaid output'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l subtasks -d 'Include subtasks'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l status   -d 'Filter by status' -xa 'backlog planned in_progress blocked in_review done cancelled'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -l output   -d 'Output format' -xa 'text json toon'
-    complete -c $cmd -n '__woco_tasks_subcmd graph g'    -s o        -d 'Output format' -xa 'text json toon'
-end
-`;
+  return lines.join("\n") + "\n";
 }
