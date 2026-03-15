@@ -18,3 +18,22 @@ export {
   getEditorCommand,
   type OpenEditorOptions,
 } from "./open-editor";
+
+// Onboarding wizard components
+export {
+  OnboardingWizard,
+  type OnboardingWizardProps,
+  StepWizard,
+  type StepWizardProps,
+  SectionPicker,
+  type SectionPickerProps,
+  FieldEditor,
+  type FieldEditorProps,
+  ProfileReview,
+  type ProfileReviewProps,
+  type RawInputs,
+  type InputStep,
+  INPUT_STEPS,
+  SECTION_NAMES,
+  structureRawInputs,
+} from "./onboarding";
