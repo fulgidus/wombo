@@ -18,6 +18,25 @@ export {
   getEditorCommand,
   type OpenEditorOptions,
 } from "./open-editor";
+export { Modal, type ModalProps } from "./modal";
+export {
+  ProgressView,
+  type ProgressViewProps,
+  type ProgressResult,
+} from "./progress";
+export { useSpinner } from "./use-spinner";
+export { ConfirmDialog, type ConfirmDialogProps } from "./confirm";
+export {
+  UsageOverlayView,
+  type UsageOverlayViewProps,
+  formatTokenCount,
+  formatCost,
+} from "./usage-overlay";
+export {
+  QuestionPopupView,
+  type QuestionPopupViewProps,
+  timeAgo,
+} from "./question-popup";
 export {
   SelectInput,
   type SelectInputItem,
