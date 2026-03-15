@@ -112,6 +112,7 @@ import { handleQuestSubcommand } from "./commands/quest.js";
 import { cmdGenesis } from "./commands/genesis.js";
 import { cmdUsage, type UsageGroupBy } from "./commands/usage.js";
 
+import { isCittyCommand, runCittyCommand } from "./commands/citty/router.js";
 import { ensureTasksFile } from "./lib/tasks.js";
 import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import type { QuestHitlMode } from "./lib/quest.js";
@@ -645,6 +646,23 @@ async function main(): Promise<void> {
       }
       console.log(JSON.stringify(commandToSchema(def), null, 2));
     }
+    return;
+  }
+
+  // -----------------------------------------------------------------------
+  // Citty-managed commands: route through the citty router for typed args
+  // -----------------------------------------------------------------------
+  // Commands migrated to citty handle their own arg parsing, config loading,
+  // and validation. Extract raw CLI args (without --dev and -h/--help which
+  // parseArgs already consumed) and delegate to the citty router.
+  if (isCittyCommand(args.command)) {
+    const rawCliArgs = process.argv.slice(2).filter(
+      (a) => a !== "--dev" && a !== "-h" && a !== "--help"
+    );
+    // First non-flag arg is the command name/alias; everything after is for citty
+    const cmdIndex = rawCliArgs.findIndex((a) => !a.startsWith("-"));
+    const cittyRawArgs = cmdIndex >= 0 ? rawCliArgs.slice(cmdIndex + 1) : [];
+    await runCittyCommand(args.command, cittyRawArgs);
     return;
   }
 
