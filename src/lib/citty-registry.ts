@@ -774,6 +774,33 @@ const ENTRIES: RegistryEntry[] = [
 // Build the bridge registry
 // ---------------------------------------------------------------------------
 
+// --- genesis (not yet migrated to citty) ------------------------------------
+// This is a direct CommandDef since there's no citty definition yet.
+const GENESIS_DEF: CommandDef = {
+  name: "genesis",
+  aliases: ["g"],
+  summary: "Decompose a project vision into quests",
+  completionSummary: "Vision to quests",
+  description:
+    "Top of the Quest hierarchy: Genesis -> Quests -> Tasks. Takes a project " +
+    "vision and produces a set of scoped quests via an AI planner agent.",
+  positionals: [
+    { name: "vision", description: "Project vision text", required: false },
+  ],
+  flags: [
+    { name: "--tech-stack", description: "Tech stack description (e.g. \"React, Node, Postgres\")", type: "string" },
+    { name: "--constraint", description: "Constraint (can be repeated)", type: "string" },
+    { name: "--model", alias: "-m", description: "Model for the planner agent", type: "string" },
+    { name: "--no-tui", description: "Skip TUI review, auto-approve all quests", type: "boolean", default: false },
+    { name: "--dry-run", description: "Show what would happen without creating quests", type: "boolean", default: false },
+  ],
+  mutating: true,
+  supportsDryRun: true,
+};
+
+/** Insert genesis after "quest" to match COMMAND_REGISTRY ordering */
+const GENESIS_INSERT_AFTER = "quest";
+
 function buildRegistry(): CommandDef[] {
   const registry: CommandDef[] = [];
 
@@ -798,31 +825,12 @@ function buildRegistry(): CommandDef[] {
     }
 
     registry.push(cmd);
-  }
 
-  // --- genesis (not yet migrated to citty) --------------------------------
-  // This is a direct CommandDef since there's no citty definition yet.
-  registry.push({
-    name: "genesis",
-    aliases: ["g"],
-    summary: "Decompose a project vision into quests",
-    completionSummary: "Vision to quests",
-    description:
-      "Top of the Quest hierarchy: Genesis -> Quests -> Tasks. Takes a project " +
-      "vision and produces a set of scoped quests via an AI planner agent.",
-    positionals: [
-      { name: "vision", description: "Project vision text", required: false },
-    ],
-    flags: [
-      { name: "--tech-stack", description: "Tech stack description (e.g. \"React, Node, Postgres\")", type: "string" },
-      { name: "--constraint", description: "Constraint (can be repeated)", type: "string" },
-      { name: "--model", alias: "-m", description: "Model for the planner agent", type: "string" },
-      { name: "--no-tui", description: "Skip TUI review, auto-approve all quests", type: "boolean", default: false },
-      { name: "--dry-run", description: "Show what would happen without creating quests", type: "boolean", default: false },
-    ],
-    mutating: true,
-    supportsDryRun: true,
-  });
+    // Insert genesis after quest to match COMMAND_REGISTRY order
+    if (cmd.name === GENESIS_INSERT_AFTER) {
+      registry.push(GENESIS_DEF);
+    }
+  }
 
   return registry;
 }
