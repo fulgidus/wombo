@@ -93,20 +93,25 @@ export function renderTasksList(
     effort: string;
     completion: number;
     depends_on: string[];
+    quest?: string | null;
   }>,
   depsMetMap?: Map<string, boolean>
 ): string {
-  const header = fieldsHeader([
-    "id", "status", "priority", "difficulty", "effort",
-    "completion", "deps_met", "depends_on", "title",
-  ]);
+  const hasQuest = tasks.some((t) => t.quest != null);
+  const fields = hasQuest
+    ? ["id", "quest", "status", "priority", "difficulty", "effort",
+       "completion", "deps_met", "depends_on", "title"]
+    : ["id", "status", "priority", "difficulty", "effort",
+       "completion", "deps_met", "depends_on", "title"];
+  const header = fieldsHeader(fields);
 
   const lines = [header];
 
   for (const t of tasks) {
     const depsMet = depsMetMap?.get(t.id) ?? true;
-    lines.push(row(
-      t.id,
+    const cols: (string | number | null | undefined)[] = [t.id];
+    if (hasQuest) cols.push(t.quest ?? "");
+    cols.push(
       encodeStatus(t.status),
       encodePriority(t.priority),
       encodeDifficulty(t.difficulty),
@@ -115,7 +120,8 @@ export function renderTasksList(
       encodeBool(depsMet),
       encodeArray(t.depends_on),
       t.title,
-    ));
+    );
+    lines.push(row(...cols));
   }
 
   return lines.join("\n");

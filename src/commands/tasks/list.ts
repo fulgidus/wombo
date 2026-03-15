@@ -24,6 +24,8 @@ import {
 } from "../../lib/tasks.js";
 import { output, filterFieldsArray, renderCompactTable, type OutputFormat } from "../../lib/output.js";
 import { renderTasksList } from "../../lib/toon.js";
+import { loadAllQuests } from "../../lib/quest-store.js";
+import type { Quest } from "../../lib/quest.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,6 +60,75 @@ const STATUS_COLOR: Record<FeatureStatus, string> = {
   done: "\x1b[32m",        // green
   cancelled: "\x1b[90m",   // gray
 };
+
+// ---------------------------------------------------------------------------
+// Quest reverse-map helpers
+// ---------------------------------------------------------------------------
+
+interface QuestInfo {
+  id: string;
+  title: string;
+  status: string;
+}
+
+/**
+ * Build a map from taskId → QuestInfo by scanning all quests' taskIds.
+ */
+function buildTaskQuestMap(projectRoot: string): Map<string, QuestInfo> {
+  const quests = loadAllQuests(projectRoot);
+  const map = new Map<string, QuestInfo>();
+  for (const q of quests) {
+    const info: QuestInfo = { id: q.id, title: q.title, status: q.status };
+    for (const tid of q.taskIds) {
+      map.set(tid, info);
+    }
+  }
+  return map;
+}
+
+// ---------------------------------------------------------------------------
+// Status-grouped rendering (reused per quest section)
+// ---------------------------------------------------------------------------
+
+const STATUS_ORDER: FeatureStatus[] = [
+  "in_progress",
+  "planned",
+  "backlog",
+  "blocked",
+  "in_review",
+  "done",
+  "cancelled",
+];
+
+function renderStatusGroups(
+  tasks: Feature[],
+  indent: string,
+): void {
+  const byStatus = new Map<FeatureStatus, Feature[]>();
+  for (const f of tasks) {
+    const list = byStatus.get(f.status) ?? [];
+    list.push(f);
+    byStatus.set(f.status, list);
+  }
+
+  for (const status of STATUS_ORDER) {
+    const group = byStatus.get(status);
+    if (!group?.length) continue;
+
+    const color = STATUS_COLOR[status] ?? "";
+    console.log(`${indent}${color}${BOLD}${status.toUpperCase()}${RESET} (${group.length})`);
+
+    for (const f of group) {
+      const effort = formatDuration(parseDurationMinutes(f.effort));
+      const deps = f.depends_on.length > 0 ? ` ${DIM}deps: ${f.depends_on.join(", ")}${RESET}` : "";
+      const completion = f.completion > 0 ? ` ${DIM}${f.completion}%${RESET}` : "";
+      console.log(
+        `${indent}  ${color}${f.id}${RESET} — ${f.title} [${f.priority}/${f.difficulty}] (${effort})${completion}${deps}`
+      );
+    }
+    console.log("");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Command
@@ -106,13 +177,8 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
     return;
   }
 
-  // Group by status for display
-  const byStatus = new Map<FeatureStatus, Feature[]>();
-  for (const f of features) {
-    const list = byStatus.get(f.status) ?? [];
-    list.push(f);
-    byStatus.set(f.status, list);
-  }
+  // Build quest reverse-map: taskId → QuestInfo
+  const taskQuestMap = buildTaskQuestMap(projectRoot);
 
   // Display
   const totalEffort = features.reduce(
@@ -122,17 +188,21 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
 
   const fmt = opts.outputFmt ?? "text";
 
-  // Build the structured data for each feature
-  const featureData = features.map((f) => ({
-    id: f.id,
-    title: f.title,
-    status: f.status,
-    priority: f.priority,
-    difficulty: f.difficulty,
-    effort: f.effort,
-    completion: f.completion,
-    depends_on: f.depends_on,
-  }));
+  // Build the structured data for each feature, enriched with quest info
+  const featureData = features.map((f) => {
+    const qi = taskQuestMap.get(f.id);
+    return {
+      id: f.id,
+      title: f.title,
+      status: f.status,
+      priority: f.priority,
+      difficulty: f.difficulty,
+      effort: f.effort,
+      completion: f.completion,
+      depends_on: f.depends_on,
+      quest: qi?.id ?? null,
+    };
+  });
 
   // If --fields is specified, use compact output mode
   if (opts.fields?.length) {
@@ -154,6 +224,18 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
     return;
   }
 
+  // Group features by quest for display
+  const byQuest = new Map<string | null, Feature[]>(); // key: questId or null
+  const questInfoMap = new Map<string, QuestInfo>();    // questId → info
+  for (const f of features) {
+    const qi = taskQuestMap.get(f.id);
+    const key = qi?.id ?? null;
+    if (qi) questInfoMap.set(qi.id, qi);
+    const list = byQuest.get(key) ?? [];
+    list.push(f);
+    byQuest.set(key, list);
+  }
+
   output(
     fmt,
     {
@@ -164,32 +246,24 @@ export async function cmdTasksList(opts: TasksListOptions): Promise<void> {
     () => {
       console.log(`\n${BOLD}Tasks (${features.length} total, ~${formatDuration(totalEffort)} effort)${RESET}\n`);
 
-      const statusOrder: FeatureStatus[] = [
-        "in_progress",
-        "planned",
-        "backlog",
-        "blocked",
-        "in_review",
-        "done",
-        "cancelled",
-      ];
+      // Render quest-grouped sections (quests first, standalone last)
+      const questIds = [...questInfoMap.keys()].sort();
+      const standalone = byQuest.get(null);
 
-      for (const status of statusOrder) {
-        const group = byStatus.get(status);
-        if (!group?.length) continue;
+      for (const qid of questIds) {
+        const qi = questInfoMap.get(qid)!;
+        const tasks = byQuest.get(qid)!;
+        const questEffort = tasks.reduce((s, f) => s + parseDurationMinutes(f.effort), 0);
+        console.log(`  ${BOLD}${qi.title}${RESET} ${DIM}[${qi.id}]${RESET} (${tasks.length} tasks, ~${formatDuration(questEffort)})`);
+        renderStatusGroups(tasks, "    ");
+      }
 
-        const color = STATUS_COLOR[status] ?? "";
-        console.log(`  ${color}${BOLD}${status.toUpperCase()}${RESET} (${group.length})`);
-
-        for (const f of group) {
-          const effort = formatDuration(parseDurationMinutes(f.effort));
-          const deps = f.depends_on.length > 0 ? ` ${DIM}deps: ${f.depends_on.join(", ")}${RESET}` : "";
-          const completion = f.completion > 0 ? ` ${DIM}${f.completion}%${RESET}` : "";
-          console.log(
-            `    ${color}${f.id}${RESET} — ${f.title} [${f.priority}/${f.difficulty}] (${effort})${completion}${deps}`
-          );
+      if (standalone?.length) {
+        if (questIds.length > 0) {
+          // Only show header if there are also quest-grouped tasks
+          console.log(`  ${BOLD}Standalone${RESET} (${standalone.length} tasks)`);
         }
-        console.log("");
+        renderStatusGroups(standalone, questIds.length > 0 ? "    " : "  ");
       }
     },
     () => {
