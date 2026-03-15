@@ -201,3 +201,112 @@ describe("citty describe command", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Citty router tests
+// ---------------------------------------------------------------------------
+
+describe("citty router", () => {
+  test("isCittyCommand identifies citty-handled commands", async () => {
+    const { isCittyCommand } = await import("../src/commands/citty/router.js");
+    expect(isCittyCommand("version")).toBe(true);
+    expect(isCittyCommand("-v")).toBe(true);
+    expect(isCittyCommand("-V")).toBe(true);
+    expect(isCittyCommand("help")).toBe(true);
+    expect(isCittyCommand("--help")).toBe(true);
+    expect(isCittyCommand("-h")).toBe(true);
+    expect(isCittyCommand("describe")).toBe(true);
+  });
+
+  test("isCittyCommand returns false for non-citty commands", async () => {
+    const { isCittyCommand } = await import("../src/commands/citty/router.js");
+    expect(isCittyCommand("launch")).toBe(false);
+    expect(isCittyCommand("init")).toBe(false);
+    expect(isCittyCommand("tasks")).toBe(false);
+    expect(isCittyCommand("tui")).toBe(false);
+    expect(isCittyCommand("status")).toBe(false);
+  });
+
+  test("runCittyCommand routes version correctly", async () => {
+    const { runCittyCommand } = await import("../src/commands/citty/router.js");
+    const logs: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logs.push(args.join(" "));
+    });
+
+    try {
+      await runCittyCommand("version", []);
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs[0]).toMatch(/wombo-combo \d+\.\d+\.\d+/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("runCittyCommand routes -v correctly", async () => {
+    const { runCittyCommand } = await import("../src/commands/citty/router.js");
+    const logs: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logs.push(args.join(" "));
+    });
+
+    try {
+      await runCittyCommand("-v", []);
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs[0]).toMatch(/wombo-combo \d+\.\d+\.\d+/);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("runCittyCommand routes help correctly", async () => {
+    const { runCittyCommand } = await import("../src/commands/citty/router.js");
+    const logs: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logs.push(args.join(" "));
+    });
+
+    try {
+      await runCittyCommand("help", []);
+      const output = logs.join("\n");
+      expect(output).toContain("wombo-combo");
+      expect(output).toContain("Commands:");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("runCittyCommand routes describe correctly", async () => {
+    const { runCittyCommand } = await import("../src/commands/citty/router.js");
+    const logs: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logs.push(args.join(" "));
+    });
+
+    try {
+      await runCittyCommand("describe", []);
+      const output = logs.join("\n");
+      const parsed = JSON.parse(output);
+      expect(parsed.tool).toBe("wombo-combo");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("runCittyCommand passes raw args to describe", async () => {
+    const { runCittyCommand } = await import("../src/commands/citty/router.js");
+    const logs: string[] = [];
+    const spy = spyOn(console, "log").mockImplementation((...args: any[]) => {
+      logs.push(args.join(" "));
+    });
+
+    try {
+      await runCittyCommand("describe", ["launch"]);
+      const output = logs.join("\n");
+      const parsed = JSON.parse(output);
+      expect(parsed.command).toBe("launch");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
