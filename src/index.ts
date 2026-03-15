@@ -98,6 +98,7 @@ import { cmdLogs } from "./commands/logs.js";
 import { cmdUpgrade } from "./commands/upgrade.js";
 import { cmdHistory } from "./commands/history.js";
 import { cmdCompletion } from "./commands/completion.js";
+import { isCittyCommand, runCittyCommand } from "./commands/citty/router.js";
 import { cmdTasksList } from "./commands/tasks/list.js";
 import { cmdTasksAdd } from "./commands/tasks/add.js";
 import { cmdTasksSetStatus } from "./commands/tasks/set-status.js";
@@ -502,6 +503,30 @@ async function main(): Promise<void> {
 
   const PROJECT_ROOT = resolve(process.cwd());
   const args = parseArgs(process.argv);
+
+  // -----------------------------------------------------------------------
+  // Citty-routed commands — delegate to citty for arg parsing & execution
+  // -----------------------------------------------------------------------
+  // Commands migrated to citty handle their own config loading, validation,
+  // and arg parsing. We only use parseArgs() here for alias resolution
+  // (e.g., "l" → "launch") and --dev detection.
+  const CITTY_ROUTED = new Set(["launch", "resume", "retry"]);
+  if (CITTY_ROUTED.has(args.command)) {
+    // Build rawArgs for citty: everything after the command name.
+    // parseArgs strips --dev from the arg list, so we need to re-add it
+    // for citty commands that define --dev as a flag.
+    const rawArgv = process.argv.slice(2); // skip 'bun' and script path
+    const cmdIdx = rawArgv.findIndex(
+      (a) => a !== "--dev" && a !== "-h" && a !== "--help" && !a.startsWith("-")
+    );
+    const rawArgs = cmdIdx >= 0 ? rawArgv.slice(cmdIdx + 1) : [];
+    // Ensure --dev is passed through if it was present
+    if (args.dev && !rawArgs.includes("--dev")) {
+      rawArgs.push("--dev");
+    }
+    await runCittyCommand(args.command, rawArgs);
+    return;
+  }
 
   // -----------------------------------------------------------------------
   // Input validation at the CLI boundary

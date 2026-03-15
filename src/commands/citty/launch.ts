@@ -198,6 +198,13 @@ export const launchCommand = defineCommand({
       description: "Output format: text (default), json, or toon",
       required: false,
     },
+
+    // --- Global ---
+    dev: {
+      type: "boolean",
+      description: "Enable developer mode (hidden TUI features, etc.)",
+      required: false,
+    },
   },
   async run({ args }) {
     const projectRoot = resolve(process.cwd());
@@ -207,6 +214,11 @@ export const launchCommand = defineCommand({
     // Load and validate config
     const config = loadConfig(projectRoot);
     validateConfig(config);
+
+    // Apply --dev flag (global pre-command flag)
+    if (args.dev) {
+      config.devMode = true;
+    }
 
     // Guard: project must be initialized
     if (!isProjectInitialized(projectRoot)) {
