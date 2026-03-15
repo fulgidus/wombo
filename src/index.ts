@@ -596,7 +596,21 @@ async function main(): Promise<void> {
     const parentCmdsWithSubs = new Set(["tasks", "quest", "wishlist"]);
     let effectiveSubcommand = args.subcommand;
     if (parentCmdsWithSubs.has(args.command)) {
-      const rawArgs = process.argv.slice(2).filter((a) => a !== "--dev" && a !== "-h" && a !== "--help");
+      // Filter out all global flags (and their values) from raw args to detect
+      // if an explicit subcommand was typed.
+      const rawArgsFull = process.argv.slice(2);
+      const rawArgs: string[] = [];
+      for (let ri = 0; ri < rawArgsFull.length; ri++) {
+        const ra = rawArgsFull[ri];
+        if (ra === "--dev" || ra === "--force" || ra === "-h" || ra === "--help") {
+          continue; // skip boolean global flags
+        }
+        if (ra === "--output" || ra === "-o") {
+          ri++; // skip the value too
+          continue;
+        }
+        rawArgs.push(ra);
+      }
       const explicitSub = rawArgs[1] && !rawArgs[1].startsWith("-") ? rawArgs[1] : undefined;
       // If no explicit subcommand was typed, show parent help.
       // Otherwise, use the resolved subcommand (alias-expanded by parseArgs).
