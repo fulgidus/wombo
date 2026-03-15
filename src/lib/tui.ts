@@ -32,11 +32,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { WomboConfig } from "../config.js";
 import {
-  detectMultiplexer,
-  muxHasSession,
-  muxAttach,
-  muxDisplayName,
-} from "./multiplexer.js";
+  tmuxHasSession,
+  tmuxAttach,
+} from "./tmux.js";
 import { QuestionPopup } from "./tui-question-popup.js";
 import type { HitlQuestion } from "./hitl-channel.js";
 
@@ -48,11 +46,11 @@ export interface TUIOptions {
   state: WaveState;
   monitor: ProcessMonitor;
   onQuit: () => void;
-  /** Whether the wave is running in interactive (multiplexer) mode. */
+  /** Whether the wave is running in interactive (tmux) mode. */
   interactive?: boolean;
   /** Project root path (for locating log files). */
   projectRoot: string;
-  /** Config (for multiplexer session prefix, log dir, etc.) */
+  /** Config (for tmux session prefix, log dir, etc.) */
   config: WomboConfig;
   /** Callback to retry a failed/stuck agent from the TUI. */
   onRetry?: (featureId: string) => void;
@@ -826,31 +824,30 @@ export class WomboTUI {
       return;
     }
 
-    const mux = detectMultiplexer(this.config.agent.multiplexer);
     const sessionName = `${this.config.agent.tmuxPrefix}-${agent.feature_id}`;
 
-    // Check if multiplexer session exists
-    if (!muxHasSession(mux, sessionName)) {
+    // Check if tmux session exists
+    if (!tmuxHasSession(sessionName)) {
       // No session — show message in preview
       this.monitor.activityLogs.get(agent.feature_id)?.push({
         timestamp: new Date().toISOString().slice(11, 19),
-        text: `!! No ${muxDisplayName(mux)} session '${sessionName}' found`,
+        text: `!! No tmux session '${sessionName}' found`,
       });
       this.refreshPreview();
       this.screen.render();
       return;
     }
 
-    // Detach from blessed, attach to multiplexer session
+    // Detach from blessed, attach to tmux session
     this.restoreConsole();
     this.screen.destroy();
     try {
-      muxAttach(mux, sessionName);
+      tmuxAttach(sessionName);
     } catch {
       // User detached from session — resume TUI
     }
 
-    // Re-create screen after returning from multiplexer
+    // Re-create screen after returning from tmux
     this.recreateScreen();
   }
 

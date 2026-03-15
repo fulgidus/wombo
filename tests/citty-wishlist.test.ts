@@ -1,7 +1,7 @@
 /**
  * citty-wishlist.test.ts — Tests for the citty wishlist command definition.
  *
- * Verifies that the wishlist parent command and its 3 subcommands are correctly
+ * Verifies that the wishlist parent command and its 4 subcommands are correctly
  * defined as citty commands with proper metadata, args, and subCommands.
  */
 
@@ -36,14 +36,15 @@ describe("citty wishlist command", () => {
     expect(meta.description!.length).toBeGreaterThan(0);
   });
 
-  test("wishlistCommand has all 3 subcommands defined", async () => {
+  test("wishlistCommand has all 4 subcommands defined", async () => {
     const { wishlistCommand } = await import("../src/commands/citty/wishlist.js");
     const subCommands = await resolveValue(wishlistCommand.subCommands!);
     const subCommandNames = Object.keys(subCommands);
     expect(subCommandNames).toContain("add");
     expect(subCommandNames).toContain("list");
+    expect(subCommandNames).toContain("move");
     expect(subCommandNames).toContain("delete");
-    expect(subCommandNames.length).toBe(3);
+    expect(subCommandNames.length).toBe(4);
   });
 
   test("wishlistCommand has a run handler for default subcommand behavior", async () => {
@@ -86,6 +87,18 @@ describe("citty wishlist subcommands structure", () => {
     const args = await resolveValue(cmd.args!);
     expect(args.id).toBeDefined();
     expect(args.id.type).toBe("positional");
+  });
+
+  test("move subcommand has id and position positionals", async () => {
+    const { wishlistCommand } = await import("../src/commands/citty/wishlist.js");
+    const subCommands = await resolveValue(wishlistCommand.subCommands!);
+    const cmd = await resolveValue(subCommands["move"]);
+    expect(cmd).toBeDefined();
+    const args = await resolveValue(cmd.args!);
+    expect(args.id).toBeDefined();
+    expect(args.id.type).toBe("positional");
+    expect(args.position).toBeDefined();
+    expect(args.position.type).toBe("positional");
   });
 
   test("each subcommand has a run handler", async () => {

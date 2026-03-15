@@ -97,11 +97,11 @@ describe("BRIDGE_REGISTRY subcommands", () => {
     expect(quest!.subcommands!.length).toBe(8);
   });
 
-  test("wishlist command has 3 subcommands", () => {
+  test("wishlist command has 4 subcommands", () => {
     const wishlist = BRIDGE_REGISTRY.find((c) => c.name === "wishlist");
     expect(wishlist).toBeDefined();
     expect(wishlist!.subcommands).toBeDefined();
-    expect(wishlist!.subcommands!.length).toBe(3);
+    expect(wishlist!.subcommands!.length).toBe(4);
   });
 });
 

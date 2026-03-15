@@ -26,8 +26,7 @@
             "opencode.json",
             "AGENTS.md"
         ],
-        "tmuxPrefix": "wombo",
-        "multiplexer": "auto"
+        "tmuxPrefix": "wombo-combo"
     },
     "portless": {
         "enabled": true,

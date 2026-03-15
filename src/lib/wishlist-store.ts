@@ -39,6 +39,8 @@ export interface WishlistItem {
   created_at: string;
   /** Optional tags for categorization */
   tags: string[];
+  /** Sort order (lower = higher priority). Auto-assigned on creation. */
+  order: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -84,12 +86,13 @@ function atomicWrite(filePath: string, content: string): void {
 /**
  * Normalize a parsed item to ensure all fields are present.
  */
-function normalizeItem(item: Partial<WishlistItem>): WishlistItem {
+function normalizeItem(item: Partial<WishlistItem>, fallbackOrder: number): WishlistItem {
   return {
     id: item.id ?? randomUUID(),
     text: item.text ?? "",
     created_at: item.created_at ?? new Date().toISOString(),
     tags: item.tags ?? [],
+    order: item.order ?? fallbackOrder,
   };
 }
 
@@ -116,7 +119,9 @@ export function loadWishlist(projectRoot: string): WishlistItem[] {
       return [];
     }
 
-    return parsed.map((item: unknown) => normalizeItem(item as Partial<WishlistItem>));
+    return parsed.map((item: unknown, idx: number) =>
+      normalizeItem(item as Partial<WishlistItem>, idx + 1)
+    );
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err);
     console.error(`Failed to parse ${WISHLIST_FILE}: ${reason}`);
@@ -166,11 +171,15 @@ export function addItem(
   // Trim each tag and filter out empty tags
   const cleanTags = tags.map((t) => t.trim()).filter(Boolean);
 
+  // Auto-assign order: new items go to the end
+  const maxOrder = items.reduce((max, item) => Math.max(max, item.order), 0);
+
   const newItem: WishlistItem = {
     id: randomUUID(),
     text: trimmed,
     created_at: new Date().toISOString(),
     tags: cleanTags,
+    order: maxOrder + 1,
   };
 
   items.push(newItem);
@@ -197,12 +206,58 @@ export function deleteItem(projectRoot: string, id: string): boolean {
 }
 
 /**
- * List all items in the wishlist.
- * This is a convenience alias for loadWishlist().
+ * List all items in the wishlist, sorted by order (ascending).
+ * This is a convenience wrapper around loadWishlist() with sorting applied.
  *
  * @param projectRoot — The project root directory.
- * @returns Array of all WishlistItem objects.
+ * @returns Array of all WishlistItem objects, sorted by order.
  */
 export function listItems(projectRoot: string): WishlistItem[] {
-  return loadWishlist(projectRoot);
+  return loadWishlist(projectRoot).sort((a, b) => a.order - b.order);
+}
+
+/**
+ * Move a wishlist item to a new position.
+ *
+ * Positions are 1-indexed for user-facing display. Moving an item to
+ * position N means it becomes the Nth item in the sorted list.
+ *
+ * All other items' order values are renumbered to maintain a clean
+ * sequence (1, 2, 3, ...) with no gaps.
+ *
+ * @param projectRoot — The project root directory.
+ * @param id — The UUID of the item to move.
+ * @param newPosition — The 1-indexed target position.
+ * @returns The updated item, or null if not found.
+ */
+export function moveItem(
+  projectRoot: string,
+  id: string,
+  newPosition: number
+): WishlistItem | null {
+  const items = loadWishlist(projectRoot);
+  const itemIndex = items.findIndex((item) => item.id === id);
+
+  if (itemIndex === -1) return null;
+
+  // Sort by current order to get the logical sequence
+  const sorted = [...items].sort((a, b) => a.order - b.order);
+
+  // Remove the target item from its current position
+  const currentSortedIndex = sorted.findIndex((item) => item.id === id);
+  const [movedItem] = sorted.splice(currentSortedIndex, 1);
+
+  // Clamp new position to valid range (1-indexed)
+  const clampedPos = Math.max(1, Math.min(newPosition, sorted.length + 1));
+
+  // Insert at the new position (convert 1-indexed to 0-indexed)
+  sorted.splice(clampedPos - 1, 0, movedItem);
+
+  // Renumber all items sequentially
+  for (let i = 0; i < sorted.length; i++) {
+    sorted[i].order = i + 1;
+  }
+
+  saveWishlist(projectRoot, sorted);
+  return movedItem;
 }

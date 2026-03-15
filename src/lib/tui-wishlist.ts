@@ -18,7 +18,7 @@
  *      │                          │ Tags: auth, ux              │
  *      │                          │ Created: 2025-01-15         │
  *      ├──────────────────────────┴────────────────────────────┤
- *      │ E:errand  P:quest  G:genesis  D:delete  Esc:back  Q:quit│
+ *      │ E:errand  P:quest  G:genesis  D:delete  S-↑/↓:reorder  Esc:back  Q:quit│
  *      └───────────────────────────────────────────────────────┘
  *
  *    Keybinds:
@@ -26,6 +26,7 @@
  *      P         — promote selected item to quest (pre-fill goal)
  *      G         — promote selected item to genesis (pre-fill vision)
  *      D / Del   — delete selected item
+ *      S-Up/Down — move selected item up/down in order
  *      Esc / Q   — go back to quest picker
  *
  * 2. WishlistOverlay — Modal popup overlay for quick wishlist browsing and
@@ -54,7 +55,7 @@
 import blessed from "neo-blessed";
 import type { Widgets } from "neo-blessed";
 import type { WishlistItem } from "./wishlist-store.js";
-import { loadWishlist, addItem, deleteItem } from "./wishlist-store.js";
+import { loadWishlist, addItem, deleteItem, moveItem } from "./wishlist-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -273,6 +274,15 @@ export class WishlistPicker {
     this.screen.key(["d", "delete"], () => {
       this.deleteSelected();
     });
+
+    // S-Up / S-Down -- move item up/down in order
+    this.screen.key(["S-up"], () => {
+      this.moveSelectedUp();
+    });
+
+    this.screen.key(["S-down"], () => {
+      this.moveSelectedDown();
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -309,10 +319,37 @@ export class WishlistPicker {
 
     deleteItem(this.projectRoot, item.id);
     this.loadItems();
-    this.selectedIndex = Math.min(
-      this.selectedIndex,
-      Math.max(0, this.items.length - 1)
-    );
+
+    if (this.selectedIndex >= this.items.length && this.items.length > 0) {
+      this.selectedIndex = this.items.length - 1;
+    }
+
+    this.refreshAll();
+    this.screen.render();
+  }
+
+  private moveSelectedUp(): void {
+    const item = this.items[this.selectedIndex];
+    if (!item || this.selectedIndex <= 0) return;
+
+    const newPos = this.selectedIndex; // move from 1-indexed (selectedIndex+1) to selectedIndex
+    moveItem(this.projectRoot, item.id, newPos);
+    this.loadItems();
+    this.selectedIndex = newPos - 1;
+    this.itemList.select(this.selectedIndex);
+    this.refreshAll();
+    this.screen.render();
+  }
+
+  private moveSelectedDown(): void {
+    const item = this.items[this.selectedIndex];
+    if (!item || this.selectedIndex >= this.items.length - 1) return;
+
+    const newPos = this.selectedIndex + 2; // move from 1-indexed (selectedIndex+1) to selectedIndex+2
+    moveItem(this.projectRoot, item.id, newPos);
+    this.loadItems();
+    this.selectedIndex = newPos - 1;
+    this.itemList.select(this.selectedIndex);
     this.refreshAll();
     this.screen.render();
   }
@@ -341,9 +378,12 @@ export class WishlistPicker {
   private refreshList(): void {
     const listItems: string[] = [];
 
-    for (const item of this.items) {
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      const pos = String(i + 1).padStart(2, " ");
+
       // Truncate text for list display
-      const maxLen = 40;
+      const maxLen = 38;
       const text = item.text.length > maxLen
         ? item.text.slice(0, maxLen - 1) + "\u2026"
         : item.text;
@@ -357,7 +397,7 @@ export class WishlistPicker {
       const created = item.created_at.slice(0, 10);
 
       listItems.push(
-        ` {yellow-fg}\u2022{/yellow-fg} ${escapeBlessedTags(text)}${tagsBadge} {gray-fg}${created}{/gray-fg}`
+        ` {gray-fg}${pos}.{/gray-fg} {yellow-fg}\u2022{/yellow-fg} ${escapeBlessedTags(text)}${tagsBadge} {gray-fg}${created}{/gray-fg}`
       );
     }
 
@@ -446,6 +486,7 @@ export class WishlistPicker {
     line1 += `  {gray-fg}P{/gray-fg} quest`;
     line1 += `  {gray-fg}G{/gray-fg} genesis`;
     line1 += `  {gray-fg}D{/gray-fg} delete`;
+    line1 += `  {gray-fg}S-\u2191/S-\u2193{/gray-fg} reorder`;
     line1 += `  {gray-fg}Esc{/gray-fg} back`;
     line1 += `  {gray-fg}Q{/gray-fg} quit`;
 
@@ -599,6 +640,17 @@ export class WishlistOverlay {
       this.deleteSelected();
     });
 
+    // S-Up / S-Down — move item up/down in order
+    this.itemList.key(["S-up"], () => {
+      if (this.addingItem) return;
+      this.moveSelectedUp();
+    });
+
+    this.itemList.key(["S-down"], () => {
+      if (this.addingItem) return;
+      this.moveSelectedDown();
+    });
+
     // --- Input box bindings ---
     this.inputBox.on("submit", (value: string) => {
       this.submitNewItem(value);
@@ -628,11 +680,13 @@ export class WishlistOverlay {
 
     const listItems: string[] = [];
 
-    for (const item of this.items) {
+    for (let i = 0; i < this.items.length; i++) {
+      const item = this.items[i];
+      const pos = String(i + 1).padStart(2, " ");
       const date = formatDate(item.created_at);
       const text =
-        item.text.length > 50
-          ? item.text.slice(0, 49) + "\u2026"
+        item.text.length > 48
+          ? item.text.slice(0, 47) + "\u2026"
           : item.text;
       const tags =
         item.tags.length > 0
@@ -640,7 +694,7 @@ export class WishlistOverlay {
           : "";
 
       listItems.push(
-        ` ${escapeBlessedTags(text)}${tags}  {gray-fg}${date}{/gray-fg}`
+        ` {gray-fg}${pos}.{/gray-fg} ${escapeBlessedTags(text)}${tags}  {gray-fg}${date}{/gray-fg}`
       );
     }
 
@@ -661,7 +715,7 @@ export class WishlistOverlay {
       );
     } else {
       this.footerBox.setContent(
-        " {gray-fg}A{/gray-fg} add  {gray-fg}D/X{/gray-fg} delete  {gray-fg}Esc/W{/gray-fg} close"
+        " {gray-fg}A{/gray-fg} add  {gray-fg}D/X{/gray-fg} delete  {gray-fg}S-\u2191/\u2193{/gray-fg} reorder  {gray-fg}Esc/W{/gray-fg} close"
       );
     }
   }
@@ -669,6 +723,36 @@ export class WishlistOverlay {
   // -------------------------------------------------------------------------
   // Actions
   // -------------------------------------------------------------------------
+
+  private moveSelectedUp(): void {
+    if (this.items.length === 0 || this.selectedIndex <= 0) return;
+
+    const item = this.items[this.selectedIndex];
+    const newPos = this.selectedIndex; // 1-indexed: selectedIndex+1 -> selectedIndex
+    moveItem(this.projectRoot, item.id, newPos);
+
+    this.items = loadWishlist(this.projectRoot);
+    this.selectedIndex = newPos - 1;
+
+    this.refreshList();
+    this.modal.setLabel(this.buildLabel());
+    this.screen.render();
+  }
+
+  private moveSelectedDown(): void {
+    if (this.items.length === 0 || this.selectedIndex >= this.items.length - 1) return;
+
+    const item = this.items[this.selectedIndex];
+    const newPos = this.selectedIndex + 2; // 1-indexed: selectedIndex+1 -> selectedIndex+2
+    moveItem(this.projectRoot, item.id, newPos);
+
+    this.items = loadWishlist(this.projectRoot);
+    this.selectedIndex = newPos - 1;
+
+    this.refreshList();
+    this.modal.setLabel(this.buildLabel());
+    this.screen.render();
+  }
 
   private showAddInput(): void {
     this.addingItem = true;

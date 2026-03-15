@@ -10,7 +10,7 @@
 
 Agents spawned in **headless mode** are tied to the parent process (`detached: false`, no `unref()`). They die when the parent exits. This is intentional — piped stdio is required for real-time JSON event parsing by `ProcessMonitor`.
 
-Agents spawned in **interactive mode** run inside dmux/tmux sessions and survive parent death naturally.
+Agents spawned in **interactive mode** run inside tmux sessions and survive parent death naturally.
 
 **No changes are required.** The current design is correct for both modes. Recovery from ungraceful parent death is handled by `woco resume`.
 

@@ -55,7 +55,6 @@ import { generatePrompt, type QuestPromptContext } from "../lib/prompt.js";
 import {
   launchInteractive,
   isProcessRunning,
-  getMultiplexerName,
 } from "../lib/launcher.js";
 import { ProcessMonitor } from "../lib/monitor.js";
 import { pushBaseBranch } from "../lib/merger.js";
@@ -73,10 +72,6 @@ import {
   rescueChainPredecessors,
   dumpFailedAgentLogs,
 } from "./launch.js";
-import {
-  detectMultiplexer,
-  muxAttachCommand,
-} from "../lib/multiplexer.js";
 import { exportWaveHistory } from "../lib/history.js";
 import { outputError, outputMessage, type OutputFormat } from "../lib/output.js";
 import {
@@ -489,11 +484,10 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             agentName,
           });
 
-          const muxName = getMultiplexerName(config);
           updateAgent(state, agent.feature_id, {
             status: "running",
             pid: result.pid,
-            activity: `${muxName} session active`,
+            activity: `tmux session active`,
           });
           saveState(projectRoot, state);
         } catch (err: any) {
@@ -510,8 +504,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
     if (fmt === "text") {
       printDashboard(state);
-      const mux = detectMultiplexer(config.agent.multiplexer);
-      console.log(`\nResume complete. Use '${muxAttachCommand(mux, `${config.agent.tmuxPrefix}-<id>`)}' to check sessions.`);
+      console.log(`\nResume complete. Use 'tmux attach-session -t ${config.agent.tmuxPrefix}-<id>' to check sessions.`);
     }
   } else {
     // Headless resume — re-enter monitoring loop

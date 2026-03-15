@@ -7,7 +7,7 @@
  * accepting overrides.  Press Enter on any prompt to keep the default.
  *
  * Key behaviors:
- *   - Checks for required external tools (git, tmux/dmux, portless) when
+ *   - Checks for required external tools (git, tmux, portless) when
  *     the user selects options that depend on them.
  *   - If a tool is missing, offers to install it or defers a reminder to
  *     the end of init.
@@ -182,11 +182,6 @@ function getInstallCommand(bin: string): string | null {
       }
       return null;
 
-    case "dmux":
-      // dmux is typically installed from source or via cargo
-      if (isBinAvailable("cargo")) return "cargo install dmux";
-      return null;
-
     case "portless":
       if (isBinAvailable("npm")) return "npm install -g portless";
       if (isBinAvailable("bun")) return "bun install -g portless";
@@ -286,75 +281,19 @@ export async function cmdInit(opts: InitOptions): Promise<void> {
       "Config files to copy (comma-sep)",
       cfg.agent.configFiles
     );
-    cfg.agent.tmuxPrefix = await p.string("Multiplexer session prefix", cfg.agent.tmuxPrefix);
-    const muxPref = await p.string(
-      "Multiplexer preference (auto/dmux/tmux)",
-      cfg.agent.multiplexer
-    );
-    if (muxPref === "auto" || muxPref === "dmux" || muxPref === "tmux") {
-      cfg.agent.multiplexer = muxPref;
-    } else {
-      console.log(`  Invalid multiplexer "${muxPref}", using "auto".`);
-      cfg.agent.multiplexer = "auto";
-    }
+    cfg.agent.tmuxPrefix = await p.string("tmux session prefix", cfg.agent.tmuxPrefix);
 
-    // Check multiplexer availability
-    if (cfg.agent.multiplexer === "dmux") {
-      await checkDependency(
-        {
-          bin: "dmux",
-          name: "dmux",
-          installHint: "cargo install dmux  or  https://github.com/nicholasgasior/dmux",
-          requiredBy: "multiplexer (agent.multiplexer = dmux)",
-        },
-        p,
-        deferredWarnings
-      );
-    } else if (cfg.agent.multiplexer === "tmux") {
-      await checkDependency(
-        {
-          bin: "tmux",
-          name: "tmux",
-          installHint: "https://github.com/tmux/tmux",
-          requiredBy: "multiplexer (agent.multiplexer = tmux)",
-        },
-        p,
-        deferredWarnings
-      );
-    } else {
-      // "auto" — check both, warn only if neither is found
-      const hasDmux = isBinAvailable("dmux");
-      const hasTmux = isBinAvailable("tmux");
-      if (!hasDmux && !hasTmux) {
-        console.log(`\n  \x1b[33m[WARNING]\x1b[0m No terminal multiplexer found (dmux or tmux).`);
-        console.log(`  Interactive mode (--interactive) requires a multiplexer.`);
-        const installTmux = await p.yesNo("Attempt to install tmux?", false);
-        if (installTmux) {
-          const installed = await tryInstall(
-            {
-              bin: "tmux",
-              name: "tmux",
-              installHint: "https://github.com/tmux/tmux",
-              requiredBy: "multiplexer (interactive mode)",
-            },
-            p
-          );
-          if (!installed) {
-            deferredWarnings.push(
-              "  - tmux or dmux: needed for interactive mode (--interactive). Install one:\n" +
-              "      tmux: https://github.com/tmux/tmux\n" +
-              "      dmux: https://github.com/nicholasgasior/dmux"
-            );
-          }
-        } else {
-          deferredWarnings.push(
-            "  - tmux or dmux: needed for interactive mode (--interactive). Install one:\n" +
-            "      tmux: https://github.com/tmux/tmux\n" +
-            "      dmux: https://github.com/nicholasgasior/dmux"
-          );
-        }
-      }
-    }
+    // Check tmux availability
+    await checkDependency(
+      {
+        bin: "tmux",
+        name: "tmux",
+        installHint: "https://github.com/tmux/tmux",
+        requiredBy: "interactive mode (--interactive)",
+      },
+      p,
+      deferredWarnings
+    );
 
     // -- Agent Registry ---------------------------------------------------
     section("Agent Registry (specialized agent downloads)");

@@ -129,7 +129,7 @@ const ENTRIES: RegistryEntry[] = [
         allReady: { description: "Select all features whose dependencies are met", default: false },
         maxConcurrent: { type: "number", description: "Max agents running in parallel" },
         model: { description: "Model to use (e.g., anthropic/claude-sonnet-4-20250514)" },
-        interactive: { description: "Use multiplexer (dmux/tmux) TUI mode instead of headless", default: false },
+        interactive: { description: "Use tmux TUI mode instead of headless", default: false },
         dryRun: { description: "Show what would be launched without launching", default: false },
         noTui: { description: "Headless mode without neo-blessed TUI", default: false },
         autoPush: { description: "Push base branch to remote after all merges", default: false },
@@ -160,7 +160,7 @@ const ENTRIES: RegistryEntry[] = [
       flagOverrides: {
         maxConcurrent: { type: "number", description: "Max agents running in parallel" },
         model: { description: "Model to use" },
-        interactive: { description: "Use multiplexer (dmux/tmux) TUI mode", default: false },
+        interactive: { description: "Use tmux TUI mode", default: false },
         noTui: { description: "Headless mode without neo-blessed TUI", default: false },
         autoPush: { description: "Push base branch to remote after merges", default: false },
         baseBranch: { description: "Base branch override" },
@@ -236,7 +236,7 @@ const ENTRIES: RegistryEntry[] = [
       },
       flagOverrides: {
         model: { description: "Model to use" },
-        interactive: { description: "Use multiplexer (dmux/tmux) TUI mode", default: false },
+        interactive: { description: "Use tmux TUI mode", default: false },
         dryRun: { description: "Show what would be retried without retrying", default: false },
       },
     },
@@ -246,12 +246,12 @@ const ENTRIES: RegistryEntry[] = [
   {
     cittyCmd: cleanupCommand,
     meta: {
-      summary: "Remove all wave worktrees and multiplexer sessions",
+      summary: "Remove all wave worktrees and tmux sessions",
       aliases: ["c"],
       mutating: true,
       supportsDryRun: true,
       completionSummary: "Remove worktrees",
-      description: "Kills multiplexer sessions, removes worktrees, removes state and log files.",
+      description: "Kills tmux sessions, removes worktrees, removes state and log files.",
       flagOverrides: {
         dryRun: { description: "Show what would be cleaned up without removing", default: false },
       },
@@ -309,7 +309,7 @@ const ENTRIES: RegistryEntry[] = [
       supportsDryRun: false,
       completionSummary: "Kill running agent",
       description:
-        "Kills the multiplexer session and agent process for a specific feature, then " +
+        "Kills the tmux session and agent process for a specific feature, then " +
         "marks the agent as failed. Use --requeue to return the feature to the " +
         "queue instead of marking it failed.",
       positionalOverrides: {
@@ -735,6 +735,16 @@ const ENTRIES: RegistryEntry[] = [
           summary: "List all wishlist items",
           aliases: ["ls"],
           mutating: false,
+          supportsDryRun: false,
+        },
+      },
+      {
+        subKey: "move",
+        parentName: "wishlist",
+        meta: {
+          summary: "Move a wishlist item to a new position",
+          aliases: ["mv"],
+          mutating: true,
           supportsDryRun: false,
         },
       },

@@ -119,7 +119,7 @@ import { resolveOutputFormat, output, outputError, type OutputFormat } from "./l
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
 import { findCommandDef, commandToSchema, allCommandSchemas, renderCommandHelp, renderGlobalHelp, COMMAND_REGISTRY, buildAliasMap } from "./lib/schema.js";
 import { buildToonSpec, renderToonLegend } from "./lib/toon-spec.js";
-import { addItem as addWishlistItem, deleteItem as deleteWishlistItem, listItems as listWishlistItems } from "./lib/wishlist-store.js";
+import { addItem as addWishlistItem, deleteItem as deleteWishlistItem, listItems as listWishlistItems, moveItem as moveWishlistItem } from "./lib/wishlist-store.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1203,13 +1203,54 @@ function handleWishlistSubcommand(
             return;
           }
           console.log(`Wishlist (${items.length} item${items.length === 1 ? "" : "s"}):\n`);
-          for (const item of items) {
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const pos = String(i + 1).padStart(2, " ");
             const tags = item.tags.length > 0 ? ` [${item.tags.join(", ")}]` : "";
             const date = new Date(item.created_at).toLocaleDateString();
-            console.log(`  ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
+            console.log(`  ${pos}. ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
           }
         }
       );
+      break;
+    }
+
+    case "move": {
+      if (!args.featureId) {
+        outputError(args.outputFmt, "Usage: woco wishlist move <id> <position>");
+        return;
+      }
+
+      const posStr = args.title; // second positional arg is the target position
+      const position = posStr ? parseInt(posStr, 10) : NaN;
+      if (isNaN(position) || position < 1) {
+        outputError(args.outputFmt, "Position must be a positive integer. Usage: woco wishlist move <id> <position>");
+        return;
+      }
+
+      // Support both full UUIDs and short prefixes
+      const allItems = listWishlistItems(projectRoot);
+      const moveMatch = allItems.find(
+        (item) => item.id === args.featureId || item.id.startsWith(args.featureId!)
+      );
+
+      if (!moveMatch) {
+        outputError(args.outputFmt, `No wishlist item found matching: ${args.featureId}`);
+        return;
+      }
+
+      const moved = moveWishlistItem(projectRoot, moveMatch.id, position);
+      if (moved) {
+        output(
+          args.outputFmt,
+          { moved: true, id: moved.id, text: moved.text, order: moved.order },
+          () => {
+            console.log(`Moved "${moved.text}" to position ${moved.order}`);
+          }
+        );
+      } else {
+        outputError(args.outputFmt, `Failed to move wishlist item: ${moveMatch.id}`);
+      }
       break;
     }
 

@@ -16,6 +16,7 @@ import {
   addItem as addWishlistItem,
   listItems as listWishlistItems,
   deleteItem as deleteWishlistItem,
+  moveItem as moveWishlistItem,
 } from "../../lib/wishlist-store.js";
 
 // ---------------------------------------------------------------------------
@@ -131,13 +132,83 @@ const listCommand = defineCommand({
           return;
         }
         console.log(`Wishlist (${items.length} item${items.length === 1 ? "" : "s"}):\n`);
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const pos = String(i + 1).padStart(3);
           const tags = item.tags.length > 0 ? ` [${item.tags.join(", ")}]` : "";
           const date = new Date(item.created_at).toLocaleDateString();
-          console.log(`  ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
+          console.log(`  ${pos}. ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
         }
       }
     );
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Subcommand: move
+// ---------------------------------------------------------------------------
+
+const moveCommand = defineCommand({
+  meta: {
+    name: "move",
+    description: "Move a wishlist item to a new position (also: mv)",
+  },
+  args: {
+    id: {
+      type: "positional",
+      description: "Wishlist item ID (or prefix)",
+      required: true,
+    },
+    position: {
+      type: "positional",
+      description: "Target position (1-indexed)",
+      required: true,
+    },
+    output: {
+      type: "string",
+      alias: "o",
+      description: "Output format: text, json, or toon",
+      required: false,
+    },
+  },
+  async run({ args }) {
+    const { projectRoot } = await loadProjectContext();
+    const fmt = resolveOutputFormat(args.output);
+
+    if (!args.id || !args.position) {
+      outputError(fmt, "Usage: woco wishlist move <id> <position>");
+      return;
+    }
+
+    const newPos = parseInt(args.position, 10);
+    if (isNaN(newPos) || newPos < 1) {
+      outputError(fmt, "Position must be a positive integer (1-indexed).");
+      return;
+    }
+
+    // Support both full UUIDs and short prefixes
+    const items = listWishlistItems(projectRoot);
+    const match = items.find(
+      (item) => item.id === args.id || item.id.startsWith(args.id!)
+    );
+
+    if (!match) {
+      outputError(fmt, `No wishlist item found matching: ${args.id}`);
+      return;
+    }
+
+    const moved = moveWishlistItem(projectRoot, match.id, newPos);
+    if (moved) {
+      output(
+        fmt,
+        { moved: true, id: moved.id, text: moved.text, order: moved.order },
+        () => {
+          console.log(`Moved "${moved.text}" to position ${moved.order}.`);
+        }
+      );
+    } else {
+      outputError(fmt, `Failed to move wishlist item: ${match.id}`);
+    }
   },
 });
 
@@ -210,6 +281,7 @@ export const wishlistCommand = defineCommand({
   subCommands: {
     add: addCommand,
     list: listCommand,
+    move: moveCommand,
     delete: deleteCommand,
   },
   // Default behavior: when invoked as bare `woco wishlist`, run `wishlist list`
@@ -227,10 +299,12 @@ export const wishlistCommand = defineCommand({
           return;
         }
         console.log(`Wishlist (${items.length} item${items.length === 1 ? "" : "s"}):\n`);
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          const pos = String(i + 1).padStart(3);
           const tags = item.tags.length > 0 ? ` [${item.tags.join(", ")}]` : "";
           const date = new Date(item.created_at).toLocaleDateString();
-          console.log(`  ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
+          console.log(`  ${pos}. ${item.id.slice(0, 8)}  ${item.text}${tags}  (${date})`);
         }
       }
     );

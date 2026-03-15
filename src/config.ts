@@ -7,7 +7,6 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { MultiplexerPreference } from "./lib/multiplexer.js";
 
 // ---------------------------------------------------------------------------
 // .wombo-combo directory constant
@@ -67,10 +66,8 @@ export interface WomboConfig {
     name: string;
     /** Config files/dirs to copy into worktrees */
     configFiles: string[];
-    /** Session name prefix for terminal multiplexer */
+    /** Session name prefix for tmux sessions */
     tmuxPrefix: string;
-    /** Terminal multiplexer preference: "auto" (prefer dmux), "dmux", or "tmux" */
-    multiplexer: MultiplexerPreference;
   };
   /** Portless integration for localhost server testing */
   portless: {
@@ -101,6 +98,8 @@ export interface WomboConfig {
   agentRegistry: AgentRegistryConfig;
   /** Test-Driven Development configuration */
   tdd: TddConfig;
+  /** Merge conflict resolution configuration */
+  merge: MergeEscalationConfig;
   /** Developer mode: enables hidden features like fake task seeding in TUI */
   devMode: boolean;
 }
@@ -155,6 +154,25 @@ export interface TddConfig {
   testTimeout: number;
 }
 
+/** Maximum tier the merge conflict pipeline will escalate to */
+export type MaxEscalationTier = "tier3" | "tier3.5" | "tier4";
+
+/** Configuration for the merge conflict resolution escalation pipeline */
+export interface MergeEscalationConfig {
+  /**
+   * Maximum escalation tier for conflict resolution.
+   *
+   * Controls how aggressively the system tries to resolve merge conflicts:
+   *   - "tier3":   Stop at enriched single-shot LLM resolution (1 LLM call)
+   *   - "tier3.5": Also try rebase strategy with per-commit resolution (1+ LLM calls)
+   *   - "tier4":   Also try nuclear re-run — re-implement feature from scratch (1 expensive LLM call)
+   *
+   * Tiers 1, 2, and 2.5 (programmatic resolution) always run regardless of this setting.
+   * Default: "tier4"
+   */
+  maxEscalation: MaxEscalationTier;
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -181,8 +199,7 @@ export const DEFAULT_CONFIG: WomboConfig = {
     bin: null,
     name: "generalist-agent",
     configFiles: [".opencode/", "opencode.json", "AGENTS.md"],
-    tmuxPrefix: "wombo",
-    multiplexer: "auto",
+    tmuxPrefix: "wombo-combo",
   },
   portless: {
     enabled: true,
@@ -220,6 +237,9 @@ export const DEFAULT_CONFIG: WomboConfig = {
     testCommand: "bun test",
     strictTdd: false,
     testTimeout: 120_000,
+  },
+  merge: {
+    maxEscalation: "tier4",
   },
   devMode: false,
 };

@@ -103,7 +103,7 @@ tech_stack:
     - yaml v2 (YAML parse/stringify)
     - git worktrees (agent isolation)
     - mermaidtui (Mermaid diagram rendering in TUI)
-    - tmux / dmux (terminal multiplexer for agent sessions)
+    - tmux (terminal multiplexer for agent sessions)
     - tsc (typecheck --noEmit)
     - bun build (single-file bundle to dist/)
     - bun test (built-in test runner)
@@ -286,7 +286,7 @@ codebase_summary: |-
       launcher.ts [19]
       merger.ts [14]
       monitor.ts [8]
-      multiplexer.ts [17]
+      tmux.ts [12]
       output.ts [8]
       portless.ts [9]
       preflight.ts [3]

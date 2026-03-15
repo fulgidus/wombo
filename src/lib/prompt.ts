@@ -15,6 +15,7 @@ import type { WomboConfig } from "../config.js";
 import { isPortlessAvailable, portlessUrl } from "./portless.js";
 import type { QuestHitlMode } from "./quest.js";
 import { compressConstraints, compressSource } from "./prompt-compress.js";
+import { formatHunksForLLM, type Tier25Result } from "./conflict-hunks.js";
 
 // ---------------------------------------------------------------------------
 // Quest Context (optional — passed when launching within a quest)
@@ -403,20 +404,43 @@ export function generatePrompt(
 // ---------------------------------------------------------------------------
 
 /**
+ * Additional context for enriched conflict resolution prompts (Tier 3).
+ * Contains structured hunk data from Tier 2.5 and git diffs.
+ */
+export interface ConflictResolutionContext {
+  /** Structured hunk data from Tier 2.5 (if available) */
+  tier25Result?: Tier25Result;
+  /** Output of `git diff base...feature` — what the feature changed */
+  featureDiff?: string;
+  /** Output of `git diff base...HEAD` — what upstream changed */
+  upstreamDiff?: string;
+}
+
+/**
  * Generate a prompt for an agent that resolves merge conflicts.
+ *
+ * Tier 3 (enriched): When Tier 2.5 structured hunk data is provided, the prompt
+ * includes parsed conflict hunks with base/ours/theirs content, classification
+ * metadata, and contextual diffs — giving the LLM much better information than
+ * raw conflict markers.
  *
  * The agent is launched in the feature worktree AFTER `git merge <baseBranch>`
  * has been run there, leaving conflict markers in the working tree.
  *
- * @param quest - Optional quest context. When provided, adds quest information
- *                to help the conflict resolver understand the broader mission.
+ * @param feature - The feature being merged
+ * @param baseBranch - The base branch being merged from
+ * @param mergeError - Raw merge error output
+ * @param config - Project configuration
+ * @param quest - Optional quest context
+ * @param conflictContext - Optional structured conflict data from Tier 2.5
  */
 export function generateConflictResolutionPrompt(
   feature: Feature,
   baseBranch: string,
   mergeError: string,
   config: WomboConfig,
-  quest?: QuestPromptContext
+  quest?: QuestPromptContext,
+  conflictContext?: ConflictResolutionContext
 ): string {
   const sections: string[] = [];
 
@@ -432,11 +456,34 @@ export function generateConflictResolutionPrompt(
     `merged INTO this feature branch's worktree, so the conflict markers are present in the working tree right now.`
   );
 
-  sections.push(`\n## Merge Error Output\n`);
-  sections.push("```");
-  sections.push(mergeError);
-  sections.push("```");
+  // Tier 2.5 surgical resolution summary
+  if (conflictContext?.tier25Result) {
+    const t25 = conflictContext.tier25Result;
+    sections.push(`\n## Pre-Resolution Summary (Automated)\n`);
+    sections.push(
+      `An automated tier 2.5 surgical resolver already processed the conflicts:\n` +
+      `- **${t25.resolvedHunkCount}** of **${t25.totalHunks}** hunks resolved programmatically\n` +
+      `- **${t25.resolvedFiles.length}** file(s) fully resolved: ${t25.resolvedFiles.join(", ") || "(none)"}\n` +
+      `- **${t25.unresolvedFiles.length}** file(s) still need your help: ${t25.unresolvedFiles.join(", ")}\n\n` +
+      `The resolved hunks have already been applied. You only need to handle the remaining unresolved hunks below.`
+    );
+  }
 
+  // Structured conflict hunks (Tier 3 enrichment)
+  if (conflictContext?.tier25Result) {
+    const hunkText = formatHunksForLLM(conflictContext.tier25Result.fileResults);
+    if (hunkText.trim()) {
+      sections.push(`\n## Unresolved Conflict Hunks\n`);
+      sections.push(
+        `Each hunk below shows the **base** (common ancestor), **ours** (your feature), ` +
+        `and **theirs** (upstream changes). Your job is to produce a merged version that ` +
+        `preserves the intent of both sides.\n`
+      );
+      sections.push(hunkText);
+    }
+  }
+
+  // Feature description
   sections.push(`\n## Feature Description\n`);
   sections.push(feature.description.trim());
 
@@ -450,6 +497,40 @@ export function generateConflictResolutionPrompt(
       `Keep the quest goal in mind when resolving conflicts — prefer resolutions ` +
       `that align with the quest's intent.`
     );
+  }
+
+  // Contextual diffs — what each side changed
+  if (conflictContext?.featureDiff || conflictContext?.upstreamDiff) {
+    sections.push(`\n## Contextual Diffs\n`);
+    sections.push(
+      `These diffs show what each side changed relative to the common ancestor. ` +
+      `Use them to understand the intent behind each change.\n`
+    );
+
+    if (conflictContext.featureDiff) {
+      sections.push(`### Feature Branch Changes (what you implemented)\n`);
+      sections.push("```diff");
+      // Truncate if very large to avoid overwhelming the LLM
+      const featureDiff = truncateDiff(conflictContext.featureDiff, 5000);
+      sections.push(featureDiff);
+      sections.push("```");
+    }
+
+    if (conflictContext.upstreamDiff) {
+      sections.push(`\n### Upstream Changes (what others merged into ${baseBranch})\n`);
+      sections.push("```diff");
+      const upstreamDiff = truncateDiff(conflictContext.upstreamDiff, 5000);
+      sections.push(upstreamDiff);
+      sections.push("```");
+    }
+  }
+
+  // Merge error output (fallback context when structured data isn't available)
+  if (!conflictContext?.tier25Result) {
+    sections.push(`\n## Merge Error Output\n`);
+    sections.push("```");
+    sections.push(mergeError);
+    sections.push("```");
   }
 
   sections.push(`\n## Your Task\n`);
@@ -476,6 +557,172 @@ export function generateConflictResolutionPrompt(
   sections.push(`- Do NOT modify \`${config.tasksDir}\``);
   sections.push("- Keep BOTH the feature's changes and the upstream changes where possible");
   sections.push("- If in doubt, prefer the feature's implementation but ensure upstream additions are not lost");
+  sections.push("- This is your ONE chance — there are no retries. Be thorough and careful.");
+
+  return sections.join("\n");
+}
+
+/**
+ * Truncate a diff to a maximum number of lines, appending a note if truncated.
+ */
+function truncateDiff(diff: string, maxLines: number): string {
+  const lines = diff.split("\n");
+  if (lines.length <= maxLines) return diff;
+  return lines.slice(0, maxLines).join("\n") + `\n\n... (truncated — ${lines.length - maxLines} more lines)`;
+}
+
+/**
+ * Generate a prompt for Tier 4 "nuclear re-run" — re-implementing a feature
+ * from scratch on the current base branch, using the original feature's diff
+ * as a reference implementation.
+ *
+ * @param feature - The feature to re-implement
+ * @param baseBranch - The current base branch
+ * @param featureDiff - The diff from the original feature implementation
+ * @param config - Project configuration
+ * @param quest - Optional quest context
+ */
+export function generateTier4RerunPrompt(
+  feature: Feature,
+  baseBranch: string,
+  featureDiff: string,
+  config: WomboConfig,
+  quest?: QuestPromptContext
+): string {
+  const sections: string[] = [];
+
+  sections.push(`# Re-implement Feature: ${feature.title}`);
+  sections.push(`**Feature ID:** \`${feature.id}\``);
+  sections.push(`**Base Branch:** \`${baseBranch}\``);
+
+  sections.push(`\n## Situation\n`);
+  sections.push(
+    `This feature was previously implemented on an older version of the codebase, ` +
+    `but the codebase has changed significantly and the original implementation could not ` +
+    `be merged cleanly. Multiple automated conflict resolution strategies have failed.\n\n` +
+    `You are starting from a **clean checkout of the current \`${baseBranch}\`**. ` +
+    `Your task is to re-implement the feature from scratch, using the reference ` +
+    `implementation below as a guide for what the feature should do.`
+  );
+
+  sections.push(`\n## Feature Description\n`);
+  sections.push(feature.description.trim());
+
+  // Quest context
+  if (quest) {
+    sections.push(`\n## Quest Context\n`);
+    sections.push(
+      `This task is part of **Quest \`${quest.questId}\`** with goal: ${quest.goal}\n`
+    );
+    if (quest.knowledge) {
+      sections.push(`### Quest Knowledge\n`);
+      sections.push(quest.knowledge);
+    }
+  }
+
+  // Feature constraints and subtasks
+  if (feature.constraints.length > 0) {
+    sections.push(`\n## Constraints\n`);
+    for (const c of feature.constraints) {
+      sections.push(`- ${c}`);
+    }
+  }
+
+  if (feature.forbidden.length > 0) {
+    sections.push(`\n## Forbidden\n`);
+    for (const f of feature.forbidden) {
+      sections.push(`- ${f}`);
+    }
+  }
+
+  sections.push(`\n## Reference Implementation (previous attempt)\n`);
+  sections.push(
+    `The diff below shows what the previous implementation changed. Use this as a ` +
+    `guide for WHAT to implement, but adapt it to the CURRENT state of the codebase. ` +
+    `Do not blindly apply this diff — the file contents may have changed.\n`
+  );
+  sections.push("```diff");
+  sections.push(truncateDiff(featureDiff, 8000));
+  sections.push("```");
+
+  sections.push(`\n## Your Task\n`);
+  sections.push("1. Study the reference implementation above to understand the feature's intent");
+  sections.push("2. Examine the current codebase to understand what has changed");
+  sections.push("3. Re-implement the feature, adapting to the current code");
+  sections.push("4. Run the build to verify everything compiles:");
+  sections.push("   ```bash");
+  sections.push(`   ${config.build.command}`);
+  sections.push("   ```");
+  sections.push("5. Fix any build errors");
+  sections.push("6. Commit your changes:");
+  sections.push("   ```bash");
+  sections.push("   git add -A");
+  sections.push(`   git commit -m "feat(${feature.id}): re-implement ${feature.title}"`);
+  sections.push("   ```");
+
+  sections.push(`\n## Rules\n`);
+  sections.push("- Do NOT push to remote");
+  sections.push(`- Do NOT modify \`${config.tasksDir}\``);
+  sections.push("- Implement the full feature — do not leave TODOs or stubs");
+  sections.push("- Ensure the build passes before committing");
+
+  return sections.join("\n");
+}
+
+/**
+ * Generate a prompt for resolving conflicts during a per-commit rebase (Tier 3.5).
+ *
+ * This is a smaller-scope version of the conflict resolution prompt — it's for
+ * a single commit being replayed during `git rebase`, not the full feature merge.
+ *
+ * @param feature - The feature being rebased
+ * @param commitMessage - The commit message being replayed
+ * @param commitHash - The commit hash being replayed
+ * @param conflictFiles - Files with conflicts in this commit
+ * @param totalCommits - Total commits to replay
+ * @param currentCommit - Current commit number (1-indexed)
+ * @param config - Project configuration
+ */
+export function generateRebaseCommitPrompt(
+  feature: Feature,
+  commitMessage: string,
+  commitHash: string,
+  conflictFiles: string[],
+  totalCommits: number,
+  currentCommit: number,
+  config: WomboConfig
+): string {
+  const sections: string[] = [];
+
+  sections.push(`# Rebase Conflict Resolution (commit ${currentCommit}/${totalCommits})`);
+  sections.push(`**Feature:** ${feature.title} (\`${feature.id}\`)`);
+  sections.push(`**Commit:** \`${commitHash.substring(0, 8)}\` — ${commitMessage}`);
+  sections.push(`**Conflicting files:** ${conflictFiles.join(", ")}`);
+
+  sections.push(`\n## Situation\n`);
+  sections.push(
+    `This is a single commit from the feature branch being replayed on top of the ` +
+    `current base. The rebase paused because this commit conflicts with upstream changes.\n\n` +
+    `The scope is SMALL — only this one commit's changes need to be reconciled.`
+  );
+
+  sections.push(`\n## Your Task\n`);
+  sections.push("1. Resolve the conflict markers in the listed files");
+  sections.push("2. Keep the intent of this commit while integrating upstream changes");
+  sections.push("3. Run the build to verify:");
+  sections.push("   ```bash");
+  sections.push(`   ${config.build.command}`);
+  sections.push("   ```");
+  sections.push("4. Stage resolved files and continue:");
+  sections.push("   ```bash");
+  sections.push("   git add -A");
+  sections.push("   git -c core.editor=true rebase --continue");
+  sections.push("   ```");
+
+  sections.push(`\n## Rules\n`);
+  sections.push("- Do NOT abort the rebase");
+  sections.push("- Do NOT push to remote");
+  sections.push("- Keep changes minimal — only fix this commit's conflicts");
 
   return sections.join("\n");
 }

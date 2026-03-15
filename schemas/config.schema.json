@@ -118,14 +118,8 @@
         },
         "tmuxPrefix": {
           "type": "string",
-          "default": "woco",
-          "description": "Session name prefix for terminal multiplexer"
-        },
-        "multiplexer": {
-          "type": "string",
-          "enum": ["auto", "dmux", "tmux"],
-          "default": "auto",
-          "description": "Terminal multiplexer preference"
+          "default": "wombo-combo",
+          "description": "Session name prefix for tmux"
         }
       }
     },

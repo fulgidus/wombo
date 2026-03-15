@@ -170,15 +170,9 @@
     - agents
     - multi-cli
     - providers
-- id: f10f8b20-3a76-4f20-a59a-89cc7fcad9c3
-  text: Warn when multiplexer auto-detection falls back from dmux to tmux. Part of startup sequence — detect missing
-    preferred tools and suggest installation.
-  created_at: 2026-03-15T19:34:59.918Z
-  tags: []
 - id: ba274071-1a5e-4d9f-a1eb-e772fe00a367
   text: "Real-time activity monitoring for tmux interactive sessions. The woco status/TUI should show what agents are
     actually doing inside tmux panes (current file being edited, last tool used, thinking status) instead of just 'tmux
-    session active'. Options: (a) parse tmux pane content periodically, (b) have agents write activity to a shared file,
-    (c) bundle dmux as a dependency for native session monitoring. Evaluate dmux-as-dependency tradeoffs."
+    session active'. Options: (a) parse tmux pane content periodically, (b) have agents write activity to a shared file."
   created_at: 2026-03-15T19:35:06.195Z
   tags: []

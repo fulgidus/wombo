@@ -14,6 +14,7 @@
 import { exec } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
+import { runTier25, type Tier25Result, type FileHunkResult } from "./conflict-hunks.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,16 +37,19 @@ export interface TieredMergeResult {
   /** Which tier resolved the merge:
    *  1 = clean git merge (no conflicts)
    *  2 = trivial auto-resolve (whitespace/formatting only)
-   *  3 = resolver agent needed (real conflicts)
+   *  2.5 = surgical per-hunk resolution (programmatic classification)
+   *  3 = resolver agent needed (real conflicts remain)
    *  null = not resolved yet (needs agent or manual)
    */
-  tier: 1 | 2 | 3 | null;
+  tier: 1 | 2 | 2.5 | 3 | null;
   /** Conflicting files (empty if tier 1 or 2 succeeded) */
   conflictFiles: string[];
   /** Error message if applicable */
   error: string | null;
-  /** Commit hash if merge completed (tier 1 or 2) */
+  /** Commit hash if merge completed (tier 1, 2, or 2.5) */
   commitHash: string | null;
+  /** Tier 2.5 detailed results — present when tier >= 2.5 was attempted */
+  tier25Result?: Tier25Result;
 }
 
 // ---------------------------------------------------------------------------
@@ -589,9 +593,11 @@ export async function commitAutoResolvedMerge(
  *
  * Tier 1: git merge (fast, free) — if clean, done.
  * Tier 2: If conflicts, check if ALL are trivial (whitespace-only) → auto-resolve.
- * Tier 3: Real conflicts remain → return them for a resolver agent.
+ * Tier 2.5: Surgical per-hunk resolution — classify each conflict hunk and resolve
+ *           trivial, one-side-only, and additive hunks programmatically.
+ * Tier 3: Real conflicts remain → return structured hunk data for a resolver agent.
  *
- * This function handles tiers 1 & 2. The caller is responsible for tier 3
+ * This function handles tiers 1, 2, and 2.5. The caller is responsible for tier 3+
  * (launching a resolver agent) if this returns `tier: 3`.
  */
 export async function tieredMergeBaseIntoFeature(
@@ -625,7 +631,7 @@ export async function tieredMergeBaseIntoFeature(
     };
   }
 
-  // Tier 2: Try auto-resolving trivial conflicts
+  // Tier 2: Try auto-resolving trivial conflicts (all-or-nothing per file)
   const autoResult = await tryAutoResolveTrivialConflicts(worktreePath);
 
   if (autoResult.allResolved) {
@@ -641,17 +647,50 @@ export async function tieredMergeBaseIntoFeature(
         commitHash: hash.ok ? hash.output : null,
       };
     }
-    // Auto-resolve commit failed — fall through to tier 3
+    // Auto-resolve commit failed — fall through to tier 2.5
+  }
+
+  // Tier 2.5: Surgical per-hunk resolution
+  // Only process files that tier 2 didn't fully resolve
+  const remainingConflictFiles = autoResult.unresolvedFiles;
+
+  if (remainingConflictFiles.length > 0) {
+    // Determine build command for additive hunk verification
+    const buildCommand = config.build.command;
+
+    const tier25 = await runTier25(worktreePath, remainingConflictFiles, buildCommand);
+
+    if (tier25.allResolved) {
+      // Tier 2.5 resolved everything — commit and done
+      const commitResult = await commitAutoResolvedMerge(worktreePath);
+      if (commitResult.success) {
+        const hash = await runSafe("git rev-parse HEAD", worktreePath);
+        return {
+          success: true,
+          tier: 2.5,
+          conflictFiles: [],
+          error: null,
+          commitHash: hash.ok ? hash.output : null,
+          tier25Result: tier25,
+        };
+      }
+      // Commit failed — fall through to tier 3 with the structured data
+    }
+
+    // Tier 3: Real conflicts remain — caller must launch resolver agent
+    // We pass along the structured tier 2.5 data so the LLM gets better context
     return {
       success: false,
       tier: 3,
-      conflictFiles: autoResult.unresolvedFiles,
-      error: commitResult.error ?? "Auto-resolve commit failed",
+      conflictFiles: tier25.unresolvedFiles,
+      error: `${tier25.unresolvedHunkCount} unresolved hunk(s) in ${tier25.unresolvedFiles.length} file(s) ` +
+        `(${tier25.resolvedHunkCount}/${tier25.totalHunks} hunks resolved programmatically)`,
       commitHash: null,
+      tier25Result: tier25,
     };
   }
 
-  // Tier 3: Real conflicts remain — caller must launch resolver agent
+  // Edge case: tier 2 resolved some files but commit failed, no remaining files
   return {
     success: false,
     tier: 3,
@@ -659,6 +698,240 @@ export async function tieredMergeBaseIntoFeature(
     error: `${autoResult.unresolvedFiles.length} file(s) with non-trivial conflicts (${autoResult.resolvedFiles.length} trivial conflicts auto-resolved)`,
     commitHash: null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Tier 3.5: Rebase Strategy
+// ---------------------------------------------------------------------------
+
+/** Result of one commit during rebase */
+export interface RebaseCommitResult {
+  /** The commit hash being replayed */
+  commitHash: string;
+  /** One-line commit message */
+  commitMessage: string;
+  /** Whether this commit applied cleanly */
+  clean: boolean;
+  /** Conflicting files (if not clean) */
+  conflictFiles: string[];
+  /** Whether the LLM resolved the conflicts for this commit */
+  resolvedByLLM: boolean;
+}
+
+/** Result of the full rebase strategy */
+export interface RebaseStrategyResult {
+  /** Whether the rebase completed successfully */
+  success: boolean;
+  /** The throwaway branch name */
+  tempBranch: string;
+  /** Per-commit results */
+  commitResults: RebaseCommitResult[];
+  /** Error message if the strategy failed */
+  error: string | null;
+}
+
+/**
+ * Start a rebase on a throwaway branch.
+ *
+ * Creates `temp/rebase-{featureId}` from the feature branch, then runs
+ * `git rebase {baseBranch}`. Returns the list of commits that need to be
+ * replayed so the caller can handle per-commit conflict resolution.
+ *
+ * The rebase is started with --no-autosquash to preserve commit order.
+ *
+ * @returns The temp branch name and the list of feature-only commits to replay
+ */
+export async function startRebaseStrategy(
+  worktreePath: string,
+  featureBranch: string,
+  baseBranch: string,
+  featureId: string,
+  config: WomboConfig
+): Promise<{
+  tempBranch: string;
+  commitsToReplay: Array<{ hash: string; message: string }>;
+  error?: string;
+}> {
+  const tempBranch = `temp/rebase-${featureId}`;
+  const remote = config.git.remote;
+
+  // First, ensure we're on the feature branch
+  const checkoutResult = await runSafe(`git checkout "${featureBranch}"`, worktreePath);
+  if (!checkoutResult.ok) {
+    return { tempBranch, commitsToReplay: [], error: `Failed to checkout ${featureBranch}: ${checkoutResult.output}` };
+  }
+
+  // Create the throwaway branch from the feature branch
+  const branchResult = await runSafe(`git checkout -b "${tempBranch}"`, worktreePath);
+  if (!branchResult.ok) {
+    // Branch might already exist — delete and recreate
+    await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+    const retryResult = await runSafe(`git checkout -b "${tempBranch}"`, worktreePath);
+    if (!retryResult.ok) {
+      return { tempBranch, commitsToReplay: [], error: `Failed to create temp branch: ${retryResult.output}` };
+    }
+  }
+
+  // Get the list of commits on the feature branch that aren't on the base branch.
+  // These are the commits that will be replayed during rebase.
+  const mergeBaseResult = await runSafe(
+    `git merge-base "${remote}/${baseBranch}" "${tempBranch}"`,
+    worktreePath
+  );
+  if (!mergeBaseResult.ok) {
+    await cleanupRebaseBranch(worktreePath, tempBranch, featureBranch);
+    return { tempBranch, commitsToReplay: [], error: `Failed to find merge base: ${mergeBaseResult.output}` };
+  }
+
+  const mergeBase = mergeBaseResult.output.trim();
+
+  // List commits from merge-base to HEAD (oldest first)
+  const logResult = await runSafe(
+    `git log --format="%H %s" --reverse "${mergeBase}..HEAD"`,
+    worktreePath
+  );
+  if (!logResult.ok || !logResult.output.trim()) {
+    await cleanupRebaseBranch(worktreePath, tempBranch, featureBranch);
+    return { tempBranch, commitsToReplay: [], error: "No commits to replay" };
+  }
+
+  const commitsToReplay = logResult.output.trim().split("\n").map((line) => {
+    const spaceIdx = line.indexOf(" ");
+    return {
+      hash: line.substring(0, spaceIdx),
+      message: line.substring(spaceIdx + 1),
+    };
+  });
+
+  return { tempBranch, commitsToReplay };
+}
+
+/**
+ * Begin the actual rebase operation.
+ *
+ * This starts `git rebase` which will stop at the first conflict.
+ * The caller should then inspect the state and resolve conflicts
+ * before calling `continueRebase()`.
+ *
+ * @returns true if the rebase completed without any conflicts,
+ *          false if it stopped at a conflict (check getRebaseConflicts)
+ */
+export async function beginRebase(
+  worktreePath: string,
+  baseBranch: string,
+  config: WomboConfig
+): Promise<{ clean: boolean; error?: string }> {
+  const remote = config.git.remote;
+  const result = await runSafe(
+    `git rebase "${remote}/${baseBranch}"`,
+    worktreePath
+  );
+
+  if (result.ok) {
+    return { clean: true };
+  }
+
+  // Check if it's a conflict (rebase paused) or an error
+  const statusResult = await runSafe("git diff --name-only --diff-filter=U", worktreePath);
+  if (statusResult.ok && statusResult.output.trim()) {
+    // Rebase paused at a conflict
+    return { clean: false };
+  }
+
+  return { clean: false, error: result.output };
+}
+
+/**
+ * Get the list of conflicting files during an active rebase.
+ */
+export async function getRebaseConflicts(
+  worktreePath: string
+): Promise<string[]> {
+  const result = await runSafe("git diff --name-only --diff-filter=U", worktreePath);
+  if (!result.ok || !result.output.trim()) return [];
+  return result.output.trim().split("\n").filter((f) => f.length > 0);
+}
+
+/**
+ * Continue a rebase after conflicts have been resolved.
+ * The caller must have already resolved conflicts and staged the files.
+ *
+ * @returns true if the rebase continued/completed cleanly,
+ *          false if another conflict was encountered
+ */
+export async function continueRebase(
+  worktreePath: string
+): Promise<{ clean: boolean; done: boolean; error?: string }> {
+  const result = await runSafe(
+    "git -c core.editor=true rebase --continue",
+    worktreePath
+  );
+
+  if (result.ok) {
+    // Check if rebase is complete
+    const rebaseDir = await runSafe("test -d .git/rebase-merge || test -d .git/rebase-apply && echo yes || echo no", worktreePath);
+    const done = !rebaseDir.output.includes("yes");
+    return { clean: true, done };
+  }
+
+  // Check if another conflict
+  const conflicts = await getRebaseConflicts(worktreePath);
+  if (conflicts.length > 0) {
+    return { clean: false, done: false };
+  }
+
+  return { clean: false, done: false, error: result.output };
+}
+
+/**
+ * Abort an in-progress rebase.
+ */
+export async function abortRebase(
+  worktreePath: string
+): Promise<void> {
+  await runSafe("git rebase --abort", worktreePath);
+}
+
+/**
+ * Clean up the throwaway rebase branch and return to the original feature branch.
+ */
+export async function cleanupRebaseBranch(
+  worktreePath: string,
+  tempBranch: string,
+  featureBranch: string
+): Promise<void> {
+  // Switch back to the original feature branch
+  await runSafe(`git checkout "${featureBranch}"`, worktreePath);
+  // Delete the throwaway branch
+  await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+}
+
+/**
+ * After a successful rebase on the temp branch, fast-forward the feature branch
+ * to the rebased state, then merge into base.
+ */
+export async function finalizeRebase(
+  worktreePath: string,
+  tempBranch: string,
+  featureBranch: string
+): Promise<{ success: boolean; error?: string }> {
+  // Update the feature branch to point to the rebased commits
+  // First checkout the feature branch
+  const checkoutResult = await runSafe(`git checkout "${featureBranch}"`, worktreePath);
+  if (!checkoutResult.ok) {
+    return { success: false, error: `Failed to checkout ${featureBranch}: ${checkoutResult.output}` };
+  }
+
+  // Reset feature branch to match the temp branch
+  const resetResult = await runSafe(`git reset --hard "${tempBranch}"`, worktreePath);
+  if (!resetResult.ok) {
+    return { success: false, error: `Failed to reset ${featureBranch} to ${tempBranch}: ${resetResult.output}` };
+  }
+
+  // Delete the temp branch
+  await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+
+  return { success: true };
 }
 
 // ---------------------------------------------------------------------------

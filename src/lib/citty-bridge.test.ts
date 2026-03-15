@@ -55,7 +55,7 @@ describe("cittyArgToFlagDef", () => {
       description: "Max concurrent agents",
     });
 
-    expect(result.name).toBe("--max-concurrent");
+    expect(result!.name).toBe("--max-concurrent");
   });
 
   test("returns null for positional args", () => {
@@ -98,7 +98,7 @@ describe("cittyCommandToCommandDef", () => {
       completionSummary: "Show wave status",
     };
 
-    const result = cittyCommandToCommandDef(cmd, meta);
+    const result = cittyCommandToCommandDef(cmd as any, meta);
 
     expect(result.name).toBe("status");
     expect(result.aliases).toEqual(["s"]);
@@ -144,7 +144,7 @@ describe("cittyCommandToCommandDef", () => {
       supportsDryRun: false,
     };
 
-    const result = cittyCommandToCommandDef(cmd, meta);
+    const result = cittyCommandToCommandDef(cmd as any, meta);
 
     expect(result.positionals).toEqual([
       { name: "feature-id", description: "Feature ID whose logs to display", required: true },
@@ -182,7 +182,7 @@ describe("cittyCommandToCommandDef", () => {
       },
     };
 
-    const result = cittyCommandToCommandDef(cmd, meta);
+    const result = cittyCommandToCommandDef(cmd as any, meta);
     const priorityFlag = result.flags.find((f) => f.name === "--priority");
     expect(priorityFlag).toBeDefined();
     expect(priorityFlag!.enum).toEqual(["critical", "high", "medium", "low", "wishlist"]);
@@ -214,7 +214,7 @@ describe("cittyCommandToCommandDef", () => {
       },
     };
 
-    const result = cittyCommandToCommandDef(cmd, meta);
+    const result = cittyCommandToCommandDef(cmd as any, meta);
     const dryRunFlag = result.flags.find((f) => f.name === "--dry-run");
     expect(dryRunFlag).toBeDefined();
     expect(dryRunFlag!.default).toBe(false);
@@ -257,7 +257,7 @@ describe("cittyCommandToCommandDef", () => {
       supportsDryRun: false,
     };
 
-    const result = cittyCommandToCommandDef(cmd, meta);
+    const result = cittyCommandToCommandDef(cmd as any, meta);
     // output is filtered (global), but dev and force pass through
     expect(result.flags.length).toBe(3);
     expect(result.flags.map((f: any) => f.name).sort()).toEqual(["--dev", "--force", "--real-flag"]);

@@ -1,14 +1,11 @@
 /**
- * launcher.ts — Process spawning and terminal multiplexer session management.
+ * launcher.ts — Process spawning and tmux session management.
  *
  * Responsibilities:
  *   - Launch agent in headless mode (agent run --format json)
- *   - Launch agent in interactive mode (dmux/tmux session with TUI)
+ *   - Launch agent in interactive mode (tmux session with TUI)
  *   - Resume sessions for auto-retry
- *   - Manage multiplexer sessions (create, list, kill)
- *
- * Supports both dmux (preferred) and tmux (fallback) via the multiplexer
- * abstraction layer. The active backend is determined by config.agent.multiplexer.
+ *   - Manage tmux sessions (create, list, kill)
  *
  * ## Agent Process Lifecycle (audit: wave-detach-audit)
  *
@@ -28,10 +25,10 @@
  *     re-launches agents that died without producing code.
  *
  * **Interactive mode** (`launchInteractive`):
- *   - Agents run inside dmux/tmux sessions, which are independent of the
+ *   - Agents run inside tmux sessions, which are independent of the
  *     parent process. They survive parent death naturally.
  *   - The `process` field in LaunchResult is `null as any` — no direct
- *     ChildProcess handle exists. PID is obtained via `muxGetPanePid()`.
+ *     ChildProcess handle exists. PID is obtained via `tmuxGetPanePid()`.
  *
  * **Design rationale for `detached: false`**:
  *   Headless agents MUST have their stdout piped to the parent for real-time
@@ -40,7 +37,7 @@
  *   outlive the parent, but the piped stdio streams would break when the
  *   parent exits, potentially causing agent crashes or lost output. The
  *   current design trades survivability for reliable monitoring. If agent
- *   persistence across parent restarts is needed, the interactive (mux)
+ *   persistence across parent restarts is needed, the interactive (tmux)
  *   mode should be used instead.
  */
 
@@ -49,21 +46,52 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import type { WomboConfig } from "../config.js";
 import { resolveAgentBin } from "../config.js";
 import {
-  detectMultiplexer,
-  muxNewSession,
-  muxHasSession,
-  muxKillSession,
-  muxListSessions,
-  muxGetPanePid,
-  muxLoadBuffer,
-  muxPasteBuffer,
-  muxSendKeys,
-  muxDisplayName,
-  type MultiplexerInfo,
-} from "./multiplexer.js";
+  ensureTmux,
+  tmuxNewSession,
+  tmuxHasSession,
+  tmuxKillSession,
+  tmuxListSessions,
+  tmuxGetPanePid,
+  tmuxLoadBuffer,
+  tmuxPasteBuffer,
+  tmuxSendKeys,
+} from "./tmux.js";
 import { portlessEnv } from "./portless.js";
 import { hitlDir } from "./hitl-channel.js";
-import { resolve, dirname, join } from "node:path";
+import { resolve, dirname, join, basename } from "node:path";
+
+// ---------------------------------------------------------------------------
+// Agent Type Detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Supported agent CLI types. Each has different CLI argument syntax:
+ *
+ * - **opencode**: TUI via `opencode [project]` (positional path),
+ *   headless via `opencode run --dir PATH --format json`.
+ *   `--dir` is ONLY valid on the `run` subcommand.
+ *
+ * - **claude**: TUI via `claude` (uses cwd, no path flag),
+ *   headless via `claude -p --output-format stream-json`.
+ *   Has NO `--dir` flag — always uses cwd.
+ *
+ * - **unknown**: Falls back to opencode-style args.
+ */
+export type AgentType = "opencode" | "claude" | "unknown";
+
+/**
+ * Detect agent type from the resolved binary path.
+ *
+ * Inspects the basename of the binary (stripping extension) to determine
+ * whether it's opencode or claude. This is intentionally simple — we match
+ * on the binary name, not on probing `--help` output.
+ */
+export function detectAgentType(binPath: string): AgentType {
+  const name = basename(binPath).replace(/\.(exe|cmd|bat)$/i, "").toLowerCase();
+  if (name === "opencode" || name.startsWith("opencode")) return "opencode";
+  if (name === "claude" || name.startsWith("claude")) return "claude";
+  return "unknown";
+}
 
 // ---------------------------------------------------------------------------
 // Fake Agent
@@ -132,16 +160,18 @@ export interface RetryOptions {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function muxSessionName(featureId: string, config: WomboConfig): string {
+/**
+ * Get the tmux session name for a feature.
+ */
+function tmuxSessionName(featureId: string, config: WomboConfig): string {
   return `${config.agent.tmuxPrefix}-${featureId}`;
 }
 
 /**
- * Get the multiplexer info for this config.
- * Caches detection per-process.
+ * Ensure tmux is available for this config.
  */
-function getMux(config: WomboConfig): MultiplexerInfo {
-  return detectMultiplexer(config.agent.multiplexer);
+function checkTmux(): void {
+  ensureTmux();
 }
 
 function runSilent(cmd: string): string {
@@ -200,6 +230,7 @@ function agentEnv(
 export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const isFake = opts.agentName === FAKE_AGENT_SENTINEL;
   const agentBin = isFake ? "bun" : resolveAgentBin(opts.config);
+  const agentType = isFake ? "unknown" : detectAgentType(agentBin);
 
   const args: string[] = [];
 
@@ -208,13 +239,28 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
     args.push(resolveFakeAgentBin());
   }
 
-  args.push(
-    "run",
-    "--format", "json",
-    "--agent", opts.agentName ?? opts.config.agent.name,
-    "--dir", opts.worktreePath,
-    "--title", `woco: ${opts.featureId}`,
-  );
+  // Agent-type-specific headless CLI construction:
+  //
+  // opencode: `opencode run --format json --agent NAME --dir PATH --title TITLE PROMPT`
+  // claude:   `claude -p --output-format stream-json --agent NAME PROMPT`
+  //           (uses cwd for directory, set via spawn options)
+  //
+  if (agentType === "claude") {
+    args.push(
+      "-p",
+      "--output-format", "stream-json",
+      "--agent", opts.agentName ?? opts.config.agent.name,
+    );
+  } else {
+    // opencode / unknown / fake-agent
+    args.push(
+      "run",
+      "--format", "json",
+      "--agent", opts.agentName ?? opts.config.agent.name,
+      "--dir", opts.worktreePath,
+      "--title", `woco: ${opts.featureId}`,
+    );
+  }
 
   if (opts.model) {
     args.push("--model", opts.model);
@@ -225,6 +271,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
+    cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
 
@@ -246,6 +293,7 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
 export function retryHeadless(opts: RetryOptions): LaunchResult {
   const isFake = opts.agentName === FAKE_AGENT_SENTINEL;
   const agentBin = isFake ? "bun" : resolveAgentBin(opts.config);
+  const agentType = isFake ? "unknown" : detectAgentType(agentBin);
 
   const retryMessage = `The build failed. Please fix the following errors and run \`${opts.config.build.command}\` again:\n\n\`\`\`\n${opts.buildErrors}\n\`\`\`\n\nFix all errors, then verify the build passes.`;
 
@@ -255,13 +303,29 @@ export function retryHeadless(opts: RetryOptions): LaunchResult {
     args.push(resolveFakeAgentBin());
   }
 
-  args.push(
-    "run",
-    "--format", "json",
-    "--session", opts.sessionId,
-    "--continue",
-    "--dir", opts.worktreePath,
-  );
+  // Agent-type-specific retry CLI construction:
+  //
+  // opencode: `opencode run --format json --session ID --continue --dir PATH MSG`
+  // claude:   `claude -p --output-format stream-json --resume ID --continue MSG`
+  //           (uses cwd for directory)
+  //
+  if (agentType === "claude") {
+    args.push(
+      "-p",
+      "--output-format", "stream-json",
+      "--resume", opts.sessionId,
+      "--continue",
+    );
+  } else {
+    // opencode / unknown / fake-agent
+    args.push(
+      "run",
+      "--format", "json",
+      "--session", opts.sessionId,
+      "--continue",
+      "--dir", opts.worktreePath,
+    );
+  }
 
   if (opts.model) {
     args.push("--model", opts.model);
@@ -272,6 +336,7 @@ export function retryHeadless(opts: RetryOptions): LaunchResult {
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
+    cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
 
@@ -316,17 +381,33 @@ export interface ConflictResolverOptions {
  */
 export function launchConflictResolver(opts: ConflictResolverOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
+  const agentType = detectAgentType(agentBin);
 
   // Use the specialized merge-resolver agent by default
   const agentName = opts.agentName ?? "merge-resolver-agent";
 
-  const args = [
-    "run",
-    "--format", "json",
-    "--agent", agentName,
-    "--dir", opts.worktreePath,
-    "--title", `woco: conflict-resolve ${opts.featureId}`,
-  ];
+  // Agent-type-specific conflict resolver CLI:
+  //
+  // opencode: `opencode run --format json --agent NAME --dir PATH --title TITLE PROMPT`
+  // claude:   `claude -p --output-format stream-json --agent NAME PROMPT`
+  //
+  const args: string[] = [];
+
+  if (agentType === "claude") {
+    args.push(
+      "-p",
+      "--output-format", "stream-json",
+      "--agent", agentName,
+    );
+  } else {
+    args.push(
+      "run",
+      "--format", "json",
+      "--agent", agentName,
+      "--dir", opts.worktreePath,
+      "--title", `woco: conflict-resolve ${opts.featureId}`,
+    );
+  }
 
   if (opts.model) {
     args.push("--model", opts.model);
@@ -337,6 +418,7 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
   const child = spawn(agentBin, args, {
     stdio: ["pipe", "pipe", "pipe"],
     detached: false,
+    cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
   });
 
@@ -349,40 +431,55 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
 }
 
 // ---------------------------------------------------------------------------
-// Interactive (multiplexer) Launch
+// Interactive (tmux) Launch
 // ---------------------------------------------------------------------------
 
 /**
- * Launch agent in a terminal multiplexer session (dmux or tmux) for interactive use.
+ * Launch agent in a tmux session for interactive use.
  *
- * Unlike headless mode, the agent runs inside a multiplexer session that is
+ * Unlike headless mode, the agent runs inside a tmux session that is
  * fully independent of the parent process. The session survives parent death,
  * SIGINT, and crashes. The trade-off is that there is no direct ChildProcess
  * handle — monitoring is limited to checking the pane PID and session existence.
  *
  * The returned `process` field is `null as any` because the agent is managed
- * by the multiplexer, not by Node's child_process module.
+ * by tmux, not by Node's child_process module.
  */
 export function launchInteractive(opts: LaunchOptions): LaunchResult {
   const agentBin = resolveAgentBin(opts.config);
-  const mux = getMux(opts.config);
-  const sessionName = muxSessionName(opts.featureId, opts.config);
+  const agentType = detectAgentType(agentBin);
+  checkTmux();
+  const sessionName = tmuxSessionName(opts.featureId, opts.config);
 
   // Kill existing session if any
   killMuxSession(opts.featureId, opts.config);
 
-  // Build the agent command to run inside the multiplexer
+  // Build the agent command to run inside the tmux session.
   // Include portless env vars so any server started in the session
-  // is routed through the portless proxy
+  // is routed through the portless proxy.
   const pEnv = portlessEnv(opts.featureId, opts.config);
   const envPrefix = Object.entries(pEnv)
     .map(([k, v]) => `${k}=${JSON.stringify(v)}`)
     .join(" ");
 
-  const ocArgs = [
-    agentBin,
-    "--dir", JSON.stringify(opts.worktreePath),
-  ];
+  // Agent-type-specific CLI arg construction:
+  //
+  // opencode TUI: `opencode [project]`
+  //   - Path is a POSITIONAL argument (NOT --dir, which is only for `run`)
+  //   - Supports --agent, --model, --session, --continue
+  //
+  // claude TUI: `claude`
+  //   - Has NO --dir flag at all — uses the cwd of the process
+  //   - The cwd is set by tmuxNewSession's cwd parameter
+  //   - Supports --agent, --model, --resume, --continue
+  //
+  const ocArgs = [agentBin];
+
+  if (agentType === "opencode" || agentType === "unknown") {
+    // opencode: project path is a positional argument
+    ocArgs.push(JSON.stringify(opts.worktreePath));
+  }
+  // claude: no path arg needed — tmuxNewSession sets cwd to worktreePath
 
   // Pass agent name if specified (specialized agent from registry or per-task override)
   if (opts.agentName) {
@@ -393,19 +490,21 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
     ocArgs.push("--model", JSON.stringify(opts.model));
   }
 
-  const muxCmd = envPrefix ? `${envPrefix} ${ocArgs.join(" ")}` : ocArgs.join(" ");
+  const tmuxCmd = envPrefix ? `${envPrefix} ${ocArgs.join(" ")}` : ocArgs.join(" ");
 
   // Create a detached session running the agent
-  muxNewSession(mux, sessionName, opts.worktreePath, muxCmd);
+  // Note: cwd is set to worktreePath — this handles claude's path requirement
+  // and also provides a sensible fallback cwd for opencode.
+  tmuxNewSession(sessionName, opts.worktreePath, tmuxCmd);
 
   // Send the prompt as initial message after a brief delay
   setTimeout(() => {
     try {
       const tmpFile = `/tmp/woco-prompt-${opts.featureId}.txt`;
       writeFileSync(tmpFile, opts.prompt);
-      muxLoadBuffer(mux, tmpFile);
-      muxPasteBuffer(mux, sessionName);
-      muxSendKeys(mux, sessionName, "Enter");
+      tmuxLoadBuffer(tmpFile);
+      tmuxPasteBuffer(sessionName);
+      tmuxSendKeys(sessionName, "Enter");
       try { unlinkSync(tmpFile); } catch {}
     } catch {
       // If prompt sending fails, user can type manually
@@ -413,11 +512,11 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
   }, 3000);
 
   // Get the PID of the pane process
-  const panePid = muxGetPanePid(mux, sessionName);
+  const panePid = tmuxGetPanePid(sessionName);
 
   return {
     pid: panePid,
-    process: null as any, // No direct process handle in multiplexer mode
+    process: null as any, // No direct process handle in tmux mode
   };
 }
 
@@ -425,8 +524,8 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
  * Resume an interactive session with retry message.
  */
 export function retryInteractive(opts: RetryOptions): LaunchResult {
-  const mux = getMux(opts.config);
-  const sessionName = muxSessionName(opts.featureId, opts.config);
+  checkTmux();
+  const sessionName = tmuxSessionName(opts.featureId, opts.config);
 
   const exists = muxSessionExists(opts.featureId, opts.config);
 
@@ -434,12 +533,12 @@ export function retryInteractive(opts: RetryOptions): LaunchResult {
     const retryMsg = `The build failed. Fix these errors:\n${opts.buildErrors}`;
     const tmpFile = `/tmp/woco-retry-${opts.featureId}.txt`;
     writeFileSync(tmpFile, retryMsg);
-    muxLoadBuffer(mux, tmpFile);
-    muxPasteBuffer(mux, sessionName);
-    muxSendKeys(mux, sessionName, "Enter");
+    tmuxLoadBuffer(tmpFile);
+    tmuxPasteBuffer(sessionName);
+    tmuxSendKeys(sessionName, "Enter");
     try { unlinkSync(tmpFile); } catch {}
 
-    const panePid = muxGetPanePid(mux, sessionName);
+    const panePid = tmuxGetPanePid(sessionName);
 
     return {
       pid: panePid,
@@ -459,78 +558,49 @@ export function retryInteractive(opts: RetryOptions): LaunchResult {
 }
 
 // ---------------------------------------------------------------------------
-// Multiplexer Session Management
+// Tmux Session Management
 // ---------------------------------------------------------------------------
 
 /**
- * Check if a multiplexer session exists for a feature.
+ * Check if a tmux session exists for a feature.
  */
 export function muxSessionExists(
   featureId: string,
   config: WomboConfig
 ): boolean {
-  const mux = getMux(config);
-  const sessionName = muxSessionName(featureId, config);
-  return muxHasSession(mux, sessionName);
+  const sessionName = tmuxSessionName(featureId, config);
+  return tmuxHasSession(sessionName);
 }
 
 /**
- * Kill a multiplexer session for a feature.
+ * Kill a tmux session for a feature.
  */
 export function killMuxSession(
   featureId: string,
   config: WomboConfig
 ): void {
-  const mux = getMux(config);
-  const sessionName = muxSessionName(featureId, config);
-  muxKillSession(mux, sessionName);
+  const sessionName = tmuxSessionName(featureId, config);
+  tmuxKillSession(sessionName);
 }
 
 /**
- * List all woco-related multiplexer sessions.
+ * List all woco-related tmux sessions.
  */
 export function listMuxSessions(config: WomboConfig): string[] {
-  const mux = getMux(config);
-  const sessions = muxListSessions(mux);
-  return sessions.filter((s) => s.startsWith(config.agent.tmuxPrefix + "-"));
+  const sessions = tmuxListSessions();
+  return sessions.filter((s: string) => s.startsWith(config.agent.tmuxPrefix + "-"));
 }
 
 /**
- * Kill all woco-related multiplexer sessions.
+ * Kill all woco-related tmux sessions.
  */
 export function killAllMuxSessions(config: WomboConfig): number {
-  const mux = getMux(config);
   const sessions = listMuxSessions(config);
   for (const s of sessions) {
-    muxKillSession(mux, s);
+    tmuxKillSession(s);
   }
   return sessions.length;
 }
-
-/**
- * Get the display name of the active multiplexer backend.
- */
-export function getMultiplexerName(config: WomboConfig): string {
-  try {
-    const mux = getMux(config);
-    return muxDisplayName(mux);
-  } catch {
-    return "tmux/dmux";
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Backward Compatibility Aliases
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use muxSessionExists instead */
-export const tmuxSessionExists = muxSessionExists;
-/** @deprecated Use killMuxSession instead */
-export const killTmuxSession = killMuxSession;
-/** @deprecated Use listMuxSessions instead */
-export const listTmuxSessions = listMuxSessions;
-/** @deprecated Use killAllMuxSessions instead */
-export const killAllTmuxSessions = killAllMuxSessions;
 
 /**
  * Check if a process is still running by PID.
