@@ -819,9 +819,16 @@ export async function handleQuestSubcommand(opts: QuestCommandOptions): Promise<
       break;
     case "help":
     case "--help":
-    case "-h":
-      questHelp();
+    case "-h": {
+      const { renderCommandHelp } = await import("../lib/schema.js");
+      const helpText = renderCommandHelp("quest");
+      if (helpText) {
+        console.log(helpText);
+      } else {
+        questHelp();
+      }
       break;
+    }
     default:
       outputError(
         opts.outputFmt ?? "text",

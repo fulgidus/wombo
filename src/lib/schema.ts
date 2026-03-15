@@ -525,6 +525,193 @@ export const COMMAND_REGISTRY: CommandDef[] = [
     mutating: false,
     supportsDryRun: false,
   },
+
+  // --- quest (parent with subcommands) -----------------------------------
+  {
+    name: "quest",
+    summary: "Manage quests (scoped missions with their own task sets)",
+    positionals: [],
+    flags: [],
+    mutating: false,
+    supportsDryRun: false,
+    subcommands: [
+      {
+        name: "quest create",
+        summary: "Create a new quest",
+        positionals: [
+          { name: "id", description: "Quest ID (kebab-case)", required: true },
+          { name: "title", description: "Quest title", required: true },
+        ],
+        flags: [
+          { name: "--goal", description: "Quest goal (required)", type: "string", required: true },
+          { name: "--priority", description: "Priority level", type: "string", default: "medium", enum: VALID_PRIORITIES },
+          { name: "--difficulty", description: "Difficulty level", type: "string", default: "medium", enum: VALID_DIFFICULTIES },
+          { name: "--hitl", description: "HITL mode (yolo/cautious/supervised)", type: "string", default: "yolo", enum: ["yolo", "cautious", "supervised"] },
+          { name: "--agent", description: "Agent definition override for all tasks", type: "string" },
+          { name: "--dry-run", description: "Show what would happen without creating", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "quest list",
+        summary: "List all quests",
+        positionals: [],
+        flags: [
+          { name: "--status", description: "Filter by status", type: "string" },
+        ],
+        mutating: false,
+        supportsDryRun: false,
+      },
+      {
+        name: "quest show",
+        summary: "Show full quest details",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to display", required: true },
+        ],
+        flags: [
+          { name: "--fields", description: "Comma-separated list of fields to include", type: "string" },
+        ],
+        mutating: false,
+        supportsDryRun: false,
+      },
+      {
+        name: "quest plan",
+        summary: "Run planner agent to decompose quest into tasks",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to plan", required: true },
+        ],
+        flags: [
+          { name: "--model", alias: "-m", description: "Model to use for planner agent", type: "string" },
+          { name: "--dry-run", description: "Show proposed tasks without writing", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: true,
+      },
+      {
+        name: "quest activate",
+        summary: "Activate a quest (creates branch, sets status to active)",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to activate", required: true },
+        ],
+        flags: [],
+        mutating: true,
+        supportsDryRun: false,
+      },
+      {
+        name: "quest pause",
+        summary: "Pause an active quest",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to pause", required: true },
+        ],
+        flags: [],
+        mutating: true,
+        supportsDryRun: false,
+      },
+      {
+        name: "quest complete",
+        summary: "Complete quest (merges branch into base)",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to complete", required: true },
+        ],
+        flags: [
+          { name: "--force", description: "Skip merge, just mark as complete", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: false,
+      },
+      {
+        name: "quest abandon",
+        summary: "Abandon quest without merging",
+        positionals: [
+          { name: "quest-id", description: "Quest ID to abandon", required: true },
+        ],
+        flags: [
+          { name: "--force", description: "Delete branch when abandoning", type: "boolean", default: false },
+        ],
+        mutating: true,
+        supportsDryRun: false,
+      },
+    ],
+  },
+
+  // --- genesis -----------------------------------------------------------
+  {
+    name: "genesis",
+    summary: "Decompose a project vision into quests",
+    description:
+      "Top of the Quest hierarchy: Genesis -> Quests -> Tasks. Takes a project " +
+      "vision and produces a set of scoped quests via an AI planner agent.",
+    positionals: [
+      { name: "vision", description: "Project vision text", required: false },
+    ],
+    flags: [
+      { name: "--tech-stack", description: "Tech stack description (e.g. \"React, Node, Postgres\")", type: "string" },
+      { name: "--constraint", description: "Constraint (can be repeated)", type: "string" },
+      { name: "--model", alias: "-m", description: "Model for the planner agent", type: "string" },
+      { name: "--no-tui", description: "Skip TUI review, auto-approve all quests", type: "boolean", default: false },
+      { name: "--dry-run", description: "Show what would happen without creating quests", type: "boolean", default: false },
+    ],
+    mutating: true,
+    supportsDryRun: true,
+  },
+
+  // --- wishlist -----------------------------------------------------------
+  {
+    name: "wishlist",
+    summary: "Quick-capture ideas for later",
+    positionals: [],
+    flags: [],
+    mutating: false,
+    supportsDryRun: false,
+    subcommands: [
+      {
+        name: "wishlist add",
+        summary: "Add a wishlist item",
+        positionals: [
+          { name: "text", description: "Idea text", required: true },
+        ],
+        flags: [
+          { name: "--tag", description: "Categorization tag (can be repeated)", type: "string" },
+        ],
+        mutating: true,
+        supportsDryRun: false,
+      },
+      {
+        name: "wishlist list",
+        summary: "List all wishlist items",
+        positionals: [],
+        flags: [],
+        mutating: false,
+        supportsDryRun: false,
+      },
+      {
+        name: "wishlist delete",
+        summary: "Delete a wishlist item",
+        positionals: [
+          { name: "id", description: "Wishlist item ID (or prefix)", required: true },
+        ],
+        flags: [],
+        mutating: true,
+        supportsDryRun: false,
+      },
+    ],
+  },
+
+  // --- completion ---------------------------------------------------------
+  {
+    name: "completion",
+    summary: "Shell completions (install, uninstall, or emit script)",
+    description:
+      "Manage shell completion scripts. Use 'install' to auto-configure your " +
+      "shell, 'uninstall' to remove, or pass a shell name to emit the raw script.",
+    positionals: [
+      { name: "action", description: "Action: install, uninstall, bash, zsh, or fish", required: false },
+    ],
+    flags: [],
+    mutating: true,
+    supportsDryRun: false,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -635,4 +822,115 @@ export function allCommandSchemas(): Record<string, unknown> {
     })),
     commands,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Per-command help renderer (for `woco <command> -h`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Render human-readable help text for a single command.
+ * Returns a formatted string ready to console.log().
+ */
+export function renderCommandHelp(cmdName: string, subcommand?: string): string | null {
+  // Build lookup name: "tasks list", "quest create", etc.
+  const lookupName = subcommand ? `${cmdName} ${subcommand}` : cmdName;
+  const cmd = findCommandDef(lookupName);
+
+  // If a parent command has subcommands, show the parent overview
+  if (!subcommand && !cmd) return null;
+  if (!cmd) return null;
+
+  // If this is a parent command with subcommands, show subcommand listing
+  if (cmd.subcommands?.length) {
+    return renderParentHelp(cmd);
+  }
+
+  // Single command help
+  return renderSingleCommandHelp(cmd);
+}
+
+function renderParentHelp(cmd: CommandDef): string {
+  const lines: string[] = [];
+
+  lines.push("");
+  lines.push(`woco ${cmd.name} — ${cmd.summary}`);
+  if (cmd.description) {
+    lines.push("");
+    lines.push(`  ${cmd.description}`);
+  }
+
+  lines.push("");
+  lines.push("Subcommands:");
+
+  // Find the longest subcommand name for alignment
+  const maxLen = Math.max(...cmd.subcommands!.map((sc) => sc.name.length));
+
+  for (const sc of cmd.subcommands!) {
+    const padded = sc.name.padEnd(maxLen + 2);
+    lines.push(`  ${padded}${sc.summary}`);
+  }
+
+  lines.push("");
+  lines.push(`Run 'woco ${cmd.name} <subcommand> -h' for details on a subcommand.`);
+  lines.push("");
+
+  return lines.join("\n");
+}
+
+function renderSingleCommandHelp(cmd: CommandDef): string {
+  const lines: string[] = [];
+
+  // Usage line
+  const positionalStr = cmd.positionals
+    .map((p) => (p.required ? `<${p.name}>` : `[${p.name}]`))
+    .join(" ");
+  const flagHint = cmd.flags.length > 0 ? " [options]" : "";
+  lines.push("");
+  lines.push(`woco ${cmd.name}${positionalStr ? " " + positionalStr : ""}${flagHint}`);
+  lines.push("");
+  lines.push(`  ${cmd.summary}`);
+  if (cmd.description) {
+    lines.push(`  ${cmd.description}`);
+  }
+
+  // Positionals
+  if (cmd.positionals.length > 0) {
+    lines.push("");
+    lines.push("Arguments:");
+    const maxPosLen = Math.max(...cmd.positionals.map((p) => p.name.length));
+    for (const p of cmd.positionals) {
+      const req = p.required ? " (required)" : "";
+      const padded = p.name.padEnd(maxPosLen + 2);
+      lines.push(`  ${padded}${p.description}${req}`);
+    }
+  }
+
+  // Flags (deduplicate: command-specific flags take priority over globals)
+  const seenFlags = new Set(cmd.flags.map((f) => f.name));
+  const allFlags = [...cmd.flags, ...GLOBAL_FLAGS.filter((f) => !seenFlags.has(f.name))];
+  if (allFlags.length > 0) {
+    lines.push("");
+    lines.push("Options:");
+    const maxFlagLen = Math.max(
+      ...allFlags.map((f) => {
+        const aliasStr = f.alias ? `, ${f.alias}` : "";
+        const typeStr = f.type !== "boolean" ? ` <${f.type === "string[]" ? "values" : f.type}>` : "";
+        return (f.name + aliasStr + typeStr).length;
+      })
+    );
+    for (const f of allFlags) {
+      const aliasStr = f.alias ? `, ${f.alias}` : "";
+      const typeStr = f.type !== "boolean" ? ` <${f.type === "string[]" ? "values" : f.type}>` : "";
+      const flagLabel = `${f.name}${aliasStr}${typeStr}`;
+      const padded = flagLabel.padEnd(maxFlagLen + 2);
+      const enumStr = f.enum ? ` [${f.enum.join("|")}]` : "";
+      const defaultStr = f.default !== undefined && f.default !== false ? ` (default: ${f.default})` : "";
+      lines.push(`  ${padded}${f.description}${enumStr}${defaultStr}`);
+    }
+  }
+
+  lines.push("");
+
+  return lines.join("\n");
 }

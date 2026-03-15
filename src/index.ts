@@ -117,7 +117,7 @@ import type { Priority, Difficulty, FeatureStatus } from "./lib/tasks.js";
 import type { QuestHitlMode } from "./lib/quest.js";
 import { resolveOutputFormat, output, outputError, type OutputFormat } from "./lib/output.js";
 import { validateId, validateText, validateBranchName, validateDuration, assertValid } from "./lib/validate.js";
-import { findCommandDef, commandToSchema, allCommandSchemas } from "./lib/schema.js";
+import { findCommandDef, commandToSchema, allCommandSchemas, renderCommandHelp } from "./lib/schema.js";
 import { buildToonSpec, renderToonLegend } from "./lib/toon-spec.js";
 import { addItem as addWishlistItem, deleteItem as deleteWishlistItem, listItems as listWishlistItems } from "./lib/wishlist-store.js";
 
@@ -201,6 +201,8 @@ export interface CLIArgs {
   usageFormat?: "table" | "json";
   /** Developer mode: enables hidden TUI features like fake task seeding */
   dev?: boolean;
+  /** Per-command help requested (-h / --help after a command) */
+  help?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,11 +279,13 @@ export function parseArgs(argv: string[]): CLIArgs {
 
   // Pre-scan for global flags that can appear before the command.
   // Strip them from the args array so args[0] is always the command.
-  const globalFlags: { dev?: boolean } = {};
+  const globalFlags: { dev?: boolean; help?: boolean } = {};
   const filtered: string[] = [];
   for (const a of args) {
     if (a === "--dev") {
       globalFlags.dev = true;
+    } else if (a === "-h" || a === "--help") {
+      globalFlags.help = true;
     } else {
       filtered.push(a);
     }
@@ -298,6 +302,7 @@ export function parseArgs(argv: string[]): CLIArgs {
     checkOnly: false,
     outputFmt: resolveOutputFormat(undefined), // auto-detect until --output overrides
     dev: globalFlags.dev,
+    help: globalFlags.help,
   };
 
   // Resolve top-level command alias (e.g., "i" → "init", "t" → "tasks")
@@ -534,171 +539,30 @@ wombo-combo — AI Agent Orchestration System
   WOMBO COMBO! Parallel feature development with AI agents.
 
 Commands:                        (alias)
-  init                           (i)     Generate .wombo-combo/config.json in the current project
-  launch                         (l)     Launch a wave of agents to implement features
-  resume                         (r)     Resume a previously stopped wave
-  status                         (s)     Show the status of the current wave
-  verify                         (v)     Run build verification on completed agents
-  merge                          (m)     Merge verified branches into the base branch
+  init                           (i)     Set up .wombo-combo/ in the current project
+  launch                         (l)     Launch a wave of agents
+  resume                         (r)     Resume a stopped wave
+  status                         (s)     Show wave status
+  verify                         (v)     Run build verification
+  merge                          (m)     Merge verified branches
   retry                          (re)    Retry a failed agent
-  abort                          (a)     Kill a single running agent (--requeue to return to queue)
-  logs                           (lo)    Pretty-print agent logs for a feature
-  cleanup                        (c)     Remove all wave worktrees and multiplexer sessions
-  history                        (h)     List/view past wave results (stored in .wombo-combo/history/)
-  usage                          (us)    Show token usage statistics (--by, --since, --until, --format)
-  tasks                          (t)     Manage tasks file (see below; 'features' also accepted)
-  quest                          (q)     Manage quests (scoped missions; see below)
-  wishlist                       (w/wl)  Quick-capture ideas and wishes (see below)
-  genesis                        (g)     Run genesis planner (project-level decomposition into quests)
-  tui                                    Interactive TUI: browse tasks, select, launch, monitor
-  upgrade                        (u)     Check for updates and upgrade wombo-combo
-  describe                       (d)     Emit JSON schema or TOON legend (--output toon)
-  completion                     (comp)  Generate shell completions (bash, zsh, fish)
-  version                                Print version and exit
-  help                                   Show this help
+  abort                          (a)     Kill a running agent
+  logs                           (lo)    View agent logs
+  cleanup                        (c)     Remove worktrees and sessions
+  history                        (h)     View past wave results
+  usage                          (us)    Token usage statistics
+  tasks                          (t)     Manage tasks (subtopics: list, add, show, ...)
+  quest                          (q)     Manage quests (subtopics: create, list, show, ...)
+  wishlist                       (w/wl)  Quick-capture ideas
+  genesis                        (g)     Decompose a project goal into quests
+  tui                                    Interactive TUI (default when no args)
+  upgrade                        (u)     Check for updates / self-upgrade
+  completion                     (comp)  Shell completions (install, uninstall, bash, zsh, fish)
+  describe                       (d)     Emit command schema (JSON or TOON)
+  version / -v                           Print version
+  help / -h                              This screen
 
-Tasks Subcommands:               (alias)
-  tasks list                     (ls)    List tasks (--status, --priority, --difficulty, --ready, --include-archive)
-  tasks add <id> <title>         (a)     Add a new task (--desc, --priority, --difficulty, --effort, --depends-on)
-  tasks set-status <id> <s>      (ss)    Change a task's status
-  tasks set-priority <id> <p>    (sp)    Change a task's priority (critical/high/medium/low/wishlist)
-  tasks set-difficulty <id> <d>  (sd)    Change a task's difficulty (trivial/easy/medium/hard/very_hard)
-  tasks check                    (ch)    Validate tasks file (schema, deps, duplicates, cycles)
-  tasks archive [id]             (ar)    Move done/cancelled to archive (--dry-run)
-  tasks show <id>                (sh)    Show task details
-  tasks graph                    (g)     Visualize dependency graph (--ascii, --mermaid, --subtasks)
-
-Quest Subcommands:               (alias)
-  quest create <id> "Title"      (c)     Create a new quest (--goal, --priority, --difficulty, --hitl)
-  quest list                     (ls)    List all quests (--status to filter)
-  quest show <id>                (sh)    Show quest details
-  quest activate <id>            (a)     Activate a quest (creates branch, sets status to active)
-  quest pause <id>               (p)     Pause an active/planning quest
-  quest complete <id>            (co)    Complete quest (merges branch into base; --force to skip merge)
-  quest abandon <id>              (ab)    Abandon quest without merging (--force to delete branch)
-
-Wishlist Subcommands:            (alias)
-  wishlist add "idea text"       (a)     Add a new wishlist item (--tag <tag> to categorize)
-  wishlist list                  (ls)    List all wishlist items
-  wishlist delete <id>           (rm/d)  Delete a wishlist item (supports short ID prefixes)
-
-Genesis Options:
-  --tech-stack <text>      Describe the tech stack (e.g., "React, Node, Postgres")
-  --constraint <text>      Add a constraint (can be repeated: --constraint "..." --constraint "...")
-  --model <model>          Model override for the genesis planner agent
-  --no-tui                 Skip interactive review, auto-approve all quests
-  --dry-run                Show proposed quests without creating them
-
-Selection Options (for launch):
-  --top-priority N         Select top N tasks by priority
-  --quickest-wins N        Select N tasks with lowest effort
-  --priority <level>       Filter by priority (critical/high/medium/low/wishlist)
-  --difficulty <level>     Filter by difficulty (trivial/easy/medium/hard/very_hard)
-  --tasks "id1,id2"        Select specific tasks by ID (--features also accepted)
-  --all-ready              Select all tasks whose dependencies are met
-
-Launch Options:
-  --max-concurrent N       Max agents running in parallel (default: from config)
-  --model <model>          Model to use (e.g., "anthropic/claude-sonnet-4-20250514")
-  --interactive            Use multiplexer (dmux/tmux) TUI mode instead of headless
-  --no-tui                 Headless mode without neo-blessed TUI (periodic console dashboard)
-  --auto-push              Push base branch to remote after all merges complete
-  --dry-run                Show what would be launched without launching
-  --base-branch <branch>   Base branch (default: from config)
-  --max-retries N          Max retries per agent (default: from config)
-  --browser                Enable browser-based verification (run after build passes)
-  --skip-tests             Skip running tests during TDD verification
-  --strict-tdd             Strict TDD: fail verification if new files are missing tests
-  --agent <name>           Override agent definition for all launched tasks (name without .md extension)
-  --quest <id>             Scope launch to a quest (uses quest branch as base, applies quest constraints)
-
-General:
-  --force                  Force overwrite (e.g., for init) / skip prompts (e.g., for upgrade)
-  --output <fmt>           Output format: text (default on TTY), json (default when piped), or toon (WOMBO_OUTPUT=toon)
-  -o <fmt>                 Alias for --output
-  --dry-run                Show what would happen without performing the action
-  --fields <list>          Comma-separated fields to include (e.g., id,status,priority)
-  --dev                    Enable developer mode (hidden TUI features like fake task seeding)
-
-Upgrade Options:
-  --check                  Only check for updates, don't install
-  --tag <tag>              Install a specific version (e.g., v0.1.0)
-
-Logs Options:
-  --tail N                 Show only the last N lines
-  --follow, -f             Stream new output as it arrives (like tail -f)
-
-Usage Options:
-  --by <key>               Group by: task, quest, model, provider, harness (default: total)
-  --since <ISO date>       Filter records from this date (inclusive)
-  --until <ISO date>       Filter records until this date (inclusive)
-  --format <fmt>           Output format: table (default), json
-
-Aliases (every command has a short form):
-  woco i                         woco init
-  woco l --all-ready             woco launch --all-ready
-  woco t ls                      woco tasks list
-  woco t a my-task "Title"       woco tasks add my-task "Title"
-  woco t ss my-task done         woco tasks set-status my-task done
-  woco q c my-quest "Quest"      woco quest create my-quest "Quest" --goal "..."
-  woco q ls                      woco quest list
-  woco q sh my-quest             woco quest show my-quest
-  woco w a "Cool idea"           woco wishlist add "Cool idea"
-  woco wl ls                     woco wishlist list
-
-Shell Completion:
-  eval "$(woco completion bash)"    # Bash: add to ~/.bashrc
-  eval "$(woco completion zsh)"     # Zsh:  add to ~/.zshrc
-  woco completion fish | source     # Fish (or save to ~/.config/fish/completions/woco.fish)
-
-Examples:
-  woco init
-  woco launch --quickest-wins 3
-  woco launch --priority high --interactive
-  woco launch --tasks "auth-flow,search-api" --max-concurrent 2
-  woco resume
-  woco status
-  woco verify
-  woco merge
-  woco retry auth-flow
-  woco abort auth-flow
-  woco abort auth-flow --requeue
-  woco abort auth-flow --output json
-  woco logs auth-flow
-  woco logs auth-flow --tail 50
-  woco logs auth-flow --follow
-  woco logs auth-flow --output json
-  woco cleanup
-  woco tasks list --status ready --priority high
-  woco tasks list --fields id,status,priority --output json
-  woco tasks add my-task "My Cool Task" --priority high --difficulty easy
-  woco tasks set-status my-task in-progress
-  woco tasks check
-  woco tasks archive --dry-run
-  woco tasks show my-task
-  woco history
-  woco history wave-2026-03-12-420
-  woco history --output json
-  woco usage                              # show total token usage
-  woco usage --by task                    # group by task
-  woco usage --by model --format json     # group by model, JSON output
-  woco usage --since 2026-01-01           # filter by start date
-  woco usage --since 2026-01-01 --until 2026-03-01  # date range
-  woco describe                           # list all commands as JSON
-  woco describe launch                    # describe a specific command
-  woco describe tasks add                 # describe a subcommand
-  woco describe --output toon             # emit TOON format legend/spec
-  woco quest create auth "Auth Overhaul" --goal "Replace basic auth with OAuth2" --priority high
-  woco quest list
-  woco quest activate auth
-  woco quest complete auth
-  woco genesis "Build a SaaS dashboard with auth, billing, and analytics"
-  woco genesis "Modernize the frontend" --tech-stack "React, TypeScript, Tailwind"
-  woco g "Add multi-tenant support" --constraint "No breaking changes" --constraint "Keep backward compat"
-  woco genesis "..." --dry-run
-  woco wishlist add "Add dark mode support" --tag ui --tag enhancement
-  woco wishlist list
-  woco wishlist delete a1b2c3d4
+Run 'woco <command> -h' for details on a specific command.
 `);
 }
 
@@ -770,6 +634,39 @@ async function main(): Promise<void> {
 
   if (args.command === "help" || args.command === "--help" || args.command === "-h") {
     cmdHelp();
+    return;
+  }
+
+  // Per-command help: `woco launch -h`, `woco tasks list -h`, etc.
+  // If the command is "tui" (the default when no command is typed), and help was
+  // requested, the user typed `woco -h` — show global help.
+  if (args.help) {
+    if (args.command === "tui") {
+      cmdHelp();
+      return;
+    }
+
+    // For commands with subcommands (tasks, quest, wishlist), `woco tasks -h`
+    // should show the parent overview (all subcommands), not the default subcommand.
+    // Only pass the subcommand if the user explicitly typed one (i.e., there's a
+    // second positional before the -h).
+    const parentCmdsWithSubs = new Set(["tasks", "quest", "wishlist"]);
+    let effectiveSubcommand = args.subcommand;
+    if (parentCmdsWithSubs.has(args.command)) {
+      const rawArgs = process.argv.slice(2).filter((a) => a !== "--dev" && a !== "-h" && a !== "--help");
+      const explicitSub = rawArgs[1] && !rawArgs[1].startsWith("-") ? rawArgs[1] : undefined;
+      // If no explicit subcommand was typed, show parent help.
+      // Otherwise, use the resolved subcommand (alias-expanded by parseArgs).
+      effectiveSubcommand = explicitSub ? args.subcommand : undefined;
+    }
+
+    const helpText = renderCommandHelp(args.command, effectiveSubcommand);
+    if (helpText) {
+      console.log(helpText);
+    } else {
+      console.error(`No help available for: ${args.command}${effectiveSubcommand ? " " + effectiveSubcommand : ""}`);
+      cmdHelp();
+    }
     return;
   }
 
@@ -1228,9 +1125,15 @@ async function handleTasksSubcommand(
 
     case "help":
     case "--help":
-    case "-h":
-      cmdHelp();
+    case "-h": {
+      const helpText = renderCommandHelp("tasks");
+      if (helpText) {
+        console.log(helpText);
+      } else {
+        cmdHelp();
+      }
       break;
+    }
 
     default:
       outputError(args.outputFmt, `Unknown tasks subcommand: ${args.subcommand}. Run 'woco tasks help' or 'woco help' for usage.`);
@@ -1337,9 +1240,15 @@ function handleWishlistSubcommand(
 
     case "help":
     case "--help":
-    case "-h":
-      cmdHelp();
+    case "-h": {
+      const helpText = renderCommandHelp("wishlist");
+      if (helpText) {
+        console.log(helpText);
+      } else {
+        cmdHelp();
+      }
       break;
+    }
 
     default:
       outputError(args.outputFmt, `Unknown wishlist subcommand: ${args.subcommand}. Run 'woco wishlist help' or 'woco help' for usage.`);
