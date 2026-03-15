@@ -235,34 +235,75 @@ function installSpecifier(version: string, source: InstallSource): string {
 }
 
 /**
- * Remove then reinstall to avoid bun's dependency loop when switching
- * between npm and github sources (or even upgrading within the same source).
+ * Install a version globally via bun.
+ *
+ * Always tries `bun add -g` first — this overwrites the existing install
+ * in place, preserving any local state outside node_modules. No preemptive
+ * remove step. If the add fails due to a source conflict (cross-channel),
+ * only then do we try remove + add, and if THAT fails we attempt to
+ * restore the previous version.
  */
-async function installVersion(version: string, source: InstallSource): Promise<void> {
-  const spec = installSpecifier(version, source);
-  const sourceLabel = source === "github" ? "GitHub" : "npm";
+async function installVersion(version: string, newSource: InstallSource, currentSource?: InstallSource): Promise<void> {
+  const spec = installSpecifier(version, newSource);
+  const sourceLabel = newSource === "github" ? "GitHub" : "npm";
+
   console.log(`\nInstalling ${PKG_NAME}@${version} from ${sourceLabel}...`);
 
-  // Step 1: Remove existing global install to prevent dependency loops
-  const rmProc = Bun.spawn(["bun", "remove", "-g", PKG_NAME], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  await rmProc.exited; // Ignore exit code — might not be installed
-
-  // Step 2: Install the new version
+  // Try the straightforward install first — works for same-channel and
+  // often works for cross-channel too
   const addProc = Bun.spawn(["bun", "add", "-g", spec], {
     stdout: "inherit",
     stderr: "inherit",
   });
 
-  const exitCode = await addProc.exited;
+  let exitCode = await addProc.exited;
 
   if (exitCode !== 0) {
-    console.error(`\nInstallation failed (exit code ${exitCode}).`);
-    console.error(`You can try manually: bun add -g ${spec}`);
-    process.exit(1);
-    return;
+    // If this is a cross-channel switch, the failure might be a source
+    // conflict. Try remove + add, but only as a last resort.
+    const switching = currentSource != null && currentSource !== newSource && currentSource !== "local";
+
+    if (switching) {
+      console.log(`\nDirect install failed. Retrying with source switch (${channelLabel(currentSource!)} -> ${sourceLabel})...`);
+
+      const rmProc = Bun.spawn(["bun", "remove", "-g", PKG_NAME], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      await rmProc.exited;
+
+      const retryProc = Bun.spawn(["bun", "add", "-g", spec], {
+        stdout: "inherit",
+        stderr: "inherit",
+      });
+      exitCode = await retryProc.exited;
+
+      if (exitCode !== 0) {
+        // Both attempts failed — try to restore what we just removed
+        console.error(`\nInstallation of ${spec} failed. Attempting to restore previous install...`);
+        const restoreSpec = installSpecifier(getLocalVersion(), currentSource!);
+        const restoreProc = Bun.spawn(["bun", "add", "-g", restoreSpec], {
+          stdout: "inherit",
+          stderr: "inherit",
+        });
+        const restoreCode = await restoreProc.exited;
+        if (restoreCode === 0) {
+          console.error(`Previous version restored. Upgrade aborted.`);
+        } else {
+          console.error(`Could not restore previous version either.`);
+          console.error(`Reinstall manually: bun add -g ${restoreSpec}`);
+        }
+        process.exit(1);
+        return;
+      }
+    } else {
+      // Same-channel failure — nothing was removed, previous install is intact
+      console.error(`\nInstallation failed (exit code ${exitCode}).`);
+      console.error(`Your current install is unchanged.`);
+      console.error(`You can try manually: bun add -g ${spec}`);
+      process.exit(1);
+      return;
+    }
   }
 
   console.log(`\nSuccessfully upgraded to ${version}.`);
@@ -381,7 +422,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
       }
     }
 
-    await installVersion(targetTag, targetSource);
+    await installVersion(targetTag, targetSource, source);
     return;
   }
 
@@ -426,7 +467,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
           return;
         }
 
-        await installVersion(otherResult.version, otherChannel);
+        await installVersion(otherResult.version, otherChannel, source);
         return;
       }
 
@@ -453,7 +494,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
       }
     }
 
-    await installVersion(ownResult.version, ownChannel);
+    await installVersion(ownResult.version, ownChannel, source);
     return;
   }
 
@@ -475,7 +516,7 @@ export async function cmdUpgrade(opts: UpgradeOptions): Promise<void> {
       return;
     }
 
-    await installVersion(otherResult.version, otherChannel);
+    await installVersion(otherResult.version, otherChannel, source);
     return;
   }
 
