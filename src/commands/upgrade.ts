@@ -386,31 +386,45 @@ const RC_FILES: Record<string, string[]> = {
 };
 
 /**
- * Check whether the user's shell has woco completions set up.
- * Prints a hint if not. Call after install/upgrade.
+ * Result of shell completion check.
+ *   - `rcPath`: absolute path to the rc file where completions are configured (null if not found)
+ *   - `shell`: detected shell name (null if unknown)
  */
-export function checkShellCompletions(): void {
+export interface CompletionCheckResult {
+  shell: string | null;
+  rcPath: string | null;
+}
+
+/**
+ * Check whether the user's shell has woco completions set up.
+ * Prints a hint if not. Returns info about what was found so callers
+ * (e.g. postinstall) can source the rc file.
+ */
+export function checkShellCompletions(): CompletionCheckResult {
   const home = homedir();
   const shell = detectCurrentShell();
+  const result: CompletionCheckResult = { shell, rcPath: null };
 
-  if (!shell) return; // Unknown shell — don't nag
+  if (!shell) return result; // Unknown shell — don't nag
 
   // Fish: check for the completions file instead of rc
   if (shell === "fish") {
     const fishCompFile = resolve(home, ".config/fish/completions/woco.fish");
-    if (!existsSync(fishCompFile)) {
+    if (existsSync(fishCompFile)) {
+      result.rcPath = fishCompFile;
+    } else {
       console.log("");
       console.log("Tip: Shell completions are not installed for fish.");
       console.log("  To enable tab-completion, run:");
       console.log("    woco completion fish > ~/.config/fish/completions/woco.fish");
     }
-    return;
+    return result;
   }
 
   // Bash / Zsh: scan rc files for the marker
   const rcCandidates = RC_FILES[shell] ?? [];
   const marker = COMPLETION_MARKERS[shell];
-  if (!marker) return;
+  if (!marker) return result;
 
   for (const rc of rcCandidates) {
     const rcPath = resolve(home, rc);
@@ -418,7 +432,8 @@ export function checkShellCompletions(): void {
       if (!existsSync(rcPath)) continue;
       const content = readFileSync(rcPath, "utf-8");
       if (content.includes(marker)) {
-        return; // Already set up
+        result.rcPath = rcPath;
+        return result; // Already set up
       }
     } catch {
       // Can't read — skip
@@ -432,6 +447,9 @@ export function checkShellCompletions(): void {
   console.log(`Tip: Shell completions are not installed for ${shell}.`);
   console.log(`  Add this line to ${rcFile}:`);
   console.log(`    ${evalLine}`);
+  console.log(`  Then reload your shell:`);
+  console.log(`    source ${rcFile}`);
+  return result;
 }
 
 function detectCurrentShell(): string | null {

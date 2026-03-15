@@ -1,6 +1,6 @@
 {
     "name": "wombo-combo",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "WOMBO COMBO! — AI agent orchestration system for parallel feature development",
     "type": "module",
     "bin": {
@@ -17,7 +17,8 @@
         "start": "bun src/index.ts",
         "build": "bun build src/index.ts --outdir dist --target node",
         "typecheck": "tsc --noEmit",
-        "test": "bun test"
+        "test": "bun test",
+        "postinstall": "bun src/postinstall.ts"
     },
     "repository": {
         "type": "git",
