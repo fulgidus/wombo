@@ -29,3 +29,17 @@ export {
   OnboardingWizard,
   type OnboardingWizardProps,
 } from "./onboarding-wizard";
+export { ConfirmDialog, type ConfirmDialogProps } from "./confirm-dialog";
+export {
+  ProgressView,
+  type ProgressViewProps,
+  type ProgressResult,
+} from "./progress-view";
+export { OnboardingApp, type OnboardingAppProps } from "./onboarding-app";
+
+// Integration function
+export {
+  runOnboardingInk,
+  type OnboardingResult,
+  type RunOnboardingOptions,
+} from "./run-onboarding";
