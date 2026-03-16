@@ -21,6 +21,7 @@ import { resolve, join as pathJoin } from "node:path";
 import type { WomboConfig } from "../config";
 import type { Feature, SelectionOptions, Priority, Difficulty } from "../lib/tasks";
 import { loadFeatures, selectFeatures, parseDurationMinutes, saveFeatures } from "../lib/tasks";
+import { saveTaskToStore } from "../lib/task-store";
 import {
   loadState,
   saveState,
@@ -399,33 +400,66 @@ export function markFeatureDone(
   featureId: string,
   config: WomboConfig,
   baseBranch: string,
-  fmt: OutputFormat = "text"
+  fmt: OutputFormat = "text",
+  /** Skip the git ancestry check. Use when the caller already knows the branch
+   *  was merged (e.g., wave state says "merged") and the branch ref may have
+   *  been deleted by worktree cleanup. */
+  skipAncestryCheck: boolean = false
 ): void {
   try {
-    // Verify the feature branch was actually merged into base
-    const branch = featureBranchName(featureId, config);
-    try {
-      execSync(`git merge-base --is-ancestor "${branch}" "${baseBranch}"`, {
-        cwd: projectRoot,
-        stdio: "pipe",
-      });
-    } catch {
-      // git merge-base --is-ancestor exits non-zero if NOT an ancestor
-      if (fmt === "text") {
-        console.error(
-          `Warning: ${featureId} branch "${branch}" is not merged into "${baseBranch}" — refusing to mark as done`
-        );
+    if (!skipAncestryCheck) {
+      // Verify the feature branch was actually merged into base
+      const branch = featureBranchName(featureId, config);
+
+      // Check if the branch ref even exists before testing ancestry.
+      // After worktree cleanup, the branch is deleted (git branch -D), so
+      // merge-base --is-ancestor would fail — but the merge already happened.
+      let branchExists = true;
+      try {
+        execSync(`git rev-parse --verify "${branch}"`, {
+          cwd: projectRoot,
+          stdio: "pipe",
+        });
+      } catch {
+        branchExists = false;
       }
-      return;
+
+      if (branchExists) {
+        try {
+          execSync(
+            `git merge-base --is-ancestor "${branch}" "${baseBranch}"`,
+            { cwd: projectRoot, stdio: "pipe" }
+          );
+        } catch {
+          // git merge-base --is-ancestor exits non-zero if NOT an ancestor
+          if (fmt === "text") {
+            console.error(
+              `Warning: ${featureId} branch "${branch}" is not merged into "${baseBranch}" — refusing to mark as done`
+            );
+          }
+          return;
+        }
+      } else {
+        // Branch ref is gone — can't verify ancestry. Warn but proceed,
+        // because the branch was likely already cleaned up after merge.
+        if (fmt === "text") {
+          console.error(
+            `Note: ${featureId} branch "${branch}" no longer exists — skipping ancestry check`
+          );
+        }
+      }
     }
 
+    // Write only the single task file instead of the full load-all/save-all
+    // cycle. This avoids the concurrent-write race where two markFeatureDone
+    // calls load the same snapshot and one clobbers the other's changes.
     const data = loadFeatures(projectRoot, config);
     const feature = data.tasks.find((f: Feature) => f.id === featureId);
     if (feature && feature.status !== "done") {
       feature.status = "done";
       feature.completion = 100;
       feature.ended_at = new Date().toISOString();
-      saveFeatures(projectRoot, config, data);
+      saveTaskToStore(projectRoot, config, feature);
     }
   } catch (err: any) {
     // Non-fatal — log but don't crash the wave
@@ -2464,6 +2498,9 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   // Check for existing wave state — don't overwrite work in progress
   // -------------------------------------------------------------------------
   const existingState = loadState(projectRoot);
+  // Track IDs of tasks finalized from a previous wave, so they can be
+  // excluded from selection even if markFeatureDone fails to persist.
+  let finalizedIds: string[] = [];
   if (existingState) {
     const merged = existingState.agents.filter((a) => a.status === "merged");
     const verified = existingState.agents.filter((a) => a.status === "verified");
@@ -2481,11 +2518,12 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       }
 
       // Finalize any merged agents by marking their features as done
-      const finalizedIds: string[] = [];
       if (merged.length > 0) {
         if (fmt === "text") console.log("\nFinalizing merged tasks in tasks file...");
         for (const agent of merged) {
-          markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch, fmt);
+          // skipAncestryCheck=true: wave state already confirmed the merge.
+          // The branch ref may have been deleted by a previous cleanup.
+          markFeatureDone(projectRoot, agent.feature_id, config, existingState.base_branch, fmt, true);
           finalizedIds.push(agent.feature_id);
           // Clean up worktree and branch (already merged, safe to delete)
           try {
@@ -2497,8 +2535,11 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
         }
       }
 
-      // Strip finalized task IDs from explicit selection so we don't
-      // try to re-launch tasks that were just marked done
+      // Strip finalized task IDs from explicit --tasks selection so we don't
+      // try to re-launch tasks that were just marked done.
+      // (For --all-ready / default selection, getReadyTasks already filters by
+      //  status==="backlog", but we also apply a post-selection filter below
+      //  as defense-in-depth in case markFeatureDone failed to persist.)
       if (finalizedIds.length > 0 && opts.features?.length) {
         const finalizedSet = new Set(finalizedIds);
         opts.features = opts.features.filter((id) => !finalizedSet.has(id));
@@ -2536,6 +2577,19 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
   // Select features
   let selected = selectFeatures(data, selOpts);
+
+  // Defense-in-depth: strip tasks that were just finalized from the previous
+  // wave. This catches the case where markFeatureDone failed to persist the
+  // status change (e.g., concurrent write race, I/O error) so
+  // getReadyTasks still sees them as "backlog".
+  if (finalizedIds.length > 0 && selected.length > 0) {
+    const finalizedSet = new Set(finalizedIds);
+    const before = selected.length;
+    selected = selected.filter((t) => !finalizedSet.has(t.id));
+    if (selected.length < before && fmt === "text") {
+      console.log(`Excluded ${before - selected.length} already-finalized task(s) from selection.\n`);
+    }
+  }
 
   if (selected.length === 0) {
     // Build a context-aware message based on which flags were passed

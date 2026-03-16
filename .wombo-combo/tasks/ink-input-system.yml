@@ -5,15 +5,15 @@ description: "Build a reusable TextInput Ink component that replaces blessed-tex
   cursor navigation (left/right/up/down), Home/End, insert/delete at cursor position, Ctrl+S submit (not Enter — Enter
   inserts newline in multiline mode), Ctrl+E to open $EDITOR, single-line and multi-line modes. This is the foundation
   for every form in the TUI. Test with a standalone harness before integrating."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - ink-spike
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-15T22:53:01.281Z
 constraints: []
 forbidden: []
 references: []

@@ -214,7 +214,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
 
       case "merged":
         if (fmt === "text") console.log(`  ${agent.feature_id}: merged — marking feature as done`);
-        markFeatureDone(projectRoot, agent.feature_id, config, agent.base_branch ?? state.base_branch, fmt);
+        // skipAncestryCheck=true: wave state already confirmed the merge.
+        markFeatureDone(projectRoot, agent.feature_id, config, agent.base_branch ?? state.base_branch, fmt, true);
         try {
           removeWorktree(projectRoot, agent.worktree, true);
           if (fmt === "text") console.log(`  ${agent.feature_id}: worktree and branch removed`);

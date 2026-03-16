@@ -7,15 +7,15 @@ description: "Replace the 20+ prompt interactive wizard with a minimal Ink form.
   tasks/, archive/. Remove creation of runtime artifacts (logs/, history/), auto-install of shell completions, and
   inline dependency checking. This task depends on ink-spike for the base Ink infrastructure and ink-input-system for
   text input."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - ink-input-system
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-16T00:02:41.236Z
 constraints: []
 forbidden: []
 references: []

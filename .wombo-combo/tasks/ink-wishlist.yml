@@ -5,15 +5,15 @@ description: "Migrate tui-wishlist.ts (760 lines) to Ink components. Two compone
   standalone view for browsing/promoting wishlist items to errands (E), quests (P), genesis (G), with delete (D). (2)
   WishlistOverlay — modal popup for quick browsing and adding items. Both share the same item list rendering. Must
   preserve all keybinds and promotion workflows."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on:
   - ink-input-system
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-15T22:55:53.941Z
 constraints: []
 forbidden: []
 references: []

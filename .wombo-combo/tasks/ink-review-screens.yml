@@ -6,15 +6,15 @@ description: "Migrate tui-genesis-review.ts (1017 lines) and tui-plan-review.ts 
   (Space), edit modal (E), reorder (K/J move up/down), approve (A), validation issues (V), toggle all (R), quit/cancel
   (Q). Genesis review shows proposed quests, plan review shows proposed tasks — the only difference is the data shape
   and labels. Deduplication should cut ~1000 lines of code."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - ink-simple-screens
 effort: PT8H
 started_at: null
-ended_at: null
+ended_at: 2026-03-16T00:20:30.624Z
 constraints: []
 forbidden: []
 references: []

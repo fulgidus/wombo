@@ -6,15 +6,15 @@ description: "Migrate three small focused TUI modules to Ink components: (1) tui
   showing token usage stats grouped by task/quest/model/provider. (3) tui-question-popup.ts (372 lines) — HITL question
   modal with queue navigation (Tab/S-Tab) and text input for answers. All three are modal overlays — good candidates for
   an Ink Modal wrapper component. Must preserve all keybinds and display formatting."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - ink-input-system
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-15T23:55:22.831Z
 constraints: []
 forbidden: []
 references: []
