@@ -357,9 +357,10 @@ export function extractHunkBase(
   }
 
   if (matchingBaseIndices.length === 0) {
-    // No overlap — base section might be entirely different or empty
-    // Return empty string (the base had nothing here)
-    return "";
+    // No overlap — base section might be entirely different or empty.
+    // Return null so callers know no base content could be determined
+    // (returning "" would be truthy and cause misclassification in classifyHunk).
+    return null;
   }
 
   const firstIdx = matchingBaseIndices[0];
@@ -541,10 +542,19 @@ export async function classifyFileHunks(
 
   // Get full base file content from git index
   const fullBase = await getMergeBaseContent(worktreePath, filePath);
+  if (fullBase === null) {
+    console.warn(`[tier2.5] Could not retrieve merge base content for ${filePath} — all hunks will be classified as "complex"`);
+  }
 
   // Get full ours/theirs from index for per-hunk base extraction
   const fullOurs = await getOursContent(worktreePath, filePath);
   const fullTheirs = await getTheirsContent(worktreePath, filePath);
+  if (fullOurs === null) {
+    console.warn(`[tier2.5] Could not retrieve "ours" content for ${filePath} from git index`);
+  }
+  if (fullTheirs === null) {
+    console.warn(`[tier2.5] Could not retrieve "theirs" content for ${filePath} from git index`);
+  }
 
   // Classify each hunk
   const hunks: ConflictHunk[] = rawHunks.map((raw) => {
@@ -644,6 +654,7 @@ export async function tryResolveAdditiveHunks(
   for (const hunk of additiveHunks) {
     if (!hunk.base) {
       // Can't do additive merge without base — skip to complex
+      console.warn(`[tier2.5] Skipping additive hunk ${hunk.index} in ${fileResult.filePath} — no base content available`);
       continue;
     }
 
@@ -723,12 +734,26 @@ export async function runTier25(
       const result = await classifyFileHunks(worktreePath, filePath);
       fileResults.push(result);
     } catch (err: any) {
-      // If we can't parse a file, treat it as having one complex unresolved hunk
+      // If we can't parse a file, record a synthetic "complex" hunk so counts stay accurate
+      console.error(`[tier2.5] Failed to classify hunks for ${filePath}: ${err?.message ?? err}`);
+      const syntheticHunk: ConflictHunk = {
+        index: 0,
+        rawMatch: "",
+        ours: "",
+        theirs: "",
+        base: null,
+        classification: "complex",
+        modifiedSide: "both",
+        resolved: false,
+        resolution: null,
+        startLine: 0,
+        endLine: 0,
+      };
       fileResults.push({
         filePath,
-        hunks: [],
+        hunks: [syntheticHunk],
         allResolved: false,
-        unresolvedHunks: [],
+        unresolvedHunks: [syntheticHunk],
         resolvedHunks: [],
         resolvedContent: null,
       });
@@ -755,8 +780,13 @@ export async function runTier25(
       // Write resolved content and stage the file
       const fullPath = `${worktreePath}/${fileResult.filePath}`;
       writeFileSync(fullPath, fileResult.resolvedContent);
-      await runSafe(`git add "${fileResult.filePath}"`, worktreePath);
-      resolvedFiles.push(fileResult.filePath);
+      const addResult = await runSafe(`git add "${fileResult.filePath}"`, worktreePath);
+      if (addResult.ok) {
+        resolvedFiles.push(fileResult.filePath);
+      } else {
+        console.error(`[tier2.5] Failed to stage resolved file ${fileResult.filePath}: ${addResult.output}`);
+        unresolvedFiles.push(fileResult.filePath);
+      }
     } else {
       unresolvedFiles.push(fileResult.filePath);
     }

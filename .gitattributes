@@ -1,0 +1,3 @@
+# Barrel files: use union merge strategy to auto-resolve conflicts
+# where both sides add new export lines (append-only pattern).
+src/ink/index.ts merge=union

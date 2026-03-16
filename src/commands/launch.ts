@@ -16,8 +16,8 @@
  */
 
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { resolve, join as pathJoin } from "node:path";
 import type { WomboConfig } from "../config";
 import type { Feature, SelectionOptions, Priority, Difficulty } from "../lib/tasks";
 import { loadFeatures, selectFeatures, parseDurationMinutes, saveFeatures } from "../lib/tasks";
@@ -150,6 +150,196 @@ function buildQuestContext(
  * Launching them simultaneously causes `CREATE TABLE` collisions.
  */
 const LAUNCH_STAGGER_MS = 500;
+
+// ---------------------------------------------------------------------------
+// Barrel File Detection — pre-flight check for conflict-prone files
+// ---------------------------------------------------------------------------
+
+/** A barrel index file detected in the project */
+interface BarrelFile {
+  /** Relative path from project root (e.g. "src/ink/index.ts") */
+  relativePath: string;
+  /** Total non-comment, non-blank lines */
+  totalLines: number;
+  /** Number of re-export lines */
+  reExportLines: number;
+  /** Re-export percentage (0-100) */
+  reExportPercent: number;
+}
+
+/** Regex matching re-export statements: `export { ... } from` or `export * from` */
+const RE_EXPORT_PATTERN = /^\s*export\s+(\{[^}]*\}\s+from|.*\*\s+from|\{[^}]*\}\s*from)\s+["']/;
+
+/**
+ * Check if a file is a barrel (index) file with predominantly re-export content.
+ *
+ * Criteria (strict):
+ *   1. File is named `index.ts`, `index.js`, `index.tsx`, or `index.jsx`
+ *   2. More than 50% of non-comment, non-blank lines are re-export statements
+ *   3. File has at least 3 re-export lines (avoid false positives on tiny files)
+ *
+ * @returns BarrelFile info if it qualifies, null otherwise
+ */
+function analyzeBarrelFile(projectRoot: string, relativePath: string): BarrelFile | null {
+  const fullPath = resolve(projectRoot, relativePath);
+  if (!existsSync(fullPath)) return null;
+
+  const basename = relativePath.split("/").pop() ?? "";
+  if (!/^index\.(ts|js|tsx|jsx)$/.test(basename)) return null;
+
+  let content: string;
+  try {
+    content = readFileSync(fullPath, "utf-8");
+  } catch {
+    return null;
+  }
+
+  const lines = content.split("\n");
+  let inBlockComment = false;
+  let totalLines = 0;
+  let reExportLines = 0;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Track block comments
+    if (inBlockComment) {
+      if (trimmed.includes("*/")) inBlockComment = false;
+      continue;
+    }
+    if (trimmed.startsWith("/*")) {
+      if (!trimmed.includes("*/")) inBlockComment = true;
+      continue;
+    }
+
+    // Skip blank lines and line comments
+    if (!trimmed || trimmed.startsWith("//")) continue;
+
+    totalLines++;
+    if (RE_EXPORT_PATTERN.test(trimmed)) {
+      reExportLines++;
+    }
+  }
+
+  if (reExportLines < 3 || totalLines === 0) return null;
+
+  const reExportPercent = Math.round((reExportLines / totalLines) * 100);
+  if (reExportPercent <= 50) return null;
+
+  return { relativePath, totalLines, reExportLines, reExportPercent };
+}
+
+/**
+ * Recursively find all index.ts/js files under a directory.
+ */
+function findIndexFiles(dir: string, projectRoot: string, results: string[] = []): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return results;
+  }
+
+  for (const entry of entries) {
+    // Skip obvious non-source directories
+    if (entry === "node_modules" || entry === ".git" || entry === "dist" || entry === "build" || entry === "coverage") {
+      continue;
+    }
+
+    const fullPath = pathJoin(dir, entry);
+    let stat;
+    try {
+      stat = statSync(fullPath);
+    } catch {
+      continue;
+    }
+
+    if (stat.isDirectory()) {
+      findIndexFiles(fullPath, projectRoot, results);
+    } else if (/^index\.(ts|js|tsx|jsx)$/.test(entry)) {
+      // Convert to relative path from project root
+      const relPath = fullPath.slice(projectRoot.length + 1);
+      results.push(relPath);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Parse .gitattributes and return the set of file paths that have merge=union.
+ */
+function getGitattributesUnionFiles(projectRoot: string): Set<string> {
+  const attrPath = resolve(projectRoot, ".gitattributes");
+  const unionFiles = new Set<string>();
+
+  if (!existsSync(attrPath)) return unionFiles;
+
+  try {
+    const content = readFileSync(attrPath, "utf-8");
+    for (const line of content.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      if (/merge\s*=\s*union/.test(trimmed)) {
+        // Extract the file pattern (first whitespace-delimited token)
+        const pattern = trimmed.split(/\s+/)[0];
+        if (pattern) unionFiles.add(pattern);
+      }
+    }
+  } catch {
+    // Can't read .gitattributes — return empty set
+  }
+
+  return unionFiles;
+}
+
+/**
+ * Pre-flight check: detect barrel files in the project that could cause
+ * merge conflicts when multiple agents modify nearby code.
+ *
+ * When unprotected barrels are found, warns the user and proposes adding
+ * .gitattributes entries with merge=union strategy.
+ *
+ * @param projectRoot  Project root directory
+ * @param srcDirs      Source directories to scan (e.g. ["src"])
+ * @param fmt          Output format
+ * @returns List of unprotected barrel files found
+ */
+function detectUnprotectedBarrels(
+  projectRoot: string,
+  srcDirs: string[],
+  fmt: OutputFormat
+): BarrelFile[] {
+  const unionFiles = getGitattributesUnionFiles(projectRoot);
+  const unprotected: BarrelFile[] = [];
+
+  for (const srcDir of srcDirs) {
+    const absDir = resolve(projectRoot, srcDir);
+    if (!existsSync(absDir)) continue;
+
+    const indexFiles = findIndexFiles(absDir, projectRoot);
+    for (const relPath of indexFiles) {
+      const barrel = analyzeBarrelFile(projectRoot, relPath);
+      if (barrel && !unionFiles.has(relPath)) {
+        unprotected.push(barrel);
+      }
+    }
+  }
+
+  if (unprotected.length > 0 && fmt === "text") {
+    console.warn(`\n\x1b[33m[preflight]\x1b[0m Detected ${unprotected.length} unprotected barrel file(s) that may cause merge conflicts:`);
+    for (const b of unprotected) {
+      console.warn(`  \x1b[33m${b.relativePath}\x1b[0m (${b.reExportPercent}% re-exports, ${b.reExportLines}/${b.totalLines} lines)`);
+    }
+    console.warn(`\n  \x1b[36mRecommendation:\x1b[0m Add these entries to .gitattributes to auto-resolve conflicts:`);
+    for (const b of unprotected) {
+      console.warn(`    ${b.relativePath} merge=union`);
+    }
+    console.warn("");
+  }
+
+  return unprotected;
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -2486,6 +2676,15 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     // Build scheduling plan
     schedulePlan = buildSchedulePlan(depGraph);
     if (fmt === "text") console.log(`\n${formatSchedulePlan(schedulePlan)}\n`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pre-flight: Barrel file detection — warn about conflict-prone index files
+  // ---------------------------------------------------------------------------
+  // Only warn when launching multiple tasks (single task can't conflict with itself)
+  if (selected.length > 1) {
+    // Scan "src" directory by default; could be made configurable later
+    detectUnprotectedBarrels(projectRoot, ["src"], fmt);
   }
 
   if (opts.dryRun) {

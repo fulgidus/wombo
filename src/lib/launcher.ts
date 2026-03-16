@@ -42,7 +42,8 @@
  */
 
 import { spawn, execSync, type ChildProcess } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
+import { writeFileSync, unlinkSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import type { WomboConfig } from "../config";
 import { resolveAgentBin } from "../config";
 import {
@@ -183,6 +184,72 @@ function runSilent(cmd: string): string {
 }
 
 /**
+ * Maximum prompt size (in bytes) that can safely be passed as a CLI argument.
+ * Linux's ARG_MAX is ~2MB, but env vars also count against it. Using 128KB
+ * as a safe threshold leaves ample room for environment variables.
+ */
+const PROMPT_ARG_MAX = 128 * 1024;
+
+/**
+ * Spawn an agent process, passing the prompt either as a CLI argument (small
+ * prompts) or via stdin (large prompts). This prevents E2BIG errors from
+ * exceeding the OS argument length limit.
+ *
+ * @returns The spawned child process
+ */
+function spawnWithPrompt(
+  agentBin: string,
+  args: string[],
+  prompt: string,
+  spawnOpts: {
+    cwd?: string;
+    env?: Record<string, string | undefined>;
+  }
+): ChildProcess {
+  const promptBytes = Buffer.byteLength(prompt, "utf-8");
+
+  if (promptBytes <= PROMPT_ARG_MAX) {
+    // Small prompt — pass as CLI argument (simpler, more reliable)
+    const child = spawn(agentBin, [...args, prompt], {
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: false,
+      cwd: spawnOpts.cwd,
+      env: spawnOpts.env,
+    });
+    child.stdin?.end();
+    return child;
+  }
+
+  // Large prompt — write to temp file and pipe via stdin to avoid E2BIG
+  const tmpDir = mkdtempSync(join(tmpdir(), "woco-prompt-"));
+  const tmpFile = join(tmpDir, "prompt.txt");
+  writeFileSync(tmpFile, prompt);
+
+  const child = spawn(agentBin, args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    detached: false,
+    cwd: spawnOpts.cwd,
+    env: spawnOpts.env,
+  });
+
+  // Pipe the prompt via stdin
+  child.stdin?.write(prompt);
+  child.stdin?.end();
+
+  // Clean up temp file after process exits (or after 60s as fallback)
+  const cleanup = () => {
+    try { unlinkSync(tmpFile); } catch {}
+    try { unlinkSync(tmpDir); } catch {}
+  };
+  child.on("exit", cleanup);
+  setTimeout(cleanup, 60_000);
+
+  console.log(`[launcher] Prompt too large for CLI arg (${Math.round(promptBytes / 1024)}KB) — piped via stdin`);
+
+  return child;
+}
+
+/**
  * Build environment variables for an agent process.
  * Merges process.env with OPENCODE_DIR, portless env vars, and HITL env vars.
  */
@@ -266,17 +333,10 @@ export function launchHeadless(opts: LaunchOptions): LaunchResult {
     args.push("--model", opts.model);
   }
 
-  args.push(opts.prompt);
-
-  const child = spawn(agentBin, args, {
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: false,
+  const child = spawnWithPrompt(agentBin, args, opts.prompt, {
     cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
-
-  // Close stdin so agent starts processing immediately
-  child.stdin?.end();
 
   return {
     pid: child.pid!,
@@ -331,16 +391,10 @@ export function retryHeadless(opts: RetryOptions): LaunchResult {
     args.push("--model", opts.model);
   }
 
-  args.push(retryMessage);
-
-  const child = spawn(agentBin, args, {
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: false,
+  const child = spawnWithPrompt(agentBin, args, retryMessage, {
     cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config, opts.hitlMode, opts.projectRoot),
   });
-
-  child.stdin?.end();
 
   return {
     pid: child.pid!,
@@ -413,16 +467,10 @@ export function launchConflictResolver(opts: ConflictResolverOptions): LaunchRes
     args.push("--model", opts.model);
   }
 
-  args.push(opts.prompt);
-
-  const child = spawn(agentBin, args, {
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: false,
+  const child = spawnWithPrompt(agentBin, args, opts.prompt, {
     cwd: agentType === "claude" ? opts.worktreePath : undefined,
     env: agentEnv(opts.worktreePath, opts.featureId, opts.config),
   });
-
-  child.stdin?.end();
 
   return {
     pid: child.pid!,
@@ -506,8 +554,10 @@ export function launchInteractive(opts: LaunchOptions): LaunchResult {
       tmuxPasteBuffer(sessionName);
       tmuxSendKeys(sessionName, "Enter");
       try { unlinkSync(tmpFile); } catch {}
-    } catch {
-      // If prompt sending fails, user can type manually
+    } catch (err: any) {
+      // If prompt sending fails, user can type manually — but log it so
+      // debugging "why didn't my agent get the prompt?" isn't a mystery
+      console.warn(`[launcher] Failed to send prompt to tmux session ${sessionName}: ${err?.message ?? err}`);
     }
   }, 3000);
 

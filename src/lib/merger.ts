@@ -65,8 +65,12 @@ let mergeQueueTail: Promise<void> = Promise.resolve();
 
 export function enqueueMerge<T>(fn: () => Promise<T>): Promise<T> {
   const result = mergeQueueTail.then(fn, fn); // run even if previous failed
-  // Update the tail but suppress rejections on the chain itself
-  mergeQueueTail = result.then(() => {}, () => {});
+  // Update the tail — suppress rejections on the chain itself to prevent
+  // unhandled promise rejection, but log the error for visibility
+  mergeQueueTail = result.then(
+    () => {},
+    (err) => { console.warn(`[merge-queue] Queued merge operation failed: ${err?.message ?? err}`); }
+  );
   return result;
 }
 
@@ -169,17 +173,22 @@ export async function mergeBranch(
       tmpDir
     );
     if (!pull.ok) {
+      console.warn(`[merger] Fast-forward pull failed for ${baseBranch}, falling back to fetch+reset: ${pull.output.slice(0, 200)}`);
       const fetch = await runSafe(
         `git fetch ${config.git.remote} "${baseBranch}"`,
         tmpDir
       );
       if (fetch.ok) {
-        await runSafe(
+        const reset = await runSafe(
           `git reset --hard ${config.git.remote}/${baseBranch}`,
           tmpDir
         );
+        if (!reset.ok) {
+          console.warn(`[merger] git reset --hard failed after fetch: ${reset.output.slice(0, 200)}`);
+        }
+      } else {
+        console.warn(`[merger] Fetch also failed for ${baseBranch} (offline?) — proceeding with local state: ${fetch.output.slice(0, 200)}`);
       }
-      // If fetch also fails (offline?), proceed with whatever we have locally.
     }
 
     // Attempt the merge
@@ -284,6 +293,9 @@ export async function deleteBranch(
   branchName: string
 ): Promise<boolean> {
   const result = await runSafe(`git branch -d "${branchName}"`, projectRoot);
+  if (!result.ok) {
+    console.warn(`[merger] Failed to delete branch ${branchName}: ${result.output.slice(0, 200)}`);
+  }
   return result.ok;
 }
 
@@ -309,6 +321,9 @@ export async function mergeBaseIntoFeature(
   // quest branch that was never pushed). In that case we fall back to the
   // local ref so merges still work for local-only branches.
   const fetchResult = await runSafe(`git fetch ${config.git.remote} "${baseBranch}"`, worktreePath);
+  if (!fetchResult.ok) {
+    console.warn(`[merger] Fetch failed for ${baseBranch} — falling back to local ref: ${fetchResult.output.slice(0, 200)}`);
+  }
 
   // Use remote ref when available, otherwise fall back to local branch ref
   const remoteRef = `${config.git.remote}/${baseBranch}`;
@@ -556,8 +571,9 @@ export async function tryAutoResolveTrivialConflicts(
       } else {
         unresolvedFiles.push(file);
       }
-    } catch {
+    } catch (err: any) {
       // Can't read/write the file — treat as unresolved
+      console.warn(`[merger] Failed to read/write conflict file ${file}: ${err?.message ?? err}`);
       unresolvedFiles.push(file);
     }
   }
@@ -644,6 +660,7 @@ export async function tieredMergeBaseIntoFeature(
       };
     }
     // Auto-resolve commit failed — fall through to tier 2.5
+    console.warn(`[merger] Tier 2 auto-resolve succeeded but commit failed — falling through to tier 2.5`);
   }
 
   // Tier 2.5: Surgical per-hunk resolution
@@ -671,6 +688,7 @@ export async function tieredMergeBaseIntoFeature(
         };
       }
       // Commit failed — fall through to tier 3 with the structured data
+      console.warn(`[merger] Tier 2.5 resolved all hunks but commit failed — falling through to tier 3`);
     }
 
     // Tier 3: Real conflicts remain — caller must launch resolver agent
@@ -885,7 +903,10 @@ export async function continueRebase(
 export async function abortRebase(
   worktreePath: string
 ): Promise<void> {
-  await runSafe("git rebase --abort", worktreePath);
+  const result = await runSafe("git rebase --abort", worktreePath);
+  if (!result.ok) {
+    console.warn(`[merger] git rebase --abort failed: ${result.output.slice(0, 200)}`);
+  }
 }
 
 /**
@@ -897,9 +918,15 @@ export async function cleanupRebaseBranch(
   featureBranch: string
 ): Promise<void> {
   // Switch back to the original feature branch
-  await runSafe(`git checkout "${featureBranch}"`, worktreePath);
+  const checkout = await runSafe(`git checkout "${featureBranch}"`, worktreePath);
+  if (!checkout.ok) {
+    console.warn(`[merger] Failed to checkout ${featureBranch} during rebase cleanup: ${checkout.output.slice(0, 200)}`);
+  }
   // Delete the throwaway branch
-  await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+  const del = await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+  if (!del.ok) {
+    console.warn(`[merger] Failed to delete temp rebase branch ${tempBranch}: ${del.output.slice(0, 200)}`);
+  }
 }
 
 /**
@@ -925,7 +952,10 @@ export async function finalizeRebase(
   }
 
   // Delete the temp branch
-  await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+  const delResult = await runSafe(`git branch -D "${tempBranch}"`, worktreePath);
+  if (!delResult.ok) {
+    console.warn(`[merger] Failed to delete temp rebase branch ${tempBranch}: ${delResult.output.slice(0, 200)}`);
+  }
 
   return { success: true };
 }
