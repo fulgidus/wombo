@@ -152,3 +152,36 @@ export {
   type RunGenesisReviewOptions,
   type RunPlanReviewOptions,
 } from "./run-review";
+
+// Complex TUI screen components (quest picker, task browser, wave monitor)
+export {
+  QUEST_STATUS_COLORS,
+  QUEST_STATUS_ABBREV,
+  TASK_STATUS_COLORS,
+  TASK_STATUS_ABBREV,
+  AGENT_STATUS_COLORS,
+  AGENT_STATUS_ICONS,
+  TASK_PRIORITY_COLORS,
+  elapsed,
+  progressBar,
+} from "./tui-constants";
+export {
+  ErrandWizard,
+  type ErrandWizardProps,
+} from "./errand-wizard";
+export {
+  QuestPickerView,
+  type QuestPickerViewProps,
+  type QuestSummary,
+} from "./quest-picker";
+export {
+  TaskBrowserView,
+  type TaskBrowserViewProps,
+  type TaskNode,
+} from "./task-browser";
+export {
+  WaveMonitorView,
+  type WaveMonitorViewProps,
+  type AgentInfo,
+  type AgentCounts,
+} from "./wave-monitor";
