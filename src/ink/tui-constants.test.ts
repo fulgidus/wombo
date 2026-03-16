@@ -96,7 +96,7 @@ describe("AGENT_STATUS_COLORS", () => {
       "verified", "failed", "merged", "retry", "resolving_conflict",
     ];
     for (const s of statuses) {
-      expect(AGENT_STATUS_COLORS[s]).toBeDefined();
+      expect(AGENT_STATUS_COLORS[s as keyof typeof AGENT_STATUS_COLORS]).toBeDefined();
     }
   });
 
@@ -112,7 +112,7 @@ describe("AGENT_STATUS_ICONS", () => {
       "verified", "failed", "merged", "retry", "resolving_conflict",
     ];
     for (const s of statuses) {
-      expect(AGENT_STATUS_ICONS[s]).toBeDefined();
+      expect(AGENT_STATUS_ICONS[s as keyof typeof AGENT_STATUS_ICONS]).toBeDefined();
     }
   });
 
