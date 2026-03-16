@@ -102,3 +102,53 @@ export {
   SECTION_NAMES,
   structureRawInputs,
 } from "./onboarding";
+
+// Review screen components (shared ReviewList + genesis/plan adapters)
+export {
+  type ReviewItem,
+  type ReviewListConfig,
+  type EditFieldDef,
+  type DetailField,
+  type DetailSection,
+  type ReviewValidationIssue,
+  PRIORITY_ABBREV,
+  PRIORITY_COLORS,
+  DIFFICULTY_COLORS,
+  HITL_COLORS,
+} from "./review-list-types";
+export {
+  createReviewState,
+  toggleAccept,
+  toggleAll,
+  moveItem,
+  selectItem,
+  updateItem,
+  getAcceptedItems,
+  getCounts,
+  type ReviewState,
+} from "./use-review-list";
+export { ReviewList, type ReviewListProps } from "./review-list";
+export {
+  questToReviewItem,
+  reviewItemToQuest,
+  buildGenesisConfig,
+  GENESIS_EDIT_FIELDS,
+  GenesisReviewApp,
+  type GenesisReviewAppProps,
+} from "./genesis-review";
+export {
+  taskToReviewItem,
+  reviewItemToTask,
+  buildPlanConfig,
+  PLAN_EDIT_FIELDS,
+  PlanReviewApp,
+  type PlanReviewAppProps,
+} from "./plan-review";
+export {
+  runGenesisReviewInk,
+  runPlanReviewInk,
+  type GenesisReviewAction,
+  type PlanReviewAction,
+  type RunGenesisReviewOptions,
+  type RunPlanReviewOptions,
+} from "./run-review";
