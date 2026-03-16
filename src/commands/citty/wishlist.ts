@@ -289,28 +289,9 @@ export const wishlistCommand = defineCommand({
     name: "wishlist",
     description: "Quick-capture ideas for later (also: w, wl)",
   },
-  // Default behavior when no subcommand is given: list items
-  async run() {
-    const projectRoot = resolve(process.cwd());
-    ensureInitialized(projectRoot);
-    const items = listWishlistItems(projectRoot);
-    output(
-      "text",
-      items,
-      () => {
-        if (items.length === 0) {
-          console.log("No wishlist items yet. Add one with: woco wishlist add \"Your idea\"");
-          return;
-        }
-        console.log(`Wishlist (${items.length} item${items.length === 1 ? "" : "s"}):\n`);
-        for (const item of items) {
-          const tagStr = item.tags.length > 0 ? ` [${item.tags.join(", ")}]` : "";
-          const date = new Date(item.created_at).toLocaleDateString();
-          console.log(`  ${item.id.slice(0, 8)}  ${item.text}${tagStr}  (${date})`);
-        }
-      }
-    );
-  },
+  // NOTE: No run() handler here. Default "list" is injected by the router
+  // when no subcommand is given. Having run() here causes citty to execute
+  // BOTH the subcommand and this handler, producing double output.
   subCommands: {
     // Canonical names
     add: addCommand,

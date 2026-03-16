@@ -53,10 +53,11 @@ describe("citty tasks command", () => {
     expect(subCommandNames.length).toBe(19);
   });
 
-  test("tasksCommand has a run handler for default subcommand behavior", async () => {
+  test("tasksCommand has no run handler (default subcommand injected by router)", async () => {
     const { tasksCommand } = await import("../src/commands/citty/tasks.js");
-    // The parent command should have a run handler that defaults to 'list'
-    expect(tasksCommand.run).toBeDefined();
+    // Parent run() was removed to prevent citty's double-execution bug.
+    // Default subcommand ("list") is injected by injectDefaultSubcommand() in router.ts.
+    expect(tasksCommand.run).toBeUndefined();
   });
 });
 

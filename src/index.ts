@@ -121,12 +121,14 @@ async function main(): Promise<void> {
       return;
     }
 
-    // Show command-specific help from the schema registry
-    const helpText = renderCommandHelp(command);
+    // Show command-specific help from the schema registry.
+    // remaining[0] may be a subcommand (e.g. "woco tasks list -h" → "list")
+    const subcommand = remaining.length > 0 ? remaining[0] : undefined;
+    const helpText = renderCommandHelp(command, subcommand);
     if (helpText) {
       console.log(helpText);
     } else {
-      console.error(`No help available for: ${command}`);
+      console.error(`No help available for: ${command}${subcommand ? ` ${subcommand}` : ""}`);
       console.log(renderGlobalHelp());
     }
     return;

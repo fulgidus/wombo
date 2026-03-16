@@ -460,16 +460,9 @@ export const questCommand = defineCommand({
     name: "quest",
     description: "Manage quests (scoped missions) (also: q)",
   },
-  // Default behavior when no subcommand is given: list quests
-  async run() {
-    const projectRoot = resolve(process.cwd());
-    const config = loadProjectConfigSync(projectRoot);
-    await handleQuestSubcommand({
-      projectRoot,
-      config,
-      subcommand: "list",
-    });
-  },
+  // NOTE: No run() handler here. Default "list" is injected by the router
+  // when no subcommand is given. Having run() here causes citty to execute
+  // BOTH the subcommand and this handler, producing double output.
   subCommands: {
     // Canonical names
     create: createCommand,

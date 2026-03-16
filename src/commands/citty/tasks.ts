@@ -539,15 +539,9 @@ export const tasksCommand = defineCommand({
     name: "tasks",
     description: "Manage tasks file (also: t, features)",
   },
-  // Default behavior when no subcommand is given: list tasks
-  async run() {
-    const projectRoot = resolve(process.cwd());
-    const config = await loadProjectConfig(projectRoot);
-    await cmdTasksList({
-      projectRoot,
-      config,
-    });
-  },
+  // NOTE: No run() handler here. Default "list" is injected by the router
+  // when no subcommand is given. Having run() here causes citty to execute
+  // BOTH the subcommand and this handler, producing double output.
   subCommands: {
     // Canonical names
     list: listCommand,

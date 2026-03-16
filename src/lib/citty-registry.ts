@@ -866,19 +866,38 @@ export const BRIDGE_REGISTRY: CommandDef[] = buildRegistry();
 // ---------------------------------------------------------------------------
 
 /**
- * Find a command definition by name. Supports compound names like "tasks list".
+ * Match a registry entry by canonical name OR any alias.
+ */
+function matchByNameOrAlias(
+  entries: CommandDef[],
+  token: string
+): CommandDef | undefined {
+  return entries.find(
+    (c) => c.name === token || c.aliases?.includes(token)
+  );
+}
+
+/**
+ * Find a command definition by name or alias.
+ * Supports compound names like "tasks list" and aliases like "t ls".
  */
 export function findBridgeCommandDef(name: string): CommandDef | undefined {
-  // Try direct match first
-  const direct = BRIDGE_REGISTRY.find((c) => c.name === name);
+  // Try direct match (name or alias) first
+  const direct = matchByNameOrAlias(BRIDGE_REGISTRY, name);
   if (direct) return direct;
 
-  // Try compound: "tasks list" -> look in tasks subcommands
+  // Try compound: "tasks list" or "t ls" -> look in parent's subcommands
   const parts = name.split(/\s+/);
   if (parts.length === 2) {
-    const parent = BRIDGE_REGISTRY.find((c) => c.name === parts[0]);
+    const parent = matchByNameOrAlias(BRIDGE_REGISTRY, parts[0]);
     if (parent?.subcommands) {
-      return parent.subcommands.find((sc) => sc.name === name || sc.name === parts[1]);
+      // Match subcommand by its compound name, short name, or alias
+      return parent.subcommands.find(
+        (sc) =>
+          sc.name === name ||
+          sc.name === parts[1] ||
+          sc.aliases?.includes(parts[1])
+      );
     }
   }
 

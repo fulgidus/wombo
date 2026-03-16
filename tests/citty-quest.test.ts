@@ -53,10 +53,11 @@ describe("citty quest command", () => {
     expect(subCommandNames.length).toBe(18);
   });
 
-  test("questCommand has a run handler for default subcommand behavior", async () => {
+  test("questCommand has no run handler (default subcommand injected by router)", async () => {
     const { questCommand } = await import("../src/commands/citty/quest.js");
-    // The parent command should have a run handler that defaults to 'list'
-    expect(questCommand.run).toBeDefined();
+    // Parent run() was removed to prevent citty's double-execution bug.
+    // Default subcommand ("list") is injected by injectDefaultSubcommand() in router.ts.
+    expect(questCommand.run).toBeUndefined();
   });
 });
 
