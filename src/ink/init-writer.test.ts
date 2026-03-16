@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { writeInitFiles, type InitWriterConfig } from "./init-writer";
-import { WOMBO_DIR, DEFAULT_CONFIG } from "../config";
+import { WOMBO_DIR, DEFAULT_CONFIG, loadConfig } from "../config";
 
 describe("writeInitFiles", () => {
   let tmpDir: string;
@@ -189,5 +189,44 @@ describe("writeInitFiles", () => {
     for (const key of Object.keys(DEFAULT_CONFIG)) {
       expect(written).toHaveProperty(key);
     }
+  });
+
+  test("written config.json is loadable by loadConfig", () => {
+    const config: InitWriterConfig = {
+      baseBranch: "main",
+      buildCommand: "npm run build",
+      installCommand: "npm install",
+    };
+
+    writeInitFiles(tmpDir, config, false);
+
+    // loadConfig should be able to read the written config
+    const loaded = loadConfig(tmpDir);
+
+    expect(loaded.baseBranch).toBe("main");
+    expect(loaded.build.command).toBe("npm run build");
+    expect(loaded.install.command).toBe("npm install");
+    // Defaults should be filled in
+    expect(loaded.git.branchPrefix).toBe(DEFAULT_CONFIG.git.branchPrefix);
+    expect(loaded.agent.name).toBe(DEFAULT_CONFIG.agent.name);
+  });
+
+  test("loadConfig roundtrip preserves all user-specified values", () => {
+    const config: InitWriterConfig = {
+      baseBranch: "develop",
+      buildCommand: "pnpm run build",
+      installCommand: "pnpm install",
+    };
+
+    writeInitFiles(tmpDir, config, false);
+    const loaded = loadConfig(tmpDir);
+
+    expect(loaded.baseBranch).toBe("develop");
+    expect(loaded.build.command).toBe("pnpm run build");
+    expect(loaded.install.command).toBe("pnpm install");
+    // Other build defaults should be preserved
+    expect(loaded.build.timeout).toBe(DEFAULT_CONFIG.build.timeout);
+    expect(loaded.build.artifactDir).toBe(DEFAULT_CONFIG.build.artifactDir);
+    expect(loaded.install.timeout).toBe(DEFAULT_CONFIG.install.timeout);
   });
 });
