@@ -64,6 +64,10 @@ import { cmdLaunch } from "./launch";
 import type { LaunchCommandOptions } from "./launch";
 import { cmdResume } from "./resume";
 import { enterAltScreen, exitAltScreen, installAltScreenGuard, clearScreen } from "../ink/alt-screen";
+// Daemon imports
+import { DaemonClient } from "../daemon/client";
+import { ensureDaemonRunning, getDaemonStatus } from "../daemon/launcher";
+import { InkDaemonTUI } from "../ink/run-daemon-monitor";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,6 +130,23 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   enterAltScreen();
   const removeGuard = installAltScreenGuard();
 
+  // Start the daemon (if not already running) and connect a client.
+  // The daemon manages the agent lifecycle; the TUI is a pure viewer/controller.
+  let daemonClient: DaemonClient | null = null;
+  let daemonConnected = false;
+
+  try {
+    await ensureDaemonRunning(projectRoot);
+    daemonClient = new DaemonClient({ clientId: "tui", autoReconnect: true });
+    await daemonClient.connect();
+    daemonConnected = true;
+  } catch (err: any) {
+    // Daemon failed to start or connect — fall back to direct mode
+    // (legacy cmdLaunch/cmdResume path).
+    daemonClient = null;
+    daemonConnected = false;
+  }
+
   try {
 
   // First-run detection: if no project.yml exists, run onboarding wizard.
@@ -148,38 +169,86 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   //   Quest Picker -> Task Browser -> Launch -> Monitor -> back to Quest Picker
   // Only exits when the user presses Q from the Quest Picker (or browser if no quests).
   //
-  // Wave detach support: When the user presses Q in the monitor while agents
-  // are still running, the monitor returns without killing agents. The loop
-  // goes to the browser, which shows a "running wave" indicator and allows
-  // the user to press Tab to switch back to the monitor.
+  // Daemon mode: When connected to the daemon, the monitor shows a live
+  // daemon-backed view (InkDaemonTUI) instead of cmdResume. The daemon
+  // manages agent lifecycle; the TUI is a pure viewer/controller.
+  //
+  // Fallback: When the daemon is not available, falls back to the legacy
+  // cmdLaunch/cmdResume path for backward compatibility.
   //
   // `skipAutoResume` prevents the loop from immediately re-entering the
   // monitor after the user explicitly detached from it.
   let skipAutoResume = false;
   while (true) {
-    // Check for an active wave on each iteration
-    const existingState = loadState(projectRoot);
-    const hasRunningWave =
-      existingState !== null &&
-      existingState.agents.some(
-        (a) =>
-          a.status === "running" ||
-          a.status === "queued" ||
-          a.status === "installing" ||
-          a.status === "resolving_conflict" ||
-          a.status === "retry"
-      );
+    // Check for active agents — via daemon (preferred) or legacy file state
+    let hasRunningWave = false;
+
+    if (daemonConnected && daemonClient) {
+      // Ask the daemon for current state
+      try {
+        const snapshot = await daemonClient.requestState(3000);
+        hasRunningWave = snapshot.agents.some(
+          (a) =>
+            a.status === "running" ||
+            a.status === "queued" ||
+            a.status === "installing" ||
+            a.status === "resolving_conflict" ||
+            a.status === "retry"
+        );
+      } catch {
+        // Daemon not responding — fall back to file-based check
+        const existingState = loadState(projectRoot);
+        hasRunningWave =
+          existingState !== null &&
+          existingState.agents.some(
+            (a) =>
+              a.status === "running" ||
+              a.status === "queued" ||
+              a.status === "installing" ||
+              a.status === "resolving_conflict" ||
+              a.status === "retry"
+          );
+      }
+    } else {
+      const existingState = loadState(projectRoot);
+      hasRunningWave =
+        existingState !== null &&
+        existingState.agents.some(
+          (a) =>
+            a.status === "running" ||
+            a.status === "queued" ||
+            a.status === "installing" ||
+            a.status === "resolving_conflict" ||
+            a.status === "retry"
+        );
+    }
 
     if (hasRunningWave && !skipAutoResume) {
-      // A wave is already running -- resume it (wave monitor TUI).
-      // When the wave completes, cmdResume returns and we loop back.
-      // When the user detaches (Q while agents running), cmdResume also
-      // returns and we fall through to the browser with running wave indicator.
-      {
-        const progress = runProgressInk({ title: "Resuming Wave", context: existingState!.wave_id });
+      // Agents are running — show the monitor.
+      if (daemonConnected && daemonClient) {
+        // Daemon mode: use InkDaemonTUI
+        try {
+          const daemonTui = new InkDaemonTUI({
+            client: daemonClient,
+            projectRoot,
+            config,
+            onQuit: () => {
+              // Detach from monitor — daemon keeps agents running
+            },
+          });
+          daemonTui.start();
+          await daemonTui.waitForQuit();
+          daemonTui.stop();
+        } catch (err: any) {
+          const errProgress = runProgressInk({ title: "Monitor Error" });
+          await errProgress.finish({ type: "error", message: `Daemon monitor error: ${err.message}` });
+        }
+      } else {
+        // Legacy mode: use cmdResume
+        const existingState = loadState(projectRoot);
+        const progress = runProgressInk({ title: "Resuming Wave", context: existingState?.wave_id });
         progress.update("Reconnecting to active wave...");
         try {
-          // Brief flash before cmdResume takes over the screen
           await sleep(500);
           progress.unmount();
           await cmdResume({
@@ -195,13 +264,12 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
             detachOnQuit: true,
           });
         } catch (err: any) {
-          // Don't crash -- show error and loop back
           progress.unmount();
           const errProgress = runProgressInk({ title: "Resume Error" });
           await errProgress.finish({ type: "error", message: `Resume error: ${err.message}` });
         }
       }
-      // After resume returns, don't auto-resume again — let the user
+      // After resume/monitor returns, don't auto-resume again — let the user
       // browse tasks and use Tab to switch back to the monitor if needed.
       skipAutoResume = true;
       // Clear terminal before showing picker/browser again
@@ -369,22 +437,41 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
     if (action.type === "switchToMonitor") {
       // User pressed Tab to switch to the running wave monitor.
-      try {
-        await cmdResume({
-          projectRoot,
-          config,
-          maxConcurrent: opts.maxConcurrent,
-          model: opts.model,
-          interactive: false,
-          noTui: false,
-          autoPush: opts.autoPush ?? false,
-          baseBranch: opts.baseBranch,
-          maxRetries: opts.maxRetries,
-          detachOnQuit: true,
-        });
-      } catch (err: any) {
-        const progress = runProgressInk({ title: "Resume Error" });
-        await progress.finish({ type: "error", message: `Resume error: ${err.message}` });
+      if (daemonConnected && daemonClient) {
+        // Daemon mode: use InkDaemonTUI
+        try {
+          const daemonTui = new InkDaemonTUI({
+            client: daemonClient,
+            projectRoot,
+            config,
+            onQuit: () => {},
+          });
+          daemonTui.start();
+          await daemonTui.waitForQuit();
+          daemonTui.stop();
+        } catch (err: any) {
+          const progress = runProgressInk({ title: "Monitor Error" });
+          await progress.finish({ type: "error", message: `Daemon monitor error: ${err.message}` });
+        }
+      } else {
+        // Legacy mode: use cmdResume
+        try {
+          await cmdResume({
+            projectRoot,
+            config,
+            maxConcurrent: opts.maxConcurrent,
+            model: opts.model,
+            interactive: false,
+            noTui: false,
+            autoPush: opts.autoPush ?? false,
+            baseBranch: opts.baseBranch,
+            maxRetries: opts.maxRetries,
+            detachOnQuit: true,
+          });
+        } catch (err: any) {
+          const progress = runProgressInk({ title: "Resume Error" });
+          await progress.finish({ type: "error", message: `Resume error: ${err.message}` });
+        }
       }
       clearScreen();
       // Don't auto-resume — let user browse tasks and Tab to monitor
@@ -404,35 +491,67 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       session.lastView = "monitor";
       saveTUISession(projectRoot, session);
 
-      // Build launch options
-      const launchOpts: LaunchCommandOptions = {
-        projectRoot,
-        config,
-        features: action.selectedIds,
-        maxConcurrent: session.maxConcurrent,
-        model: opts.model,
-        interactive: false,
-        dryRun: false,
-        baseBranch: opts.baseBranch ?? config.baseBranch,
-        maxRetries: opts.maxRetries ?? config.defaults.maxRetries,
-        noTui: false,
-        autoPush: opts.autoPush ?? false,
-        agent: opts.agent,
-        outputFmt: "text",
-        // Pass quest ID so launch uses quest branch and constraints
-        questId: selectedQuestId ?? undefined,
-        detachOnQuit: true,
-        // Throw errors instead of calling process.exit(1) so the TUI can
-        // catch them and display inline without killing the process.
-        callerHandlesErrors: true,
-      };
+      if (daemonConnected && daemonClient) {
+        // Daemon mode: send cmd:start to daemon, then show monitor
+        const progress = runProgressInk({ title: "Starting Agents" });
+        progress.update("Sending launch request to daemon...");
+        try {
+          daemonClient.start({
+            questId: selectedQuestId ?? undefined,
+            maxConcurrent: session.maxConcurrent,
+            model: opts.model,
+            taskIds: action.selectedIds,
+          });
+          // Brief flash to show request sent
+          await sleep(500);
+          progress.unmount();
 
-      try {
-        await cmdLaunch(launchOpts);
-      } catch (err: any) {
-        // Don't crash -- show error and loop back
-        const progress = runProgressInk({ title: "Launch Error" });
-        await progress.finish({ type: "error", message: `Launch error: ${err.message}` });
+          // Immediately enter daemon monitor
+          const daemonTui = new InkDaemonTUI({
+            client: daemonClient,
+            projectRoot,
+            config,
+            onQuit: () => {},
+          });
+          daemonTui.start();
+          await daemonTui.waitForQuit();
+          daemonTui.stop();
+        } catch (err: any) {
+          progress.unmount();
+          const errProgress = runProgressInk({ title: "Launch Error" });
+          await errProgress.finish({ type: "error", message: `Daemon launch error: ${err.message}` });
+        }
+      } else {
+        // Legacy mode: use cmdLaunch directly
+        const launchOpts: LaunchCommandOptions = {
+          projectRoot,
+          config,
+          features: action.selectedIds,
+          maxConcurrent: session.maxConcurrent,
+          model: opts.model,
+          interactive: false,
+          dryRun: false,
+          baseBranch: opts.baseBranch ?? config.baseBranch,
+          maxRetries: opts.maxRetries ?? config.defaults.maxRetries,
+          noTui: false,
+          autoPush: opts.autoPush ?? false,
+          agent: opts.agent,
+          outputFmt: "text",
+          // Pass quest ID so launch uses quest branch and constraints
+          questId: selectedQuestId ?? undefined,
+          detachOnQuit: true,
+          // Throw errors instead of calling process.exit(1) so the TUI can
+          // catch them and display inline without killing the process.
+          callerHandlesErrors: true,
+        };
+
+        try {
+          await cmdLaunch(launchOpts);
+        } catch (err: any) {
+          // Don't crash -- show error and loop back
+          const progress = runProgressInk({ title: "Launch Error" });
+          await progress.finish({ type: "error", message: `Launch error: ${err.message}` });
+        }
       }
 
       // Clear terminal before showing picker/browser again
@@ -444,6 +563,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   }
 
   } finally {
+    // Disconnect daemon client gracefully
+    if (daemonClient) {
+      try {
+        daemonClient.disconnect();
+      } catch {
+        // Best-effort
+      }
+    }
     // Always exit the alternate screen buffer, even on error.
     removeGuard();
     exitAltScreen();

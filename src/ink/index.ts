@@ -220,6 +220,12 @@ export {
   type InkTUIOptions,
 } from "./run-wave-monitor";
 
+// Daemon-backed wave monitor adapter (WebSocket client for daemon TUI)
+export {
+  InkDaemonTUI,
+  type InkDaemonTUIOptions,
+} from "./run-daemon-monitor";
+
 // Task graph utilities
 export {
   buildTaskGraph,
