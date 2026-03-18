@@ -114,6 +114,159 @@ import { loadQuest, loadQuestKnowledge } from "../lib/quest-store";
 import { resolveQuestConfig, applyQuestConstraintsToTask, type QuestHitlMode } from "../lib/quest";
 import { questBranchExists, createQuestBranch } from "../lib/worktree";
 import { getPendingQuestions, cleanupAll as cleanupHitl, submitAnswer, type HitlQuestion } from "../lib/hitl-channel";
+// Daemon delegation — types only (runtime imports are dynamic to avoid
+// pulling ink's top-level await into the synchronous require() chain
+// used by schema.ts / citty-registry.ts).
+import type { DaemonClient } from "../daemon/client";
+import type { SchedulerStatus } from "../daemon/protocol";
+
+// ---------------------------------------------------------------------------
+// Daemon delegation helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Try to delegate the launch to the background daemon.
+ *
+ * Returns `true` if the daemon accepted the work (caller should return early).
+ * Returns `false` if the daemon is unavailable and the caller should fall
+ * through to the inline (legacy) launch pipeline.
+ *
+ * The function:
+ *  1. Ensures the daemon process is running (auto-starts if needed)
+ *  2. Connects a DaemonClient
+ *  3. Sends cmd:start with task IDs / quest / concurrency / model
+ *  4a. TUI mode (!noTui): opens InkDaemonTUI and waits for user quit
+ *  4b. Headless mode (noTui): polls daemon state until scheduler goes idle
+ *  5. Disconnects the client
+ *
+ * If anything fails at steps 1-3, returns false (fallback to legacy).
+ */
+async function tryDaemonLaunch(
+  projectRoot: string,
+  opts: LaunchCommandOptions,
+  selected: Feature[],
+  fmt: OutputFormat,
+): Promise<boolean> {
+  let client: DaemonClient | null = null;
+
+  try {
+    // Dynamic imports to avoid pulling ink's top-level await into the
+    // synchronous require() chain (schema.ts → citty-registry → launch.ts).
+    const { ensureDaemonRunning } = await import("../daemon/launcher");
+    const { DaemonClient: DaemonClientImpl } = await import("../daemon/client");
+
+    // Step 1: ensure daemon is running
+    await ensureDaemonRunning(projectRoot);
+
+    // Step 2: connect
+    client = new DaemonClientImpl({ clientId: "launch", autoReconnect: false });
+    await client.connect();
+
+    // Step 3: send cmd:start
+    const taskIds = selected.map((f) => f.id);
+    if (fmt === "text") {
+      console.log(`Delegating ${taskIds.length} task(s) to daemon...`);
+    }
+    client.start({
+      questId: opts.questId ?? undefined,
+      maxConcurrent: opts.maxConcurrent,
+      model: opts.model,
+      taskIds,
+    });
+
+    // Step 4: wait for work to finish (or user to quit)
+    if (!opts.noTui) {
+      // TUI mode — open the daemon monitor
+      const { InkDaemonTUI } = await import("../ink/run-daemon-monitor");
+      if (fmt === "text") console.log("Launching daemon monitor TUI...\n");
+      const daemonTui = new InkDaemonTUI({
+        client,
+        projectRoot,
+        config: opts.config,
+        onQuit: () => {
+          // User pressed Q — daemon keeps running, we just detach
+        },
+      });
+      daemonTui.start();
+      await daemonTui.waitForQuit();
+      daemonTui.stop();
+    } else {
+      // Headless mode — poll until scheduler goes idle / all agents done
+      if (fmt === "text") console.log("Daemon accepted. Waiting for completion (headless)...\n");
+      await waitForDaemonCompletion(client, fmt);
+    }
+
+    return true; // Daemon handled it
+  } catch {
+    // Daemon not available or connection failed — fall through to legacy
+    if (fmt === "text") {
+      console.log("Daemon not available, falling back to direct launch...\n");
+    }
+    return false;
+  } finally {
+    if (client) {
+      try { client.disconnect(); } catch { /* best-effort */ }
+    }
+  }
+}
+
+/**
+ * Block until the daemon scheduler finishes all work (goes "idle") or
+ * encounters a terminal state (stopping/shutdown). Prints a periodic
+ * status line in text mode.
+ */
+async function waitForDaemonCompletion(
+  client: DaemonClient,
+  fmt: OutputFormat,
+): Promise<void> {
+  const POLL_MS = 5_000;
+  const DASHBOARD_INTERVAL = 3; // Print dashboard every N polls (15s)
+  let polls = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    polls++;
+
+    let snapshot;
+    try {
+      snapshot = await client.requestState(5_000);
+    } catch {
+      // Daemon not responding — bail out (caller will fall through)
+      throw new Error("Daemon stopped responding");
+    }
+
+    const { scheduler, agents } = snapshot;
+    const active = agents.filter((a) =>
+      a.status === "running" || a.status === "installing" ||
+      a.status === "resolving_conflict" || a.status === "retry"
+    );
+    const queued = agents.filter((a) => a.status === "queued");
+    const done = agents.filter((a) =>
+      a.status === "completed" || a.status === "verified" ||
+      a.status === "merged" || a.status === "failed"
+    );
+
+    // Print periodic status in text/headless mode
+    if (fmt === "text" && polls % DASHBOARD_INTERVAL === 0) {
+      console.log(
+        `[daemon] ${active.length} active, ${queued.length} queued, ` +
+        `${done.length} done — scheduler: ${scheduler.status}`
+      );
+    }
+
+    // Terminal conditions
+    const terminalStatuses: SchedulerStatus[] = ["idle", "stopping", "draining", "shutdown"];
+    if (terminalStatuses.includes(scheduler.status) && active.length === 0 && queued.length === 0) {
+      if (fmt === "text") {
+        const passed = agents.filter((a) => a.status === "merged" || a.status === "verified").length;
+        const failed = agents.filter((a) => a.status === "failed").length;
+        console.log(`\nDaemon completed: ${passed} succeeded, ${failed} failed out of ${agents.length} total.`);
+      }
+      return;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -2834,6 +2987,18 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
     // Apply user's changes (rejected agents, mode changes)
     agentResolutions = preflight.agents;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Daemon-first: delegate to the background daemon if it's available.
+  // At this point all validation is done, features are selected, deps resolved,
+  // dry-run handled, preflight confirmed — but no persistent side-effects yet
+  // (no wave state, no worktrees, no processes).
+  // ---------------------------------------------------------------------------
+  if (!opts.interactive) {
+    const delegated = await tryDaemonLaunch(projectRoot, opts, selected, fmt);
+    if (delegated) return; // Daemon accepted — we're done
+    // Daemon unavailable or rejected — fall through to inline pipeline
   }
 
   // Create wave state
