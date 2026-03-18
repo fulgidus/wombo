@@ -1,7 +1,11 @@
-- id: 6305f615-01a9-4683-9678-2e7b7e7db278
-  text: Add dashboard with graphs and useful realtime status
-  created_at: 2026-03-14T10:45:41.101Z
+- id: 5027f6cc-6784-41cb-b83f-5336e0dde3aa
+  text: "TDD baseline mechanism: snapshot main's test results before launching quest agents, then diff against branch
+    results instead of requiring absolute zero failures. This prevents pre-existing test failures on main from blocking
+    all worktree agents. Relevant files: src/lib/verifier.ts, src/lib/tdd-verifier.ts, src/lib/test-runner.ts,
+    src/lib/test-detection.ts [tdd, verification, quest]"
+  created_at: 2026-03-15T16:40:59.964Z
   tags: []
+  order: 2
 - id: 8b44f390-1670-4ca5-8d1b-d1085cf23ff9
   text: AGENTS.md is out of sync with actual project config — references outdated constraints (e.g. 'no external CLI
     frameworks', 'neo-blessed is the only large dependency') that conflict with planned Ink and Citty migrations. Revise
@@ -10,27 +14,7 @@
   tags:
     - docs
     - config
-- id: 5027f6cc-6784-41cb-b83f-5336e0dde3aa
-  text: "TDD baseline mechanism: snapshot main's test results before launching quest agents, then diff against branch
-    results instead of requiring absolute zero failures. This prevents pre-existing test failures on main from blocking
-    all worktree agents. Relevant files: src/lib/verifier.ts, src/lib/tdd-verifier.ts, src/lib/test-runner.ts,
-    src/lib/test-detection.ts [tdd, verification, quest]"
-  created_at: 2026-03-15T16:40:59.964Z
-  tags: []
-- id: d60bd7bf-7a18-4c50-81a9-601b8d54db67
-  text: "Session ID dedup bug: citty-spike and ink-spike quest agents shared session ID ses_30de238d3ffe5h7Zahbj6GT7UI in
-    state.json — investigate whether session IDs are being reused across agents in the same wave [bug, state, sessions]"
-  created_at: 2026-03-15T16:41:05.106Z
-  tags: []
-- id: 22c1534e-ba57-46ca-ae9a-ddf0741954f7
-  text: "Full i18n support using i18next: extract all user-facing strings into locale files, add language detection (env,
-    config, OS locale), support pluralization/interpolation, provide a t() helper throughout the codebase. Start with
-    en, add it/es/de/fr/ja/zh. Include CLI --locale flag and config.json locale setting. Splash texts should be
-    locale-aware."
-  created_at: 2026-03-15T17:25:30.894Z
-  tags:
-    - i18n
-    - ux
+  order: 3
 - id: ee16ccc4-034f-468d-b2ac-a9a5cdee9ab7
   text: "Ink-based global Esc menu: pressing Escape anywhere in the TUI opens a floating overlay menu with options like
     Settings, Help, Quit, Back. Should work across all TUI screens. Implement as an Ink component that layers over the
@@ -40,6 +24,7 @@
     - ink
     - ux
     - tui
+  order: 4
 - id: 909bde94-7da2-4117-88fd-6a1f4457d328
   text: "Settings TUI screen: dedicated Ink screen for viewing and editing config.json settings interactively. Show all
     config keys with current values, allow inline editing, validate on change, save to config.json. Group settings by
@@ -50,6 +35,17 @@
     - ux
     - tui
     - config
+  order: 5
+- id: 22c1534e-ba57-46ca-ae9a-ddf0741954f7
+  text: "Full i18n support using i18next: extract all user-facing strings into locale files, add language detection (env,
+    config, OS locale), support pluralization/interpolation, provide a t() helper throughout the codebase. Start with
+    en, add it/es/de/fr/ja/zh. Include CLI --locale flag and config.json locale setting. Splash texts should be
+    locale-aware."
+  created_at: 2026-03-15T17:25:30.894Z
+  tags:
+    - i18n
+    - ux
+  order: 6
 - id: a63fdbfe-e980-4e53-97a9-ab8768469b71
   text: "Starlight docs site on GitHub Pages: set up an Astro + Starlight documentation site. Auto-generate command
     reference from COMMAND_REGISTRY in src/lib/schema.ts. Include getting started guide, configuration reference,
@@ -58,6 +54,12 @@
   tags:
     - docs
     - ci
+  order: 7
+- id: 6305f615-01a9-4683-9678-2e7b7e7db278
+  text: Add dashboard with graphs and useful realtime status
+  created_at: 2026-03-14T10:45:41.101Z
+  tags: []
+  order: 8
 - id: 7c277946-3046-4c03-9ca9-3b5ea676229b
   text: "Auto-generated man pages: generate Unix man pages from COMMAND_REGISTRY metadata. Output roff format, install via
     postinstall hook. Include synopsis, description, options, examples, and see-also sections. Support 'man wombo', 'man
@@ -66,6 +68,7 @@
   tags:
     - docs
     - cli
+  order: 9
 - id: 73f0a388-803f-4a91-8f2c-d41efdfbd16b
   text: "Uninstall command with lifecycle hooks: 'woco uninstall' removes .wombo-combo/ dir, git hooks, and optionally the
     global binary. Support pre/post uninstall hooks in config.json for custom cleanup. Add confirmation prompt with
@@ -74,6 +77,7 @@
   tags:
     - cli
     - lifecycle
+  order: 10
 - id: 347b9ace-c812-4a7c-a634-d440ee746ad8
   text: "Desktop notifications: send OS-native notifications for key events (wave complete, agent failed, build broken,
     merge conflict). Use node-notifier or native APIs. Configurable per-event in config.json with enable/disable
@@ -82,6 +86,7 @@
   tags:
     - ux
     - notifications
+  order: 11
 - id: de3ed234-a1f2-4c83-8ef9-0ecee8e63004
   text: "Sound effects with 3 tiers: (1) Minimal — subtle chimes for wave start/complete/fail, (2) Standard — adds
     per-agent sounds, build pass/fail, merge events, (3) Full — Minecraft-style ambient sounds, achievement jingles,
@@ -92,6 +97,7 @@
     - ux
     - audio
     - personality
+  order: 12
 - id: 2db70d40-dade-4a75-aea1-8221267fdaf3
   text: "Animated splash screen: show a brief animated ASCII art splash when launching the TUI or starting a wave. Include
     rotating splash texts (Minecraft-style). Configurable: enable/disable, duration, custom splash text file. Animation
@@ -101,6 +107,7 @@
     - ux
     - tui
     - personality
+  order: 13
 - id: 5d439254-4d7e-4807-b852-31fca434de90
   text: "Agent performance analytics: track per-agent metrics across waves — time to complete, token usage, retry count,
     lines changed, files touched, build pass rate. Store in usage.jsonl or a dedicated analytics.jsonl. Expose via 'woco
@@ -110,6 +117,7 @@
   tags:
     - analytics
     - agents
+  order: 14
 - id: 972b3f9c-9e83-45aa-a3d1-14fa14c47ee0
   text: "Session replay: record agent sessions (commands run, files changed, prompts sent, responses received) into a
     replayable format. Support 'woco replay <wave-id> <agent-id>' to step through what an agent did. Store as structured
@@ -119,6 +127,7 @@
     - ux
     - debugging
     - agents
+  order: 15
 - id: 53a89867-433d-46f8-9a3b-f88031ce8d00
   text: "Auto PR and changelog generation: after a successful wave merge, automatically generate a GitHub PR with a
     structured description (changes per agent, files modified, test results). Generate CHANGELOG.md entries from
@@ -129,6 +138,7 @@
     - ci
     - git
     - automation
+  order: 16
 - id: 0ac41cc0-f1f1-4af1-9972-fd8599344f71
   text: "Team collaboration via git: support multiple developers using wombo on the same repo. Track who launched which
     wave, prevent conflicting waves on the same branch, share task assignments. Use git-native mechanisms (branch naming
@@ -139,16 +149,7 @@
     - collaboration
     - git
     - teams
-- id: 0c95d697-d7a6-4a73-91e7-5a7bd52a3e80
-  text: "Task dependency graphs with full DAG support: visualize and enforce task dependencies as a directed acyclic
-    graph. 'woco tasks graph' outputs a Mermaid diagram or ASCII tree of dependencies. Launch scheduler respects the DAG
-    — agents only start when all upstream deps are merged. Detect cycles at task-add time. Support cross-quest
-    dependencies."
-  created_at: 2026-03-15T17:26:22.620Z
-  tags:
-    - tasks
-    - scheduling
-    - visualization
+  order: 17
 - id: 4f5ff934-0741-4bfd-b700-87e26e68d661
   text: "Analytics dashboard export: export agent performance data, wave history, and task metrics to CSV, JSON, or HTML
     report format. Support 'woco analytics export --format html' to generate a self-contained HTML dashboard with charts
@@ -159,6 +160,7 @@
     - analytics
     - export
     - reporting
+  order: 18
 - id: 792631a5-8ecc-41b0-a3ef-8dd37346f1fe
   text: "Multi-CLI and multi-account support: route agent work through different CLI tools (claude-code, gemini-cli,
     opencode, aider, etc.) and different accounts/API keys. Config defines available 'providers' with their binary path,
@@ -170,9 +172,15 @@
     - agents
     - multi-cli
     - providers
-- id: ba274071-1a5e-4d9f-a1eb-e772fe00a367
-  text: "Real-time activity monitoring for tmux interactive sessions. The woco status/TUI should show what agents are
-    actually doing inside tmux panes (current file being edited, last tool used, thinking status) instead of just 'tmux
-    session active'. Options: (a) parse tmux pane content periodically, (b) have agents write activity to a shared file."
-  created_at: 2026-03-15T19:35:06.195Z
-  tags: []
+  order: 19
+- id: 0c95d697-d7a6-4a73-91e7-5a7bd52a3e80
+  text: "Task dependency graphs with full DAG support: visualize and enforce task dependencies as a directed acyclic
+    graph. 'woco tasks graph' outputs a Mermaid diagram or ASCII tree of dependencies. Launch scheduler respects the DAG
+    — agents only start when all upstream deps are merged. Detect cycles at task-add time. Support cross-quest
+    dependencies."
+  created_at: 2026-03-15T17:26:22.620Z
+  tags:
+    - tasks
+    - scheduling
+    - visualization
+  order: 21

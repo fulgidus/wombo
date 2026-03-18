@@ -88,7 +88,6 @@ function defaultProps(overrides: Partial<TaskBrowserViewProps> = {}): TaskBrowse
     onToggle: () => {},
     onToggleStream: () => {},
     onToggleAll: () => {},
-    onLaunch: () => {},
     onCycleSort: () => {},
     onChangePriority: () => {},
     onToggleDone: () => {},
@@ -136,11 +135,11 @@ describe("TaskBrowserView (static rendering)", () => {
     expect(output).toContain("☐");
   });
 
-  test("renders checkbox checked when selected", () => {
+  test("renders checkbox checked when task is planned", () => {
+    // Checkbox reflects task.status === "planned", not selectedIds
+    const plannedNode = makeNode({ task: makeTask({ status: "planned" }) });
     const output = renderToString(
-      <TaskBrowserView
-        {...defaultProps({ selectedIds: new Set(["test-task"]) })}
-      />
+      <TaskBrowserView {...defaultProps({ nodes: [plannedNode] })} />
     );
     expect(output).toContain("☑");
   });
@@ -157,7 +156,7 @@ describe("TaskBrowserView (static rendering)", () => {
   test("renders status bar with key hints", () => {
     const output = renderToString(<TaskBrowserView {...defaultProps()} />);
     expect(output).toContain("Space");
-    expect(output).toContain("toggle");
+    expect(output).toContain("plan/unplan");
     expect(output).toContain("quit");
   });
 
@@ -242,18 +241,11 @@ describe("TaskBrowserView (static rendering)", () => {
     expect(output).toContain("12.0k");
   });
 
-  test("shows launch button when tasks are selected", () => {
+  test("does not show a LAUNCH button (planning is via Space key)", () => {
+    // The old "select then L to launch" flow is gone.
+    // Space directly toggles task.status between backlog and planned.
     const output = renderToString(
-      <TaskBrowserView
-        {...defaultProps({ selectedIds: new Set(["test-task"]) })}
-      />
-    );
-    expect(output).toContain("LAUNCH");
-  });
-
-  test("hides launch button when no tasks selected", () => {
-    const output = renderToString(
-      <TaskBrowserView {...defaultProps({ selectedIds: new Set() })} />
+      <TaskBrowserView {...defaultProps({ selectedIds: new Set(["test-task"]) })} />
     );
     expect(output).not.toContain("LAUNCH");
   });

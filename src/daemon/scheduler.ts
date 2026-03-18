@@ -115,6 +115,13 @@ export class Scheduler {
     }
   }
 
+  /** Trigger an immediate tick (e.g. after new tasks become planned). */
+  nudge(): void {
+    if (this.deps.state.getSchedulerStatus() === "running") {
+      this.tick();
+    }
+  }
+
   /** Stop gracefully: finish running agents, no new picks, then idle. */
   stop(): void {
     this.deps.state.setSchedulerStatus("stopping", "User stopping");

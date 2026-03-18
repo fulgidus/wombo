@@ -79,7 +79,7 @@ export interface TaskBrowserViewProps {
   totalTaskCount: number;
   /** Count of done tasks. */
   doneCount: number;
-  /** Count of ready (launchable) tasks. */
+  /** Count of planned (queued for daemon) tasks. */
   readyCount: number;
   /** Per-task token usage data. */
   taskUsage?: Map<string, UsageTotals>;
@@ -93,7 +93,6 @@ export interface TaskBrowserViewProps {
   onToggle: () => void;
   onToggleStream: () => void;
   onToggleAll: () => void;
-  onLaunch: () => void;
   onCycleSort: () => void;
   onChangePriority: (delta: number) => void;
   onToggleDone: () => void;
@@ -168,7 +167,7 @@ function Header({
         <Text color="green">{doneCount}</Text>
         <Text> done  </Text>
         <Text color="cyan">{readyCount}</Text>
-        <Text> ready</Text>
+        <Text> planned</Text>
         <Text dimColor>  |  </Text>
         <Text>Sort: </Text>
         <Text color="yellow">{sortBy}</Text>
@@ -191,9 +190,9 @@ function TaskListItem({
 }): React.ReactElement {
   const { task, depth, depsReady } = node;
 
-  // Checkbox
+  // Checkbox — ☑ means "planned" (queued for daemon), ☐ means backlog
   const checkbox = isChecked ? "☑" : "☐";
-  const checkColor = isChecked ? "green" : "gray";
+  const checkColor = isChecked ? "cyan" : "gray";
 
   // Readiness indicator
   const readyIcon =
@@ -360,7 +359,7 @@ function StatusBar({
         <Text bold>Keys:</Text>
         <Text>  </Text>
         <Text dimColor>Space</Text>
-        <Text> toggle</Text>
+        <Text> plan/unplan</Text>
         <Text>  </Text>
         <Text dimColor>S</Text>
         <Text> stream</Text>
@@ -395,13 +394,7 @@ function StatusBar({
         <Text>  </Text>
         <Text dimColor>O</Text>
         <Text> sort</Text>
-        {selectedCount > 0 && (
-          <>
-            <Text>  </Text>
-            <Text bold color="green">L</Text>
-            <Text bold> LAUNCH ({selectedCount})</Text>
-          </>
-        )}
+
         {hasRunningWave && (
           <>
             <Text>  </Text>
@@ -427,7 +420,7 @@ function StatusBar({
             <Text> selected</Text>
           </Text>
         ) : (
-          <Text dimColor>Select tasks with Space, then press L to launch</Text>
+          <Text dimColor>Space to plan/unplan tasks — daemon picks up planned tasks automatically</Text>
         )}
       </Box>
     </Box>
@@ -463,7 +456,6 @@ export function TaskBrowserView(props: TaskBrowserViewProps): React.ReactElement
     onToggle,
     onToggleStream,
     onToggleAll,
-    onLaunch,
     onCycleSort,
     onChangePriority,
     onToggleDone,
@@ -512,7 +504,6 @@ export function TaskBrowserView(props: TaskBrowserViewProps): React.ReactElement
     // Action keys
     if (input === "s") { onToggleStream(); return; }
     if (input === "a") { onToggleAll(); return; }
-    if (input === "l") { onLaunch(); return; }
     if (input === "o") { onCycleSort(); return; }
     if (input === "d") { onToggleDone(); return; }
     if (input === "c") { onCycleConcurrency(); return; }
@@ -573,7 +564,7 @@ export function TaskBrowserView(props: TaskBrowserViewProps): React.ReactElement
               key={node.task.id}
               node={node}
               isSelected={selectedIndex === i}
-              isChecked={selectedIds.has(node.task.id)}
+              isChecked={node.task.status === "planned"}
             />
           ))}
           {nodes.length === 0 && (

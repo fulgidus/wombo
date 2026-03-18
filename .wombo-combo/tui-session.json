@@ -1,7 +1,6 @@
 {
   "selected": [
-    "citty-schema-bridge",
-    "citty-cleanup"
+    "session-id-dedup-guard"
   ],
   "sortBy": "priority",
   "sortOrder": "desc",

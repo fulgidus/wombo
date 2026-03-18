@@ -39,7 +39,6 @@ const PRIORITIES = ["critical", "high", "medium", "low", "wishlist"] as const;
 // ---------------------------------------------------------------------------
 
 export type TaskBrowserAction =
-  | { type: "launch"; selectedIds: string[] }
   | { type: "errand"; spec: ErrandSpec }
   | { type: "back" }
   | { type: "switchToMonitor" }
@@ -163,51 +162,50 @@ function TaskBrowserApp({
   // Computed values
   const totalTaskCount = allTasks.length;
   const doneCount = allTasks.filter((t) => t.status === "done").length;
-  const readyCount = allTasks.filter(
-    (t) => t.status === "backlog" && areDependenciesMet(t, doneIds)
-  ).length;
+  // Count tasks that are queued for the daemon (status === "planned")
+  const readyCount = allTasks.filter((t) => t.status === "planned").length;
 
   // --- Handlers ---
 
+  /** Toggle a single task between backlog (parked) and planned (queued for daemon). */
   const handleToggle = useCallback(() => {
-    if (!displayNodes[selectedIndex]) return;
-    const id = displayNodes[selectedIndex].task.id;
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, [displayNodes, selectedIndex]);
+    const node = displayNodes[selectedIndex];
+    if (!node) return;
+    const task = node.task;
+    // Only toggle tasks that can be queued (backlog or planned, not running/done)
+    if (task.status !== "backlog" && task.status !== "planned") return;
+    task.status = task.status === "planned" ? "backlog" : "planned";
+    saveTaskToStore(projectRoot, config, task);
+    loadData();
+  }, [displayNodes, selectedIndex, projectRoot, config, loadData]);
 
+  /** Toggle all visible tasks in the current stream between backlog and planned. */
   const handleToggleStream = useCallback(() => {
     if (!displayNodes[selectedIndex]) return;
     const streamId = displayNodes[selectedIndex].streamId;
-    const streamNodes = displayNodes.filter((n) => n.streamId === streamId);
-    const allSelected = streamNodes.every((n) => selectedIds.has(n.task.id));
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      for (const n of streamNodes) {
-        if (allSelected) next.delete(n.task.id);
-        else next.add(n.task.id);
-      }
-      return next;
-    });
-  }, [displayNodes, selectedIndex, selectedIds]);
+    const streamNodes = displayNodes.filter(
+      (n) => n.streamId === streamId && (n.task.status === "backlog" || n.task.status === "planned")
+    );
+    const allPlanned = streamNodes.every((n) => n.task.status === "planned");
+    for (const n of streamNodes) {
+      n.task.status = allPlanned ? "backlog" : "planned";
+      saveTaskToStore(projectRoot, config, n.task);
+    }
+    loadData();
+  }, [displayNodes, selectedIndex, projectRoot, config, loadData]);
 
+  /** Toggle all visible backlog/planned tasks. */
   const handleToggleAll = useCallback(() => {
-    const allSelected = displayNodes.every((n) => selectedIds.has(n.task.id));
-    setSelectedIds(() => {
-      if (allSelected) return new Set();
-      return new Set(displayNodes.map((n) => n.task.id));
-    });
-  }, [displayNodes, selectedIds]);
-
-  const handleLaunch = useCallback(() => {
-    if (selectedIds.size === 0) return;
-    saveSession();
-    onAction({ type: "launch", selectedIds: [...selectedIds] });
-  }, [selectedIds, saveSession, onAction]);
+    const toggleable = displayNodes.filter(
+      (n) => n.task.status === "backlog" || n.task.status === "planned"
+    );
+    const allPlanned = toggleable.every((n) => n.task.status === "planned");
+    for (const n of toggleable) {
+      n.task.status = allPlanned ? "backlog" : "planned";
+      saveTaskToStore(projectRoot, config, n.task);
+    }
+    loadData();
+  }, [displayNodes, projectRoot, config, loadData]);
 
   const handleCycleSort = useCallback(() => {
     setSortBy((prev) => {
@@ -318,7 +316,6 @@ function TaskBrowserApp({
       onToggle={handleToggle}
       onToggleStream={handleToggleStream}
       onToggleAll={handleToggleAll}
-      onLaunch={handleLaunch}
       onCycleSort={handleCycleSort}
       onChangePriority={handleChangePriority}
       onToggleDone={handleToggleDone}

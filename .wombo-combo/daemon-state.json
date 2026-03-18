@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "scheduler": {
+    "status": "shutdown",
+    "maxConcurrent": 4,
+    "model": null,
+    "baseBranch": "main",
+    "questId": null,
+    "startedAt": null,
+    "pinnedTasks": [],
+    "skippedTasks": [],
+    "totalProcessed": 0,
+    "totalCompleted": 0,
+    "totalFailed": 0
+  },
+  "agents": []
+}

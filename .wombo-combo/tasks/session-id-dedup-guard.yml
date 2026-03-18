@@ -1,0 +1,80 @@
+id: session-id-dedup-guard
+title: Guard Against Cross-Agent Session ID Reuse
+description: |
+  Investigate and fix the session ID deduplication bug where multiple agents
+  in the same wave can end up sharing the same opencode session ID
+  (e.g., `ses_30de238d3ffe5h7Zahbj6GT7UI` shared by citty-spike and ink-spike).
+
+  ## Root Cause Investigation
+
+  The session ID is emitted by opencode in its JSON event stream and captured
+  by `ProcessMonitor.addProcess()` in `src/lib/monitor.ts` (line ~456).
+  The check `if (!monitored.sessionId && event.sessionID)` only prevents
+  a single monitored process from updating its own session ID twice — it
+  does NOT prevent two different monitored processes from receiving and storing
+  the same session ID.
+
+  Possible causes to investigate:
+  1. **opencode sharing session state across concurrent invocations**: If opencode
+     uses a shared SQLite or state store and two parallel agents get assigned to
+     the same session slot.
+  2. **`--title` flag collision**: `launchHeadless` uses `woco: ${featureId}` as
+     the `--title` arg to opencode. If opencode reuses sessions by title match,
+     two agents with different feature IDs would get different titles — but if
+     the title lookup is fuzzy or there's a race condition, dedup could fail.
+  3. **`OPENCODE_DIR` env var shared across agents**: Check `agentEnv()` in
+     `src/lib/launcher.ts`. If `OPENCODE_DIR` points to the same directory for
+     multiple agents, opencode might resume an existing session.
+
+  ## Required Fix
+
+  In `ProcessMonitor.addProcess()` (and/or `ProcessMonitor.reconnectProcess()`),
+  when `onSessionId` is about to fire for a session ID, add a cross-process
+  check: iterate `this.processes` to see if any OTHER monitored process already
+  holds that session ID. If a collision is detected:
+  1. Log a warning (push to activity log and write to log file).
+  2. Still store the session ID on the process (so state.json reflects reality).
+  3. Fire the `onSessionId` callback so the state gets persisted.
+  4. Add a dedicated warning message like `[WARN] session ID ${sessionId} is
+     already in use by agent ${existingFeatureId} — possible opencode session
+     reuse bug`.
+
+  Also add a uniqueness assertion in the `onSessionId` callback handler in both
+  `src/commands/launch.ts` (launchWaveHeadless, ~line 1864) and
+  `src/daemon/agent-runner.ts` (buildCallbacks, ~line 156) to log a
+  console warning when the same session ID appears for two different feature IDs
+  in `state.json` / the daemon state map.
+
+  Additionally, check whether opencode's `--title` flag (used in `launchHeadless`
+  in `src/lib/launcher.ts`) affects session reuse. If the title produces a
+  deterministic session ID hash, agents with clashing titles would share sessions.
+  Consider adding a timestamp or random suffix to the title to force session
+  uniqueness: e.g. `woco: ${opts.featureId}-${Date.now()}`.
+
+  ## Files to Modify
+
+  - `src/lib/monitor.ts`: Add cross-process session ID collision detection in
+    `addProcess()` and `reconnectProcess()`.
+  - `src/lib/launcher.ts`: Make the `--title` arg unique per invocation (add
+    timestamp/nonce suffix to prevent opencode from reusing a prior session).
+  - `src/commands/launch.ts`: Add warning log in `onSessionId` callback if the
+    session ID is already seen in `state.agents`.
+  - `src/daemon/agent-runner.ts`: Same — add collision warning in `onSessionId`
+    callback in `buildCallbacks()`.
+
+  ## Testing
+
+  After making changes, run:
+status: planned
+completion: 0
+difficulty: medium
+priority: medium
+depends_on: []
+effort: PT1H
+started_at: null
+ended_at: null
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

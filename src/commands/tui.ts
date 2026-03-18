@@ -60,8 +60,7 @@ import { runWishlistPickerInk } from "../ink/run-wishlist-picker";
 import { runErrandWizardInk } from "../ink/run-errand-wizard";
 import { runQuestWizardInk } from "../ink/run-quest-wizard";
 import { runProgressInk, runConfirmInk, type ProgressController } from "../ink/run-progress";
-import { cmdLaunch } from "./launch";
-import type { LaunchCommandOptions } from "./launch";
+
 import { cmdResume } from "./resume";
 import { enterAltScreen, exitAltScreen, installAltScreenGuard, clearScreen } from "../ink/alt-screen";
 // Daemon types only — actual modules are loaded via dynamic import() to
@@ -530,73 +529,11 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       continue;
     }
 
-    if (action.type === "launch") {
-      // Save session before launching
-      session.selected = action.selectedIds;
-      session.lastView = "monitor";
-      saveTUISession(projectRoot, session);
-
-      if (daemonConnected && daemonClient) {
-        // Daemon mode: send cmd:start to daemon, then show monitor
-        const progress = runProgressInk({ title: "Starting Agents" });
-        progress.update("Sending launch request to daemon...");
-        try {
-          daemonClient.start({
-            questId: selectedQuestId ?? undefined,
-            maxConcurrent: session.maxConcurrent,
-            model: opts.model,
-            taskIds: action.selectedIds,
-          });
-           // Brief flash to show request sent
-          await sleep(500);
-          progress.unmount();
-
-          // Immediately enter daemon monitor
-          await runDaemonMonitor({ client: daemonClient, projectRoot, config });
-        } catch (err: any) {
-          progress.unmount();
-          const errProgress = runProgressInk({ title: "Launch Error" });
-          await errProgress.finish({ type: "error", message: `Daemon launch error: ${err.message}` });
-        }
-      } else {
-        // Legacy mode: use cmdLaunch directly
-        const launchOpts: LaunchCommandOptions = {
-          projectRoot,
-          config,
-          features: action.selectedIds,
-          maxConcurrent: session.maxConcurrent,
-          model: opts.model,
-          interactive: false,
-          dryRun: false,
-          baseBranch: opts.baseBranch ?? config.baseBranch,
-          maxRetries: opts.maxRetries ?? config.defaults.maxRetries,
-          noTui: false,
-          autoPush: opts.autoPush ?? false,
-          agent: opts.agent,
-          outputFmt: "text",
-          // Pass quest ID so launch uses quest branch and constraints
-          questId: selectedQuestId ?? undefined,
-          detachOnQuit: true,
-          // Throw errors instead of calling process.exit(1) so the TUI can
-          // catch them and display inline without killing the process.
-          callerHandlesErrors: true,
-        };
-
-        try {
-          await cmdLaunch(launchOpts);
-        } catch (err: any) {
-          // Don't crash -- show error and loop back
-          const progress = runProgressInk({ title: "Launch Error" });
-          await progress.finish({ type: "error", message: `Launch error: ${err.message}` });
-        }
-      }
-
-      // Clear terminal before showing picker/browser again
-      clearScreen();
-      // Don't auto-resume — let user browse tasks and Tab to monitor
-      skipAutoResume = true;
-      continue;
-    }
+    // "launch" action no longer exists — Space in the task browser directly
+    // writes "planned" to disk; the daemon scheduler picks it up automatically.
+    // Loop back to the quest picker so the user can see the monitor appear.
+    clearScreen();
+    continue;
   }
 
   } finally {

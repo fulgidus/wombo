@@ -404,13 +404,15 @@ export function areDependenciesMet(
 }
 
 /**
- * Get all tasks that are ready to start (backlog + deps met).
+ * Get all tasks that are ready to start (planned + deps met).
+ * "planned" = user has explicitly queued the task for execution.
+ * "backlog" = parked, not yet scheduled.
  */
 export function getReadyTasks(data: TasksFile, archive?: Task[]): Task[] {
   const doneIds = getDoneIds(data.tasks, archive ?? []);
   return data.tasks.filter(
     (t) =>
-      t.status === "backlog" &&
+      t.status === "planned" &&
       (t.completion === undefined || t.completion === 0) &&
       areDependenciesMet(t, doneIds)
   );
@@ -453,7 +455,7 @@ export interface SelectionOptions {
 
 /**
  * Select tasks based on the given strategy.
- * Always filters to only ready tasks (backlog + deps met) first.
+ * Always filters to only ready tasks (planned + deps met) first.
  */
 export function selectTasks(
   data: TasksFile,

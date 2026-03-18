@@ -102,7 +102,7 @@ function makeFeature(overrides?: Partial<Feature>): Feature {
     id: "test-feature",
     title: "Test Feature",
     description: "A test feature",
-    status: "backlog",
+    status: "planned",
     completion: 0,
     difficulty: "medium",
     priority: "medium",
@@ -580,12 +580,12 @@ describe("getDoneFeatureIds", () => {
 });
 
 describe("getReadyFeatures", () => {
-  test("returns backlog features with deps met", () => {
+  test("returns planned features with deps met", () => {
     const data = makeFeaturesFile([
-      makeFeature({ id: "ready", status: "backlog", depends_on: [] }),
+      makeFeature({ id: "ready", status: "planned", depends_on: [] }),
       makeFeature({
         id: "blocked",
-        status: "backlog",
+        status: "planned",
         depends_on: ["not-done"],
       }),
       makeFeature({ id: "in-progress", status: "in_progress" }),
@@ -595,12 +595,20 @@ describe("getReadyFeatures", () => {
     expect(ready[0].id).toBe("ready");
   });
 
+  test("backlog features are NOT picked (must be planned)", () => {
+    const data = makeFeaturesFile([
+      makeFeature({ id: "parked", status: "backlog", depends_on: [] }),
+    ]);
+    const ready = getReadyFeatures(data);
+    expect(ready).toHaveLength(0);
+  });
+
   test("considers archived deps as met", () => {
     const data = makeFeaturesFile(
       [
         makeFeature({
           id: "waiting",
-          status: "backlog",
+          status: "planned",
           depends_on: ["archived-dep"],
         }),
       ],
@@ -619,7 +627,7 @@ describe("getReadyFeatures", () => {
 
   test("excludes features with non-zero completion", () => {
     const data = makeFeaturesFile([
-      makeFeature({ id: "partial", status: "backlog", completion: 50 }),
+      makeFeature({ id: "partial", status: "planned", completion: 50 }),
     ]);
     const ready = getReadyFeatures(data);
     expect(ready).toHaveLength(0);
@@ -629,7 +637,7 @@ describe("getReadyFeatures", () => {
     const data = makeFeaturesFile([
       makeFeature({
         id: "blocked",
-        status: "backlog",
+        status: "planned",
         depends_on: ["missing"],
       }),
     ]);

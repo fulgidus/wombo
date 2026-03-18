@@ -170,6 +170,11 @@ export class Daemon {
     // Register signal handlers
     this.registerSignalHandlers();
 
+    // Auto-start the scheduler: continuously picks up planned tasks.
+    // No manual cmd:start needed — the scheduler wakes on every tick and
+    // picks any tasks whose status is "planned" and whose deps are met.
+    this.scheduler.start();
+
     this.log("info", "Daemon ready");
   }
 
@@ -449,24 +454,35 @@ export class Daemon {
       this.state.setQuestId(payload.questId);
     }
 
-    // Reconfigure the scheduler with task IDs if provided
-    // (Scheduler uses a config object, so we create a new one)
-    const schedConfig: SchedulerConfig = {
-      projectRoot: this.projectRoot,
-      config: this.config,
-      taskIds: payload.taskIds,
-      questId: payload.questId,
-      maxConcurrent: payload.maxConcurrent,
-      model: payload.model,
-    };
-
-    // Replace the scheduler with fresh config
-    this.scheduler.shutdown();
-    this.scheduler = new Scheduler(schedConfig, {
-      state: this.state,
-      runner: this.runner,
-    });
-    this.scheduler.start();
+    // If specific taskIds or a questId filter is provided, rebuild the
+    // scheduler with those constraints. Otherwise just ensure it's running.
+    if (payload.taskIds?.length || payload.questId !== undefined) {
+      const schedConfig: SchedulerConfig = {
+        projectRoot: this.projectRoot,
+        config: this.config,
+        taskIds: payload.taskIds,
+        questId: payload.questId,
+        maxConcurrent: payload.maxConcurrent,
+        model: payload.model,
+      };
+      this.scheduler.shutdown();
+      this.scheduler = new Scheduler(schedConfig, {
+        state: this.state,
+        runner: this.runner,
+      });
+      this.scheduler.start();
+    } else {
+      // No filter constraints — just ensure scheduler is running
+      // (it auto-starts on daemon boot, but may have been paused/stopped)
+      const status = this.state.getSchedulerStatus();
+      if (status === "paused") {
+        this.scheduler.resume();
+      } else if (status !== "running") {
+        this.scheduler.start();
+      }
+      // Trigger an immediate tick to pick up any newly planned tasks
+      this.scheduler.nudge();
+    }
   }
 
   private handleHitlAnswer(payload: CommandMap["cmd:hitl-answer"]): void {
