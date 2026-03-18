@@ -11,6 +11,7 @@
  *   - Escape triggers onClose callback
  *   - W key triggers onClose callback
  *   - Shift+Up/Down reorders items
+ *   - +/- keys reorder items
  */
 
 import { describe, test, expect, mock, beforeEach, afterEach } from "bun:test";
@@ -280,6 +281,65 @@ describe("WishlistOverlay keybinds", () => {
     expect(onClose).not.toHaveBeenCalled();
 
     await cleanup();
+  });
+
+  test("+ key moves the selected item down", async () => {
+    addItem(tempRoot, "First item");
+    addItem(tempRoot, "Second item");
+
+    const { stdin, cleanup } = renderLive(
+      <WishlistOverlay projectRoot={tempRoot} onClose={() => {}} />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press + to move first item down
+    stdin.write("+");
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify reorder happened on disk
+    const items = loadWishlist(tempRoot);
+    expect(items[0].text).toBe("Second item");
+    expect(items[1].text).toBe("First item");
+
+    await cleanup();
+  });
+
+  test("- key moves the selected item up", async () => {
+    addItem(tempRoot, "First item");
+    addItem(tempRoot, "Second item");
+
+    const { stdin, cleanup } = renderLive(
+      <WishlistOverlay projectRoot={tempRoot} onClose={() => {}} />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Move to second item
+    stdin.write("\x1b[B"); // down arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press - to move second item up
+    stdin.write("-");
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify reorder happened on disk
+    const items = loadWishlist(tempRoot);
+    expect(items[0].text).toBe("Second item");
+    expect(items[1].text).toBe("First item");
+
+    await cleanup();
+  });
+
+  test("footer shows +/- for reorder hint (not S-↑/↓)", () => {
+    const output = renderToString(
+      <WishlistOverlay projectRoot={tempRoot} onClose={() => {}} />
+    );
+    // Should show +/- hint, NOT S-↑/↓
+    expect(output).toContain("+");
+    expect(output).toContain("-");
+    expect(output).toContain("reorder");
+    expect(output).not.toContain("S-");
   });
 
   test("delete does nothing on empty list", async () => {

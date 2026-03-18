@@ -22,7 +22,7 @@
  *   A         — add new item (inline text input)
  *   D / X     — delete selected item
  *   Escape/W  — close the overlay
- *   S-Up/Down — move item up/down in order
+ *   +/-       — move item down/up in order
  */
 
 import React, { useState, useCallback } from "react";
@@ -139,7 +139,7 @@ function OverlayFooter({
       <Text> add  </Text>
       <Text dimColor>D/X</Text>
       <Text> delete  </Text>
-      <Text dimColor>S-{"\u2191"}/{"\u2193"}</Text>
+      <Text dimColor>+/-</Text>
       <Text> reorder  </Text>
       <Text dimColor>Esc/W</Text>
       <Text> close</Text>
@@ -208,22 +208,23 @@ export function WishlistOverlay({
 
     // Browse mode
     // Navigation
-    if (key.downArrow && !key.shift) {
+    if (key.downArrow) {
       store.selectNext();
       return;
     }
-    if (key.upArrow && !key.shift) {
+    if (key.upArrow) {
       store.selectPrev();
       return;
     }
 
-    // Shift+Up/Down — reorder
-    if (key.upArrow && key.shift) {
-      store.moveSelectedUp();
+    // + — move selected item down in order
+    if (input === "+") {
+      store.moveSelectedDown();
       return;
     }
-    if (key.downArrow && key.shift) {
-      store.moveSelectedDown();
+    // - — move selected item up in order
+    if (input === "-") {
+      store.moveSelectedUp();
       return;
     }
 

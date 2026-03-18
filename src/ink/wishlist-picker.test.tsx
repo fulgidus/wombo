@@ -22,7 +22,7 @@ import { PassThrough } from "node:stream";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addItem } from "../lib/wishlist-store";
+import { addItem, loadWishlist } from "../lib/wishlist-store";
 import { WishlistPicker } from "./wishlist-picker";
 
 // ---------------------------------------------------------------------------
@@ -328,6 +328,86 @@ describe("WishlistPicker keybinds", () => {
     expect(onBack).toHaveBeenCalled();
 
     await cleanup();
+  });
+
+  test("+ key moves the selected item down", async () => {
+    addItem(tempRoot, "First item");
+    addItem(tempRoot, "Second item");
+
+    const { stdin, cleanup } = renderLive(
+      <WishlistPicker
+        projectRoot={tempRoot}
+        onPromoteErrand={() => {}}
+        onPromoteGenesis={() => {}}
+        onPromoteQuest={() => {}}
+        onBack={() => {}}
+        onQuit={() => {}}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press + to move first item down
+    stdin.write("+");
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify reorder happened on disk
+    const items = loadWishlist(tempRoot);
+    expect(items[0].text).toBe("Second item");
+    expect(items[1].text).toBe("First item");
+
+    await cleanup();
+  });
+
+  test("- key moves the selected item up", async () => {
+    addItem(tempRoot, "First item");
+    addItem(tempRoot, "Second item");
+
+    const { stdin, cleanup } = renderLive(
+      <WishlistPicker
+        projectRoot={tempRoot}
+        onPromoteErrand={() => {}}
+        onPromoteGenesis={() => {}}
+        onPromoteQuest={() => {}}
+        onBack={() => {}}
+        onQuit={() => {}}
+      />
+    );
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Move to second item
+    stdin.write("\x1b[B"); // down arrow
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Press - to move second item up
+    stdin.write("-");
+    await new Promise((r) => setTimeout(r, 100));
+
+    // Verify reorder happened on disk
+    const items = loadWishlist(tempRoot);
+    expect(items[0].text).toBe("Second item");
+    expect(items[1].text).toBe("First item");
+
+    await cleanup();
+  });
+
+  test("footer shows +/- for reorder hint", () => {
+    const output = renderToString(
+      <WishlistPicker
+        projectRoot={tempRoot}
+        onPromoteErrand={() => {}}
+        onPromoteGenesis={() => {}}
+        onPromoteQuest={() => {}}
+        onBack={() => {}}
+        onQuit={() => {}}
+      />
+    );
+    // Should show +/- hint, NOT S-↑/↓
+    expect(output).toContain("+");
+    expect(output).toContain("-");
+    expect(output).toContain("reorder");
+    expect(output).not.toContain("S-");
   });
 
   test("D key deletes the selected item", async () => {
