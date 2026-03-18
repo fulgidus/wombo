@@ -26,8 +26,8 @@ import {
 } from "../lib/schema";
 
 /** Marker comment injected into rc files so we can find and remove our lines. */
-const RC_MARKER = "# Added by woco (wombo-combo) — do not edit this block";
-const RC_MARKER_END = "# End woco completion";
+export const RC_MARKER = "# Added by woco (wombo-combo) — do not edit this block";
+export const RC_MARKER_END = "# End woco completion";
 
 // ---------------------------------------------------------------------------
 // Public API — generate scripts (stdout)
@@ -275,8 +275,10 @@ function uninstallFish(): boolean {
 /**
  * Remove lines between RC_MARKER and RC_MARKER_END (inclusive) from content.
  * Handles trailing newlines gracefully.
+ *
+ * Exported for testing.
  */
-function removeMarkerBlock(content: string): string {
+export function removeMarkerBlock(content: string): string {
   const lines = content.split("\n");
   const result: string[] = [];
   let inBlock = false;
@@ -306,7 +308,8 @@ function removeMarkerBlock(content: string): string {
 // Shell detection
 // ---------------------------------------------------------------------------
 
-function detectShell(): string {
+/** Exported for testing. */
+export function detectShell(): string {
   const shellPath = process.env.SHELL || "";
   const name = basename(shellPath);
   if (name === "bash" || name === "zsh" || name === "fish") return name;
