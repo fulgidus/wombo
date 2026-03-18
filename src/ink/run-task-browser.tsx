@@ -352,11 +352,13 @@ export function runTaskBrowserInk(
       resolve(action);
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <TaskBrowserApp
         {...opts}
         onAction={handleAction}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

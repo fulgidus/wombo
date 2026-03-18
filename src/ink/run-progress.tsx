@@ -90,6 +90,7 @@ export function runProgressInk(opts: RunProgressOptions): ProgressController {
   const resultRef = { current: undefined as ProgressResult | undefined };
   let dismissResolve: (() => void) | null = null;
 
+  process.stdin.resume(); // keep event loop alive between renders
   const instance = render(
     <ProgressApp
       title={opts.title}
@@ -100,7 +101,8 @@ export function runProgressInk(opts: RunProgressOptions): ProgressController {
         instance.unmount();
         dismissResolve?.();
       }}
-    />
+    />,
+    { exitOnCtrlC: false }
   );
 
   return {
@@ -139,6 +141,7 @@ export function runConfirmInk(opts: RunConfirmOptions): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let instance: ReturnType<typeof render>;
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <ConfirmDialog
         title={opts.title}
@@ -147,7 +150,8 @@ export function runConfirmInk(opts: RunConfirmOptions): Promise<boolean> {
           instance.unmount();
           resolve(confirmed);
         }}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

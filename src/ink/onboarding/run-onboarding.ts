@@ -121,6 +121,7 @@ export async function runOnboardingInk(
       saveFn: saveProject,
     });
 
+    process.stdin.resume(); // keep event loop alive between renders
     const instance = render(element, {
       // Don't exit on Ctrl+C — let the onboarding flow handle it
       exitOnCtrlC: false,

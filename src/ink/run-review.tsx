@@ -78,12 +78,14 @@ export function runGenesisReviewInk(
       resolve({ type: "cancel" });
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <GenesisReviewApp
         genesisResult={genesisResult}
         onApprove={handleApprove}
         onCancel={handleCancel}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }
@@ -125,6 +127,7 @@ export function runPlanReviewInk(
       resolve({ type: "cancel" });
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <PlanReviewApp
         questId={questId}
@@ -132,7 +135,8 @@ export function runPlanReviewInk(
         planResult={planResult}
         onApprove={handleApprove}
         onCancel={handleCancel}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

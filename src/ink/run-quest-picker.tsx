@@ -231,12 +231,14 @@ export function runQuestPickerInk(
       resolve(action);
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <QuestPickerApp
         projectRoot={projectRoot}
         config={config}
         onAction={handleAction}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

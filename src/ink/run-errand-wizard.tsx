@@ -32,6 +32,7 @@ export function runErrandWizardInk(
   return new Promise<ErrandSpec | null>((resolve) => {
     let instance: ReturnType<typeof render>;
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <ErrandWizard
         onSubmit={(spec) => {
@@ -42,7 +43,8 @@ export function runErrandWizardInk(
           instance.unmount();
           resolve(null);
         }}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

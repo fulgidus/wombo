@@ -385,7 +385,9 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
           }
         }
         await handleErrandFlow(projectRoot, config, opts, spec);
-        // After errand (approve or cancel), loop back to quest picker
+        // After errand (approve or cancel), loop back to quest picker.
+        // skipAutoResume so newly-created tasks show in the browser first.
+        skipAutoResume = true;
         clearScreen();
         continue;
       }
@@ -480,6 +482,8 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         }
       }
       await handleErrandFlow(projectRoot, config, opts, spec);
+      // skipAutoResume so newly-created tasks show in the browser first.
+      skipAutoResume = true;
       clearScreen();
       continue;
     }

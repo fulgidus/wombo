@@ -80,6 +80,7 @@ export function runQuestWizardInk(
       resolve(null);
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <QuestWizard
         baseBranch={baseBranch}
@@ -88,7 +89,8 @@ export function runQuestWizardInk(
         onCancelled={handleCancelled}
         checkDuplicateId={checkDuplicateId}
         saveQuest={saveQuestFn}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }

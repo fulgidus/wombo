@@ -51,6 +51,7 @@ export function runWishlistPickerInk(
       resolve(action);
     };
 
+    process.stdin.resume(); // keep event loop alive between renders
     instance = render(
       <WishlistPicker
         projectRoot={projectRoot}
@@ -59,7 +60,8 @@ export function runWishlistPickerInk(
         onPromoteQuest={(item) => handleAction({ type: "promoteQuest", item })}
         onBack={() => handleAction({ type: "back" })}
         onQuit={() => handleAction({ type: "quit" })}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   });
 }
