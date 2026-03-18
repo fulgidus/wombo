@@ -150,10 +150,23 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
     session.maxConcurrent = opts.maxConcurrent;
   }
 
+  // Debug log to file (alt-screen swallows stderr — write to a file so we
+  // can see exactly where execution stops).
+  const _tuiLog = (() => {
+    const { appendFileSync } = require("node:fs") as typeof import("node:fs");
+    const logPath = require("node:path").resolve(projectRoot, ".wombo-combo/tui-debug.log");
+    return (msg: string) => {
+      try { appendFileSync(logPath, `[${new Date().toISOString()}] ${msg}\n`); } catch {}
+    };
+  })();
+
+  _tuiLog("cmdTui started");
+
   // Enter the alternate screen buffer for a true fullscreen experience.
   // The guard ensures we exit alt-screen on crash, SIGINT, or SIGTERM.
   enterAltScreen();
   const removeGuard = installAltScreenGuard();
+  _tuiLog("alt-screen entered");
 
   // Start the daemon (if not already running) and connect a client.
   // The daemon manages the agent lifecycle; the TUI is a pure viewer/controller.
@@ -163,25 +176,35 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   let daemonConnected = false;
 
   try {
+    _tuiLog("importing ensureDaemonRunning...");
     const { ensureDaemonRunning } = await import("../daemon/launcher");
+    _tuiLog("calling ensureDaemonRunning...");
     await ensureDaemonRunning(projectRoot);
+    _tuiLog("ensureDaemonRunning done, importing DaemonClient...");
     const { DaemonClient: DaemonClientImpl } = await import("../daemon/client");
     daemonClient = new DaemonClientImpl({ clientId: "tui", autoReconnect: true });
+    _tuiLog("calling daemonClient.connect()...");
     await daemonClient.connect();
     daemonConnected = true;
+    _tuiLog("daemon connected!");
   } catch (err: any) {
     // Daemon failed to start or connect — fall back to direct mode
     // (legacy cmdLaunch/cmdResume path).
+    _tuiLog(`daemon connect failed (falling back): ${err?.message ?? err}`);
     daemonClient = null;
     daemonConnected = false;
   }
+
+  _tuiLog(`daemonConnected=${daemonConnected}, entering main try block`);
 
   try {
 
   // First-run detection: if no project.yml exists, run onboarding wizard.
   // If the user cancels/skips, we continue into the TUI anyway — next time
   // they launch, onboarding will appear again (snoozable).
+  _tuiLog(`projectExists=${projectExists(projectRoot)}`);
   if (!projectExists(projectRoot)) {
+    _tuiLog("running onboarding...");
     const result = await runOnboardingInk({ projectRoot, config });
     // Clear screen whether completed or skipped
     clearScreen();
@@ -208,7 +231,10 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   // `skipAutoResume` prevents the loop from immediately re-entering the
   // monitor after the user explicitly detached from it.
   let skipAutoResume = false;
+  let _loopCount = 0;
   while (true) {
+    _loopCount++;
+    _tuiLog(`main loop iteration ${_loopCount}`);
     // Check for active agents — via daemon (preferred) or legacy file state
     let hasRunningWave = false;
 
@@ -305,11 +331,14 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
     // -----------------------------------------------------------------------
     const quests = loadAllQuests(projectRoot);
     const hasQuests = quests.length > 0;
+    _tuiLog(`hasQuests=${hasQuests}, devMode=${config.devMode}, hasRunningWave=${hasRunningWave}, skipAutoResume=${skipAutoResume}`);
 
     let selectedQuestId: string | null = null;
 
     if (hasQuests || config.devMode) {
+      _tuiLog("launching runQuestPickerInk...");
       const questAction = await runQuestPickerInk({ projectRoot, config });
+      _tuiLog(`runQuestPickerInk returned: ${questAction.type}`);
 
       if (questAction.type === "quit") {
         // User pressed Q in quest picker -- exit cleanly
@@ -414,6 +443,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       }
     }
 
+    _tuiLog(`launching runTaskBrowserInk (selectedQuestId=${selectedQuestId})...`);
     const action = await runTaskBrowserInk({
       projectRoot,
       config,
