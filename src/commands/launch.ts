@@ -377,6 +377,12 @@ export interface LaunchCommandOptions {
    * between the monitor and task browser while agents keep running.
    */
   detachOnQuit?: boolean;
+  /**
+   * When true, errors throw instead of calling `outputError()` (which calls
+   * `process.exit(1)`). Used by `cmdTui` so the TUI can catch errors and
+   * display them inline without killing the entire process.
+   */
+  callerHandlesErrors?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1705,6 +1711,7 @@ async function launchWaveHeadless(
     onSessionId: (featureId, sessionId) => {
       updateAgent(state, featureId, { session_id: sessionId });
       saveState(projectRoot, state);
+      if (tuiRef.current) tuiRef.current.updateState(state);
     },
     onComplete: (featureId) => {
       updateAgent(state, featureId, {
@@ -1712,6 +1719,8 @@ async function launchWaveHeadless(
         completed_at: new Date().toISOString(),
       });
       saveState(projectRoot, state);
+      // Push to TUI immediately so status change is visible
+      if (tuiRef.current) tuiRef.current.updateState(state);
 
       // Run build verification — fire-and-forget
       const agent = state.agents.find((a) => a.feature_id === featureId)!;
@@ -1737,6 +1746,8 @@ async function launchWaveHeadless(
           error,
         });
         saveState(projectRoot, state);
+        // Push to TUI immediately so status change is visible
+        if (tuiRef.current) tuiRef.current.updateState(state);
 
         // Retry
         handleRetry(projectRoot, state, agent, monitor, config, model, hitlMode);
@@ -1747,6 +1758,8 @@ async function launchWaveHeadless(
           completed_at: new Date().toISOString(),
         });
         saveState(projectRoot, state);
+        // Push to TUI immediately so status change is visible
+        if (tuiRef.current) tuiRef.current.updateState(state);
 
         // Cascade failure to downstream agents
         const cancelled = cancelDownstream(state, featureId);
@@ -1773,6 +1786,10 @@ async function launchWaveHeadless(
         activity_updated_at: new Date().toISOString(),
       });
       // Don't save to disk on every activity — too frequent.
+      // But DO push to TUI immediately for real-time display.
+      if (tuiRef.current) {
+        tuiRef.current.updateState(state);
+      }
     },
   });
 
@@ -2384,6 +2401,13 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   let { config } = opts;
   const fmt = opts.outputFmt ?? "text";
 
+  // When callerHandlesErrors is set (e.g. TUI mode), throw instead of
+  // calling outputError() which calls process.exit(1).
+  const fail = (msg: string): never => {
+    if (opts.callerHandlesErrors) throw new Error(msg);
+    outputError(fmt, msg);
+  };
+
   if (fmt === "text") console.log("\n--- wombo-combo: Launch ---\n");
 
   // Ensure agent definition exists — reinstall from template if missing
@@ -2398,12 +2422,12 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
   if (questId) {
     const quest = loadQuest(projectRoot, questId);
     if (!quest) {
-      outputError(fmt, `Quest "${questId}" not found. Use 'woco quest list' to see available quests.`);
+      fail(`Quest "${questId}" not found. Use 'woco quest list' to see available quests.`);
       return; // unreachable
     }
 
     if (quest.status !== "active") {
-      outputError(fmt, `Quest "${questId}" is in status "${quest.status}" — only active quests can be launched. Use 'woco quest activate ${questId}' first.`);
+      fail(`Quest "${questId}" is in status "${quest.status}" — only active quests can be launched. Use 'woco quest activate ${questId}' first.`);
       return; // unreachable
     }
 
@@ -2417,11 +2441,11 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
       if (fmt === "text") console.log(`Syncing quest branch "${quest.branch}" with "${quest.baseBranch}"...`);
       const syncResult = await syncQuestBranch(projectRoot, quest.branch, quest.baseBranch);
       if (syncResult.conflicting) {
-        outputError(fmt, syncResult.error ?? `Merge conflicts syncing ${quest.baseBranch} into ${quest.branch}.`);
+        fail(syncResult.error ?? `Merge conflicts syncing ${quest.baseBranch} into ${quest.branch}.`);
         return;
       }
       if (syncResult.error) {
-        outputError(fmt, `Failed to sync quest branch: ${syncResult.error}`);
+        fail(`Failed to sync quest branch: ${syncResult.error}`);
         return;
       }
       if (syncResult.synced && fmt === "text") {
@@ -2490,7 +2514,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     const msg = `Base branch "${opts.baseBranch}" does not exist as a local branch. ` +
       `Create it first (e.g. "git checkout -b ${opts.baseBranch}") or specify ` +
       `a different branch with --base-branch.`;
-    outputError(fmt, msg);
+    fail(msg);
   }
 
   // -------------------------------------------------------------------------
@@ -2554,7 +2578,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
 
       const activeCount = running.length + completed.length + queued.length;
       if (activeCount > 0) {
-        outputError(fmt, `Wave ${existingState.wave_id} has ${activeCount} unfinished agent(s). Use 'woco resume' to continue the existing wave, or 'woco cleanup' to clear it before starting a new one.`);
+        fail(`Wave ${existingState.wave_id} has ${activeCount} unfinished agent(s). Use 'woco resume' to continue the existing wave, or 'woco cleanup' to clear it before starting a new one.`);
       }
 
       // All agents are in terminal states (merged/verified/failed) — safe to start fresh
@@ -2634,11 +2658,11 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
           if (fmt === "text") console.log(`Syncing quest branch "${quest.branch}" with "${quest.baseBranch}"...`);
           const syncResult = await syncQuestBranch(projectRoot, quest.branch, quest.baseBranch);
           if (syncResult.conflicting) {
-            outputError(fmt, syncResult.error ?? `Merge conflicts syncing ${quest.baseBranch} into ${quest.branch}.`);
+            fail(syncResult.error ?? `Merge conflicts syncing ${quest.baseBranch} into ${quest.branch}.`);
             return;
           }
           if (syncResult.error) {
-            outputError(fmt, `Failed to sync quest branch: ${syncResult.error}`);
+            fail(`Failed to sync quest branch: ${syncResult.error}`);
             return;
           }
           if (syncResult.synced && fmt === "text") {
@@ -2669,8 +2693,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
         hitlMode = quest.hitlMode;
       }
     } else if (taskQuests.size > 1) {
-      outputError(
-        fmt,
+      fail(
         `Selected tasks belong to multiple quests: ${[...taskQuests].join(", ")}. ` +
         `Launch tasks from a single quest at a time, or use --quest to scope the wave.`
       );
@@ -2723,7 +2746,7 @@ export async function cmdLaunch(opts: LaunchCommandOptions): Promise<void> {
     try {
       validateDepGraph(depGraph);
     } catch (err: any) {
-      outputError(fmt, `${err.message}\nFix dependency issues before launching.`);
+      fail(`${err.message}\nFix dependency issues before launching.`);
     }
 
     // Build scheduling plan

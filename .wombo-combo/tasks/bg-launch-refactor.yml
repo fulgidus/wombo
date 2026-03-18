@@ -4,8 +4,8 @@ title: Refactor launch/resume/status commands to use daemon client
 description: Rewrite launch.ts to start the daemon (if not running), send a start-wave command, and optionally attach as
   observer. Resume becomes reconnect-to-daemon. Status queries daemon for wave state. The 2909-line launch.ts shrinks
   dramatically as execution logic moves to daemon+scheduler. Preserve --dry-run and --no-tui behavior.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: hard
 priority: high
 depends_on:
@@ -14,7 +14,7 @@ depends_on:
   - bg-agent-lifecycle
 effort: PT8H
 started_at: null
-ended_at: null
+ended_at: 2026-03-17T20:42:33.088Z
 constraints: []
 forbidden: []
 references: []

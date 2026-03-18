@@ -132,7 +132,7 @@ export function SelectInput<V = string>({
       {items.map((item, index) => {
         const isHighlighted = index === highlightedIndex;
         return (
-          <Box key={index}>
+          <Box key={String(item.value)}>
             <Text color={isHighlighted ? "cyan" : undefined}>
               {isHighlighted ? "❯ " : "  "}
             </Text>

@@ -4,15 +4,15 @@ title: Fully detached agent process management
 description: Agents spawn as fully detached processes (detached:true, stdio:ignore after log setup). Daemon monitors via
   PID polling or pidfd. Agent death is detected and reported without relying on parent process. Includes process
   reaping, crash detection, and exit code capture. Works with both opencode and claude CLI backends.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - bg-daemon
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-17T19:37:37.081Z
 constraints: []
 forbidden: []
 references: []

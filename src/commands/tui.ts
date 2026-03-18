@@ -63,6 +63,7 @@ import { runProgressInk, runConfirmInk, type ProgressController } from "../ink/r
 import { cmdLaunch } from "./launch";
 import type { LaunchCommandOptions } from "./launch";
 import { cmdResume } from "./resume";
+import { enterAltScreen, exitAltScreen, installAltScreenGuard, clearScreen } from "../ink/alt-screen";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -96,6 +97,19 @@ export interface TUICommandOptions {
 export async function cmdTui(opts: TUICommandOptions): Promise<void> {
   const { projectRoot, config } = opts;
 
+  // The TUI requires a real TTY for keyboard input (Ink's useInput uses raw mode).
+  // When stdin is not a TTY (piped, redirected, or bun script runner without TTY
+  // forwarding), Ink throws an uncaught "Raw mode is not supported" error.
+  // Fail early with a clear message instead.
+  if (!process.stdin.isTTY) {
+    console.error(
+      "\nThe interactive TUI requires a terminal with TTY support.\n" +
+        "If you're using `bun dev`, try running directly: bun src/index.ts\n" +
+        "Or use a specific command: bun dev tasks list\n"
+    );
+    process.exit(1);
+  }
+
   // Ensure tasks file exists
   await ensureTasksFile(projectRoot, config);
 
@@ -107,19 +121,26 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
     session.maxConcurrent = opts.maxConcurrent;
   }
 
+  // Enter the alternate screen buffer for a true fullscreen experience.
+  // The guard ensures we exit alt-screen on crash, SIGINT, or SIGTERM.
+  enterAltScreen();
+  const removeGuard = installAltScreenGuard();
+
+  try {
+
   // First-run detection: if no project.yml exists, run onboarding wizard.
   // If the user cancels/skips, we continue into the TUI anyway — next time
   // they launch, onboarding will appear again (snoozable).
   if (!projectExists(projectRoot)) {
     const result = await runOnboardingInk({ projectRoot, config });
     // Clear screen whether completed or skipped
-    process.stdout.write('\x1B[2J\x1B[H');
+    clearScreen();
 
     // If onboarding completed and the user requested genesis, run it now.
     if (result.profile && result.genesisRequested) {
       const vision = formatProjectContext(result.profile);
       await handleGenesisFlow(projectRoot, config, opts, vision);
-      process.stdout.write('\x1B[2J\x1B[H');
+      clearScreen();
     }
   }
 
@@ -184,7 +205,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       // browse tasks and use Tab to switch back to the monitor if needed.
       skipAutoResume = true;
       // Clear terminal before showing picker/browser again
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       continue;
     }
 
@@ -214,7 +235,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         // User pressed P to plan a quest -- run planner + review
         await handlePlanFlow(projectRoot, config, opts, questAction.questId);
         // After planning (approve or cancel), loop back to quest picker
-        process.stdout.write("\x1B[2J\x1B[H");
+        clearScreen();
         continue;
       }
 
@@ -230,7 +251,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
           await handleGenesisFlow(projectRoot, config, opts, vision);
         }
         // After genesis (approve or cancel), loop back to quest picker
-        process.stdout.write("\x1B[2J\x1B[H");
+        clearScreen();
         continue;
       }
 
@@ -243,13 +264,13 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
             spec = wizardSpec;
           } else {
             // User cancelled
-            process.stdout.write("\x1B[2J\x1B[H");
+            clearScreen();
             continue;
           }
         }
         await handleErrandFlow(projectRoot, config, opts, spec);
         // After errand (approve or cancel), loop back to quest picker
-        process.stdout.write("\x1B[2J\x1B[H");
+        clearScreen();
         continue;
       }
 
@@ -257,7 +278,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         // User pressed W to browse wishlist
         await handleWishlistFlow(projectRoot, config, opts);
         // After wishlist (promote, back, or quit), loop back to quest picker
-        process.stdout.write("\x1B[2J\x1B[H");
+        clearScreen();
         continue;
       }
 
@@ -265,7 +286,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         // User pressed O to open onboarding wizard (edit mode)
         await runOnboardingInk({ projectRoot, config });
         // After onboarding, loop back to quest picker
-        process.stdout.write("\x1B[2J\x1B[H");
+        clearScreen();
         continue;
       }
 
@@ -277,7 +298,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
             baseBranch: opts.baseBranch ?? config.baseBranch,
           });
           // After wizard, loop back to quest picker
-          process.stdout.write("\x1B[2J\x1B[H");
+          clearScreen();
           continue;
         }
         selectedQuestId = questAction.questId;
@@ -325,7 +346,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
     if (action.type === "back") {
       // User pressed Q/Esc in quest-filtered browser -- back to quest picker
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       continue;
     }
 
@@ -337,12 +358,12 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         if (wizardSpec) {
           spec = wizardSpec;
         } else {
-          process.stdout.write("\x1B[2J\x1B[H");
+          clearScreen();
           continue;
         }
       }
       await handleErrandFlow(projectRoot, config, opts, spec);
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       continue;
     }
 
@@ -365,7 +386,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         const progress = runProgressInk({ title: "Resume Error" });
         await progress.finish({ type: "error", message: `Resume error: ${err.message}` });
       }
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       // Don't auto-resume — let user browse tasks and Tab to monitor
       skipAutoResume = true;
       continue;
@@ -373,7 +394,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
     if (action.type === "wishlist") {
       await handleWishlistFlow(projectRoot, config, opts);
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       continue;
     }
 
@@ -401,6 +422,9 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
         // Pass quest ID so launch uses quest branch and constraints
         questId: selectedQuestId ?? undefined,
         detachOnQuit: true,
+        // Throw errors instead of calling process.exit(1) so the TUI can
+        // catch them and display inline without killing the process.
+        callerHandlesErrors: true,
       };
 
       try {
@@ -412,11 +436,17 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       }
 
       // Clear terminal before showing picker/browser again
-      process.stdout.write("\x1B[2J\x1B[H");
+      clearScreen();
       // Don't auto-resume — let user browse tasks and Tab to monitor
       skipAutoResume = true;
       continue;
     }
+  }
+
+  } finally {
+    // Always exit the alternate screen buffer, even on error.
+    removeGuard();
+    exitAltScreen();
   }
 }
 

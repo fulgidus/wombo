@@ -33,6 +33,7 @@ import {
   elapsed,
   progressBar,
 } from "./tui-constants";
+import { useTerminalSize } from "./use-terminal-size";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -331,14 +332,14 @@ function ActivityPreview({
   return (
     <Box flexDirection="column">
       {activityLog.map((entry, i) => (
-        <ActivityLine key={`act-${i}`} entry={entry} />
+        <ActivityLine key={`act-${entry.timestamp}-${i}`} entry={entry} />
       ))}
       {systemMessages.length > 0 && (
         <>
           <Text> </Text>
           <Text color="yellow">-- system --</Text>
           {systemMessages.map((entry, i) => (
-            <Text key={`sys-${i}`}>
+            <Text key={`sys-${entry.timestamp}-${i}`}>
               <Text dimColor>{entry.timestamp} </Text>
               <Text color="yellow">{entry.text}</Text>
             </Text>
@@ -644,8 +645,11 @@ export function WaveMonitorView(props: WaveMonitorViewProps): React.ReactElement
   // Selected agent
   const selectedAgent = agents[selectedIndex] ?? null;
 
+  // Fill the entire terminal height so Ink's fullscreen detection kicks in
+  const { rows } = useTerminalSize();
+
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="100%" height={rows}>
       {/* Header */}
       <Header
         waveId={waveId}

@@ -227,3 +227,16 @@ export {
   flattenStreams,
   type Stream,
 } from "./task-graph";
+
+// Terminal utilities (alt-screen buffer, terminal size hook)
+export {
+  enterAltScreen,
+  exitAltScreen,
+  isAltScreenActive,
+  clearScreen,
+  installAltScreenGuard,
+} from "./alt-screen";
+export {
+  useTerminalSize,
+  type TerminalSize,
+} from "./use-terminal-size";

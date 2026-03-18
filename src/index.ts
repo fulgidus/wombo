@@ -166,6 +166,13 @@ async function main(): Promise<void> {
 
 // Global error handlers — prevent silent crashes
 process.on("uncaughtException", (err) => {
+  // Ink throws recoverable raw-mode errors as uncaught exceptions when
+  // stdin loses TTY status or during React re-render cycles. These are
+  // non-fatal — Ink handles them internally. Don't escalate to process.exit.
+  if (err.message?.includes("Raw mode is not supported")) {
+    return;
+  }
+
   console.error(`\n[FATAL] Uncaught exception: ${err.message}`);
   console.error(err.stack);
   try {

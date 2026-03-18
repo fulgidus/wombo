@@ -33,6 +33,7 @@ import {
   TASK_PRIORITY_COLORS,
   progressBar,
 } from "./tui-constants";
+import { useTerminalSize } from "./use-terminal-size";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -489,8 +490,11 @@ export function QuestPickerView(props: QuestPickerViewProps): React.ReactElement
       ? questUsage.get(selectedQuest.quest.id)
       : undefined;
 
+  // Fill the entire terminal height for fullscreen rendering
+  const { rows } = useTerminalSize();
+
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="100%" height={rows}>
       {/* Header */}
       <Header
         questCount={questCount}

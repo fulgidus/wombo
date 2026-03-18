@@ -31,6 +31,7 @@ import {
   TASK_STATUS_ABBREV,
   TASK_PRIORITY_COLORS,
 } from "./tui-constants";
+import { useTerminalSize } from "./use-terminal-size";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -544,8 +545,11 @@ export function TaskBrowserView(props: TaskBrowserViewProps): React.ReactElement
       ? taskUsage.get(selectedNode.task.id)
       : undefined;
 
+  // Fill the entire terminal height for fullscreen rendering
+  const { rows } = useTerminalSize();
+
   return (
-    <Box flexDirection="column" width="100%">
+    <Box flexDirection="column" width="100%" height={rows}>
       {/* Header */}
       <Header
         totalTaskCount={totalTaskCount}

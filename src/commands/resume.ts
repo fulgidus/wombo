@@ -513,6 +513,7 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
       onSessionId: (featureId, sessionId) => {
         updateAgent(state, featureId, { session_id: sessionId });
         saveState(projectRoot, state);
+        if (tuiRef.current) tuiRef.current.updateState(state);
       },
       onComplete: (featureId) => {
         updateAgent(state, featureId, {
@@ -521,6 +522,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           activity: "done",
         });
         saveState(projectRoot, state);
+        // Push to TUI immediately so status change is visible
+        if (tuiRef.current) tuiRef.current.updateState(state);
         wtLog(featureId, "agent completed — verifying build...");
 
         const agent = state.agents.find((a) => a.feature_id === featureId)!;
@@ -542,6 +545,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             activity: "retrying...",
           });
           saveState(projectRoot, state);
+          // Push to TUI immediately so status change is visible
+          if (tuiRef.current) tuiRef.current.updateState(state);
           handleRetry(projectRoot, state, agent, monitor, config, model, hitlMode);
         } else {
           updateAgent(state, featureId, {
@@ -551,6 +556,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
             completed_at: new Date().toISOString(),
           });
           saveState(projectRoot, state);
+          // Push to TUI immediately so status change is visible
+          if (tuiRef.current) tuiRef.current.updateState(state);
 
           // Cascade failure to downstream agents
           const cancelled = cancelDownstream(state, featureId);
@@ -570,6 +577,8 @@ export async function cmdResume(opts: ResumeCommandOptions): Promise<void> {
           activity,
           activity_updated_at: new Date().toISOString(),
         });
+        // Push to TUI immediately for real-time display
+        if (tuiRef.current) tuiRef.current.updateState(state);
       },
     });
 

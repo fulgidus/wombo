@@ -5,15 +5,15 @@ description: "Define the request/response and event streaming protocol over Unix
   stop-wave, abort-agent, retry-agent, get-status, list-waves. Events: agent-started, agent-completed, agent-failed,
   wave-progress, merge-result. Protocol is JSON-line based for simplicity. Includes client library used by both CLI
   commands and TUI."
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - bg-daemon
 effort: PT6H
 started_at: null
-ended_at: null
+ended_at: 2026-03-17T19:37:40.665Z
 constraints: []
 forbidden: []
 references: []

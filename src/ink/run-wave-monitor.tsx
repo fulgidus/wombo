@@ -29,6 +29,7 @@ import type { HitlQuestion } from "../lib/hitl-channel";
 import { tmuxHasSession, tmuxAttach } from "../lib/tmux";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { enterAltScreen, exitAltScreen, isAltScreenActive, installAltScreenGuard } from "./alt-screen";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -116,16 +117,21 @@ function WaveMonitorAdapter({
 
   const lastVersionRef = useRef(store.version);
 
-  // Poll the shared store for external updates (every 500ms)
+  // Poll the shared store for external updates (every 200ms)
   useEffect(() => {
     const timer = setInterval(() => {
       if (store.version !== lastVersionRef.current) {
         lastVersionRef.current = store.version;
-        setState(store.state);
+        // Shallow-clone state so React sees a new reference and actually
+        // re-renders.  The upstream code mutates the WaveState object in
+        // place (Object.assign in updateAgent), so without cloning,
+        // setState(sameRef) is a silent no-op.
+        const s = store.state;
+        setState({ ...s, agents: s.agents.map((a) => ({ ...a })) });
         setWaveComplete(store.waveComplete);
-        setPendingQuestions(store.pendingQuestions);
+        setPendingQuestions([...store.pendingQuestions]);
       }
-    }, 500);
+    }, 200);
     return () => clearInterval(timer);
   }, [store]);
 
@@ -398,6 +404,10 @@ export class InkWomboTUI {
   private inkInstance: InkInstance | null = null;
   private waveCompleteResolve: (() => void) | null = null;
 
+  /** Whether we entered the alt screen ourselves (so we know to exit it) */
+  private ownsAltScreen = false;
+  private removeAltScreenGuard: (() => void) | null = null;
+
   /** Saved originals for console interception */
   private origConsoleLog: typeof console.log = console.log;
   private origConsoleError: typeof console.error = console.error;
@@ -424,8 +434,15 @@ export class InkWomboTUI {
 
   /**
    * Mount the Ink component tree and start console interception.
+   * If the caller hasn't already entered the alternate screen buffer,
+   * we enter it ourselves so the wave monitor is always fullscreen.
    */
   start(): void {
+    if (!isAltScreenActive()) {
+      enterAltScreen();
+      this.ownsAltScreen = true;
+      this.removeAltScreenGuard = installAltScreenGuard();
+    }
     this.interceptConsole();
     this.mount();
   }
@@ -444,6 +461,15 @@ export class InkWomboTUI {
     }
     this.restoreConsole();
     this.unmount();
+    // Exit alt screen only if we entered it ourselves
+    if (this.ownsAltScreen) {
+      if (this.removeAltScreenGuard) {
+        this.removeAltScreenGuard();
+        this.removeAltScreenGuard = null;
+      }
+      exitAltScreen();
+      this.ownsAltScreen = false;
+    }
   }
 
   /**
