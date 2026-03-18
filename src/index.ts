@@ -166,6 +166,17 @@ async function main(): Promise<void> {
 
 // Global error handlers — prevent silent crashes
 process.on("uncaughtException", (err) => {
+  // DEBUG: log ALL uncaught exceptions to file so we can see what's crashing
+  // behind the alt-screen buffer
+  try {
+    const { appendFileSync } = require("node:fs") as typeof import("node:fs");
+    const { resolve } = require("node:path") as typeof import("node:path");
+    appendFileSync(
+      resolve(process.cwd(), ".wombo-combo/tui-debug.log"),
+      `[${new Date().toISOString()}] [uncaughtException] ${err.message}\n${err.stack}\n`
+    );
+  } catch {}
+
   // Ink throws recoverable raw-mode errors as uncaught exceptions when
   // stdin loses TTY status or during React re-render cycles. These are
   // non-fatal — Ink handles them internally. Don't escalate to process.exit.
