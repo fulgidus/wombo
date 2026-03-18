@@ -923,7 +923,11 @@ async function handleWishlistFlow(
   config: WomboConfig,
   opts: TUICommandOptions
 ): Promise<void> {
+  const { appendFileSync: _afs } = require("node:fs") as typeof import("node:fs");
+  const _wlog = (m: string) => { try { _afs(require("node:path").resolve(projectRoot, ".wombo-combo/tui-debug.log"), `[${new Date().toISOString()}] [wishlist] ${m}\n`); } catch {} };
+  _wlog("handleWishlistFlow entered");
   const action = await runWishlistPickerInk({ projectRoot });
+  _wlog(`runWishlistPickerInk returned: ${action.type}`);
 
   if (action.type === "back" || action.type === "quit") {
     return;
