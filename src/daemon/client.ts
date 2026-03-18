@@ -101,6 +101,7 @@ export class DaemonClient {
         return;
       }
 
+      this.connectResolved = false;
       this.setState(this.reconnectAttempts > 0 ? "reconnecting" : "connecting");
 
       const url = `ws://${this.opts.host}:${this.opts.port}/ws`;
@@ -141,12 +142,14 @@ export class DaemonClient {
         const wasConnected = this.state === "connected";
         this.setState("disconnected");
 
+        clearTimeout(timeoutTimer);
+
         if (wasConnected && this.opts.autoReconnect) {
           this.scheduleReconnect();
-        } else if (this.state !== "connected") {
-          // If we never connected, reject the promise
-          clearTimeout(timeoutTimer);
-          // Only reject if not already resolved
+        } else if (!this.connectResolved) {
+          // Connection closed before handshake completed — reject the
+          // connect() promise so the caller doesn't hang indefinitely.
+          reject(new Error("Connection closed before handshake completed"));
         }
       };
 

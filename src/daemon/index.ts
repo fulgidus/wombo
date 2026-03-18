@@ -41,6 +41,9 @@ export type {
   EvtError,
 } from "./protocol";
 
+// PID file utilities (lightweight — no heavy daemon imports)
+export { isDaemonRunning } from "./pid-utils";
+
 // State management
 export { DaemonState, createDaemonAgentState } from "./state";
 export type { InternalAgentState, PersistedDaemonState, StateListener } from "./state";

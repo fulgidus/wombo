@@ -25,6 +25,7 @@ import type { SchedulerConfig } from "./scheduler";
 import { AgentRunner } from "./agent-runner";
 import type { AgentRunnerConfig } from "./agent-runner";
 import { submitAnswer, getPendingQuestions } from "../lib/hitl-channel";
+import { isDaemonRunning } from "./pid-utils";
 import {
   DEFAULT_WS_PORT,
   DEFAULT_IDLE_TIMEOUT_MS,
@@ -690,29 +691,9 @@ export class Daemon {
 
   /** Check if a daemon is already running for the given project root. */
   static isRunning(projectRoot: string): { running: boolean; pid?: number } {
-    const pidPath = resolve(projectRoot, WOMBO_DIR, PID_FILE);
-    if (!existsSync(pidPath)) return { running: false };
-
-    try {
-      const pid = parseInt(readFileSync(pidPath, "utf-8").trim(), 10);
-      if (isNaN(pid)) return { running: false };
-
-      // Check if process is actually alive
-      try {
-        process.kill(pid, 0); // signal 0 = existence check
-        return { running: true, pid };
-      } catch {
-        // Process doesn't exist — stale PID file
-        try {
-          unlinkSync(pidPath);
-        } catch {
-          // Ignore cleanup errors
-        }
-        return { running: false };
-      }
-    } catch {
-      return { running: false };
-    }
+    // Delegate to standalone utility (avoids needing to import the full
+    // Daemon class just for a PID-file check).
+    return isDaemonRunning(projectRoot);
   }
 }
 

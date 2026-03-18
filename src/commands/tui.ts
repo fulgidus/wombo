@@ -64,10 +64,11 @@ import { cmdLaunch } from "./launch";
 import type { LaunchCommandOptions } from "./launch";
 import { cmdResume } from "./resume";
 import { enterAltScreen, exitAltScreen, installAltScreenGuard, clearScreen } from "../ink/alt-screen";
-// Daemon imports
-import { DaemonClient } from "../daemon/client";
-import { ensureDaemonRunning, getDaemonStatus } from "../daemon/launcher";
-import { InkDaemonTUI } from "../ink/run-daemon-monitor";
+// Daemon types only — actual modules are loaded via dynamic import() to
+// avoid pulling in Bun.serve / AgentRunner / ink's top-level await into
+// the synchronous require() chain (schema.ts → citty-registry → tui.ts).
+import type { DaemonClient } from "../daemon/client";
+import type { InkDaemonTUI } from "../ink/run-daemon-monitor";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -92,6 +93,30 @@ export interface TUICommandOptions {
   strictTdd?: boolean;
   /** Agent definition override */
   agent?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Daemon Monitor Helper (dynamic import)
+// ---------------------------------------------------------------------------
+
+/** Dynamically import InkDaemonTUI and run it. Returns when user quits. */
+async function runDaemonMonitor(opts: {
+  client: DaemonClient;
+  projectRoot: string;
+  config: WomboConfig;
+}): Promise<void> {
+  const { InkDaemonTUI: InkDaemonTUIImpl } = await import("../ink/run-daemon-monitor");
+  const daemonTui: InkDaemonTUI = new InkDaemonTUIImpl({
+    client: opts.client,
+    projectRoot: opts.projectRoot,
+    config: opts.config,
+    onQuit: () => {
+      // Detach from monitor — daemon keeps agents running
+    },
+  });
+  daemonTui.start();
+  await daemonTui.waitForQuit();
+  daemonTui.stop();
 }
 
 // ---------------------------------------------------------------------------
@@ -132,12 +157,16 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
 
   // Start the daemon (if not already running) and connect a client.
   // The daemon manages the agent lifecycle; the TUI is a pure viewer/controller.
+  // Dynamic imports to avoid pulling daemon/ink server code into the
+  // synchronous module graph (same pattern as launch.ts tryDaemonLaunch).
   let daemonClient: DaemonClient | null = null;
   let daemonConnected = false;
 
   try {
+    const { ensureDaemonRunning } = await import("../daemon/launcher");
     await ensureDaemonRunning(projectRoot);
-    daemonClient = new DaemonClient({ clientId: "tui", autoReconnect: true });
+    const { DaemonClient: DaemonClientImpl } = await import("../daemon/client");
+    daemonClient = new DaemonClientImpl({ clientId: "tui", autoReconnect: true });
     await daemonClient.connect();
     daemonConnected = true;
   } catch (err: any) {
@@ -228,17 +257,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       if (daemonConnected && daemonClient) {
         // Daemon mode: use InkDaemonTUI
         try {
-          const daemonTui = new InkDaemonTUI({
-            client: daemonClient,
-            projectRoot,
-            config,
-            onQuit: () => {
-              // Detach from monitor — daemon keeps agents running
-            },
-          });
-          daemonTui.start();
-          await daemonTui.waitForQuit();
-          daemonTui.stop();
+          await runDaemonMonitor({ client: daemonClient, projectRoot, config });
         } catch (err: any) {
           const errProgress = runProgressInk({ title: "Monitor Error" });
           await errProgress.finish({ type: "error", message: `Daemon monitor error: ${err.message}` });
@@ -440,15 +459,7 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       if (daemonConnected && daemonClient) {
         // Daemon mode: use InkDaemonTUI
         try {
-          const daemonTui = new InkDaemonTUI({
-            client: daemonClient,
-            projectRoot,
-            config,
-            onQuit: () => {},
-          });
-          daemonTui.start();
-          await daemonTui.waitForQuit();
-          daemonTui.stop();
+          await runDaemonMonitor({ client: daemonClient, projectRoot, config });
         } catch (err: any) {
           const progress = runProgressInk({ title: "Monitor Error" });
           await progress.finish({ type: "error", message: `Daemon monitor error: ${err.message}` });
@@ -502,20 +513,12 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
             model: opts.model,
             taskIds: action.selectedIds,
           });
-          // Brief flash to show request sent
+           // Brief flash to show request sent
           await sleep(500);
           progress.unmount();
 
           // Immediately enter daemon monitor
-          const daemonTui = new InkDaemonTUI({
-            client: daemonClient,
-            projectRoot,
-            config,
-            onQuit: () => {},
-          });
-          daemonTui.start();
-          await daemonTui.waitForQuit();
-          daemonTui.stop();
+          await runDaemonMonitor({ client: daemonClient, projectRoot, config });
         } catch (err: any) {
           progress.unmount();
           const errProgress = runProgressInk({ title: "Launch Error" });

@@ -165,11 +165,9 @@ describe("DaemonClient connection", () => {
     client.disconnect();
   });
 
-  // NOTE: The connect() promise can hang when onclose fires before the
-  // timeout (clearing the timer without rejecting). This is a known gap in
-  // client.ts — the onclose handler should call reject() when the connect
-  // promise hasn't resolved yet. Tracked for future fix.
-  test.skip("connect times out if no server responds", async () => {
+  // The connect() promise now correctly rejects when onclose fires before
+  // the handshake completes (the onclose handler calls reject()).
+  test("connect rejects if no server responds", async () => {
     const deadPort = getRandomPort();
     const client = new DaemonClient({
       clientId: "test",
@@ -178,11 +176,7 @@ describe("DaemonClient connection", () => {
       connectTimeoutMs: 500,
     });
 
-    try {
-      await client.connect();
-    } catch (err: any) {
-      expect(err).toBeDefined();
-    }
+    await expect(client.connect()).rejects.toThrow();
     client.disconnect();
   });
 

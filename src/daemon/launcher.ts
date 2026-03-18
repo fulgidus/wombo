@@ -15,7 +15,7 @@ import { resolve } from "node:path";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { WOMBO_DIR } from "../config";
 import { DEFAULT_WS_PORT, PID_FILE, DEFAULT_IDLE_TIMEOUT_MS } from "./protocol";
-import { Daemon } from "./daemon";
+import { isDaemonRunning } from "./pid-utils";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,7 +47,7 @@ export interface StartDaemonOptions {
 /** Check if a daemon is running for the given project root. */
 export function getDaemonStatus(projectRoot: string, port?: number): DaemonStatus {
   const effectivePort = port ?? DEFAULT_WS_PORT;
-  const check = Daemon.isRunning(projectRoot);
+  const check = isDaemonRunning(projectRoot);
 
   return {
     running: check.running,
