@@ -3,14 +3,14 @@ title: Add --quest flag to woco tasks add command
 description: Add a --quest option to the tasks add command (citty definition in src/commands/citty/tasks.ts and
   implementation in src/commands/tasks/add.ts). When provided, sets task.quest to the given quest ID. Validate that the
   quest exists before saving. This removes the need to manually edit task YAML files to associate tasks with quests.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on: []
 effort: PT1H
 started_at: null
-ended_at: null
+ended_at: 2026-03-18T19:40:44.135Z
 constraints: []
 forbidden: []
 references: []

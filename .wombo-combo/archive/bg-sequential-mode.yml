@@ -5,15 +5,15 @@ description: Add a --sequential flag (or 'autopilot' command) that processes tas
   Pick next ready task, launch agent, wait for completion, verify, merge, mark done, repeat. No TUI, no parallelism —
   just stdout logging. Designed for fire-and-forget overnight usage. Uses the daemon internally but presents a simple
   blocking interface.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: high
 depends_on:
   - bg-launch-refactor
 effort: PT4H
 started_at: null
-ended_at: null
+ended_at: 2026-03-18T19:02:05.670Z
 constraints: []
 forbidden: []
 references: []

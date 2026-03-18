@@ -14,6 +14,8 @@ import {
   type Feature,
 } from "../../lib/tasks";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output";
+import { loadQuest } from "../../lib/quest-store";
+import { getQuestTaskIds } from "../../lib/quest";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -102,6 +104,27 @@ export async function cmdTasksArchive(opts: TasksArchiveOptions): Promise<void> 
     if (fmt === "text") {
       for (const f of toArchive) {
         console.log(`  ${f.id} — ${f.title} (${f.status})`);
+      }
+    }
+
+    // Nudge: if any archived tasks belonged to a quest and that quest now
+    // has zero remaining active tasks, suggest completing it.
+    if (fmt === "text") {
+      const questIds = new Set(
+        toArchive.map((f) => f.quest).filter((q): q is string => !!q)
+      );
+      for (const qid of questIds) {
+        const quest = loadQuest(projectRoot, qid);
+        if (!quest) continue;
+        // Only nudge for non-terminal quests
+        if (quest.status === "completed" || quest.status === "abandoned") continue;
+        const remaining = getQuestTaskIds(qid, data.tasks);
+        if (remaining.length === 0) {
+          console.log(
+            `\n  Quest "${qid}" has no remaining active tasks.` +
+            `\n  Consider completing it: woco quest complete ${qid}`
+          );
+        }
       }
     }
   } catch (err: unknown) {

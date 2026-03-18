@@ -1,14 +1,14 @@
 id: config-test-worktreeprefix
 title: "Fix config.test.ts: Property 'worktreePrefix' does not exist on WomboConfig.git"
 description: ""
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: medium
 priority: medium
 depends_on: []
 effort: PT1H
 started_at: null
-ended_at: null
+ended_at: 2026-03-18T19:40:48.260Z
 constraints: []
 forbidden: []
 references: []

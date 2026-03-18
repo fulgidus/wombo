@@ -4,7 +4,7 @@ goal: Decouple the execution engine from the CLI/TUI lifecycle so agents run ind
   linear wave scheduler into a full DAG-aware engine that launches agents as their upstream dependencies complete. The
   TUI and CLI become observer/management clients that can attach and detach without affecting running agents. This
   enables doing wishlist-to-quest conversions, task management, and quest planning while agents are actively working.
-status: active
+status: completed
 priority: high
 difficulty: very_hard
 depends_on: []
@@ -16,7 +16,7 @@ constraints:
   ban: []
   override: {}
 created_at: 2026-03-15T17:44:24.067Z
-updated_at: 2026-03-17T19:08:25.548Z
+updated_at: 2026-03-18T19:57:45.232Z
 started_at: 2026-03-16T00:58:25.456Z
-ended_at: null
+ended_at: 2026-03-18T19:57:45.232Z
 notes: []

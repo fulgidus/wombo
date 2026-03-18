@@ -3,14 +3,14 @@ title: Change wishlist reordering keys from Shift+Arrow to plus/minus
 description: Replace S-up/S-down key bindings for wishlist item reordering with +/- keys in both WishlistPicker and
   WishlistOverlay (tui-wishlist.ts). Update footer help text accordingly. The Shift+Arrow combo does not work reliably
   across terminals.
-status: backlog
-completion: 0
+status: done
+completion: 100
 difficulty: easy
 priority: high
 depends_on: []
 effort: PT1H
 started_at: null
-ended_at: null
+ended_at: 2026-03-18T19:40:46.195Z
 constraints: []
 forbidden: []
 references: []

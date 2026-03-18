@@ -150,9 +150,12 @@ export async function mergeBranch(
   // painful when merging into quest branches.
   const tmpDir = `${projectRoot}/.wombo-combo/.tmp-merge-${Date.now()}`;
 
-  // Create a worktree checked out on the base branch
+  // Create a worktree checked out on the base branch.
+  // --force is required because baseBranch (e.g. "main") is typically already
+  // checked out in the project root.  Without --force, git refuses with
+  // "fatal: '<branch>' is already used by worktree at ...".
   const addResult = await runSafe(
-    `git worktree add "${tmpDir}" "${baseBranch}"`,
+    `git worktree add --force "${tmpDir}" "${baseBranch}"`,
     projectRoot
   );
   if (!addResult.ok) {
@@ -386,9 +389,10 @@ export async function syncQuestBranch(
   }
 
   // Need to merge. Use a temporary worktree for the quest branch.
+  // --force: the quest branch may already be checked out in another worktree.
   const tmpDir = `${projectRoot}/.wombo-combo/.tmp-quest-sync`;
   const addResult = await runSafe(
-    `git worktree add "${tmpDir}" "${questBranch}"`,
+    `git worktree add --force "${tmpDir}" "${questBranch}"`,
     projectRoot
   );
   if (!addResult.ok) {
