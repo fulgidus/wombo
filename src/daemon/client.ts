@@ -144,12 +144,16 @@ export class DaemonClient {
 
         clearTimeout(timeoutTimer);
 
-        if (wasConnected && this.opts.autoReconnect) {
-          this.scheduleReconnect();
-        } else if (!this.connectResolved) {
-          // Connection closed before handshake completed — reject the
-          // connect() promise so the caller doesn't hang indefinitely.
+        if (!this.connectResolved) {
+          // The initial connect() promise has not yet resolved — the connection
+          // closed before the handshake completed.  Always reject so the caller
+          // never hangs (even when autoReconnect is true, which only applies to
+          // drops that happen *after* a successful session is established).
           reject(new Error("Connection closed before handshake completed"));
+        } else if (wasConnected && this.opts.autoReconnect) {
+          // A previously-established session was interrupted — schedule
+          // reconnection transparently.
+          this.scheduleReconnect();
         }
       };
 
