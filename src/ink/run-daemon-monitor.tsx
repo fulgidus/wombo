@@ -753,6 +753,7 @@ export class InkDaemonTUI {
   // -------------------------------------------------------------------------
 
   private mount(): void {
+    process.stdin.resume(); // keep event loop alive between renders
     this.inkInstance = inkRender(
       <DaemonMonitorAdapter
         store={this.store}
@@ -767,7 +768,8 @@ export class InkDaemonTUI {
             this.waveCompleteResolve = null;
           }
         }}
-      />
+      />,
+      { exitOnCtrlC: false }
     );
   }
 

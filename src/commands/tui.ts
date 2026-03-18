@@ -529,9 +529,25 @@ export async function cmdTui(opts: TUICommandOptions): Promise<void> {
       continue;
     }
 
-    // "launch" action no longer exists — Space in the task browser directly
-    // writes "planned" to disk; the daemon scheduler picks it up automatically.
-    // Loop back to the quest picker so the user can see the monitor appear.
+    // Space in the task browser wrote "planned" to disk directly.
+    // The daemon scheduler picks up planned tasks within one tick (≤3s).
+    // Give the scheduler a nudge and wait briefly so the monitor auto-opens
+    // on the next loop iteration instead of showing the quest picker first.
+    if (daemonConnected && daemonClient) {
+      try {
+        daemonClient.start({}); // nudge: ensure scheduler is running
+        // Wait up to 4s for at least one agent to appear
+        for (let i = 0; i < 20; i++) {
+          await sleep(200);
+          const snap = await daemonClient.requestState(1000).catch(() => null);
+          if (snap && snap.agents.some((a) => a.status === "queued" || a.status === "running" || a.status === "installing")) {
+            break; // agents picked up — proceed to monitor
+          }
+        }
+      } catch {
+        // Best-effort
+      }
+    }
     clearScreen();
     continue;
   }
