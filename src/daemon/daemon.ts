@@ -419,7 +419,12 @@ export class Daemon {
       return;
     }
 
+    // Re-key the clients map from the internal UUID to the user-provided
+    // clientId so that sendTo() can look it up by the new ID.
+    const oldId = client.clientId;
+    this.clients.delete(oldId);
     client.clientId = payload.clientId;
+    this.clients.set(client.clientId, client);
     client.handshaked = true;
 
     this.sendTo(client.clientId, "evt:handshake-ack", {
