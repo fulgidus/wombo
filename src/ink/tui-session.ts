@@ -51,21 +51,44 @@ const EXIT_ALT_SCREEN = "\x1b[?25h\x1b[?1049l";
 export const stdinIsTTY: boolean = !!(process.stdin as NodeJS.ReadStream).isTTY;
 
 // ---------------------------------------------------------------------------
-// getStdin — direct stdin access (replaces getStableStdin proxy)
+// getStdin — stable stdin proxy (replaces getStableStdin from bun-stdin.ts)
 // ---------------------------------------------------------------------------
 
 /**
- * Returns `process.stdin` directly.
+ * Whether stdin was a TTY at process startup, captured before any Ink
+ * instance can call `setRawMode(false)` on it and corrupt `isTTY`.
+ */
+const _STDIN_IS_TTY: boolean = !!(process.stdin as NodeJS.ReadStream).isTTY;
+
+let _stdinProxy: typeof process.stdin | null = null;
+
+/**
+ * Returns a stable stdin wrapper whose `isTTY` property always reflects
+ * the startup value, regardless of what Ink does during unmount.
  *
- * Replaces the `getStableStdin()` proxy from `bun-stdin.ts`. With a single
- * Ink render() for the whole session (via ScreenRouter), there are no
- * mid-session unmount/remount cycles that corrupt `isTTY`, so no proxy is
- * needed.
+ * Even though `InkWomboTUI` and `InkDaemonTUI` do their own standalone
+ * `inkRender()` calls (rather than going through a single ScreenRouter
+ * render), the outer TUI loop (tui.ts) renders many other screens before
+ * reaching the monitors — each of those unmounts calls `stdin.setRawMode(false)`,
+ * which sets `process.stdin.isTTY` to `undefined`. Without a proxy, the next
+ * `inkRender()` call in the monitor sees `isTTY = undefined` and Ink treats
+ * the process as non-TTY, so `useInput` silently does nothing and the chrome
+ * bars are never drawn (Ink skips layout when not in TTY mode).
  *
  * Pass this to `render()` as the `stdin` option.
  */
 export function getStdin(): typeof process.stdin {
-  return process.stdin;
+  if (_stdinProxy) return _stdinProxy;
+
+  _stdinProxy = new Proxy(process.stdin, {
+    get(target, prop) {
+      if (prop === "isTTY") return _STDIN_IS_TTY;
+      const val = (target as any)[prop];
+      return typeof val === "function" ? val.bind(target) : val;
+    },
+  });
+
+  return _stdinProxy;
 }
 
 // ---------------------------------------------------------------------------

@@ -13,20 +13,23 @@
  *   tui.stop();
  *
  * Internally it mounts a React component tree via ink's render(). The tree
- * is now routed through the full TUI shell:
+ * is routed through the full TUI shell using ScreenRouter for navigation:
  *
  *   ThemeContext.Provider
  *     I18nContext.Provider
  *       DashboardStoreContext.Provider
- *         ScreenRouter (splash → wave-monitor)
- *           EscMenuProvider
- *             ChromeLayout
- *               WaveMonitorAdapter (content screen)
+ *         EscMenuProvider (onNavigate via navRef bridge)
+ *           ChromeLayout
+ *             ScreenRouter (splash → monitor → settings)
+ *               NavWire (fills navRef — inside NavigationContext)
+ *
+ * The navRef bridge allows EscMenuProvider (outside NavigationContext) to
+ * call nav.push/pop on the inner ScreenRouter.
  *
  * The imperative SharedStore + polling pattern is replaced with a reactive
- * notifyRef pattern (same as InkDaemonTUI): callers push state changes by
- * mutating the store and calling notify(), which calls the React setState
- * flush function wired via notifyRef.
+ * notifyRef pattern: callers push state changes by mutating the store and
+ * calling notify(), which calls the React setState flush function wired
+ * via notifyRef.
  */
 
 import React, {
@@ -37,7 +40,7 @@ import React, {
   type MutableRefObject,
 } from "react";
 import { render as inkRender, type Instance as InkInstance } from "ink";
-import { WaveMonitorView, type AgentInfo, type AgentCounts } from "./wave-monitor";
+import { WaveMonitorView, type AgentInfo } from "./wave-monitor";
 import { QuestionPopupView } from "./question-popup";
 import type { WaveState, AgentStatus } from "../lib/state";
 import { agentCounts } from "../lib/state";
@@ -48,7 +51,7 @@ import { tmuxHasSession, tmuxAttach } from "../lib/tmux";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { TuiSession, getStdin } from "./tui-session";
-import { ScreenRouter, type ScreenMap } from "./router";
+import { ScreenRouter, useNavigation, type NavigationState } from "./router";
 import { ChromeLayout } from "./chrome";
 import { EscMenuProvider } from "./esc-menu";
 import { SplashScreen } from "./splash-screen";
@@ -107,7 +110,67 @@ interface SharedStore {
 }
 
 // ---------------------------------------------------------------------------
-// WaveMonitorShell — full TUI shell component
+// NavWire — fills a navRef from inside NavigationContext
+// ---------------------------------------------------------------------------
+
+/**
+ * Invisible component rendered as ScreenRouter child.
+ * Wires the current useNavigation() handle into a mutable ref so that
+ * components outside NavigationContext (like EscMenuProvider's onNavigate
+ * callback) can call push/pop/replace.
+ */
+function NavWire({ navRef }: { navRef: MutableRefObject<NavigationState | null> }): null {
+  const nav = useNavigation();
+  navRef.current = nav;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// WaveMonitorScreen — router-compatible screen component
+// ---------------------------------------------------------------------------
+
+/**
+ * Props for WaveMonitorScreen when used as a ScreenRouter screen.
+ * These are passed via `initialProps` or `push("monitor", props)`.
+ */
+export interface WaveMonitorScreenProps {
+  waveState: WaveState;
+  waveComplete: boolean;
+  pendingQuestions: HitlQuestion[];
+  monitor: ProcessMonitor;
+  interactive: boolean;
+  projectRoot: string;
+  config: WomboConfig;
+  onQuit: () => void;
+  onRetry?: (featureId: string) => void;
+  onAnswer?: (agentId: string, questionId: string, answerText: string) => void;
+  onQuitAfterComplete: () => void;
+  onMuxAttach: (featureId: string) => void;
+  /** Reference to the outer shared store for mutation (HITL answer removal). */
+  store?: SharedStore;
+}
+
+/**
+ * WaveMonitorScreen — a ScreenRouter-compatible screen component.
+ *
+ * Thin wrapper over WaveMonitorAdapter, designed for use in a ScreenRouter
+ * screen map. Receives all its data via props (passed through ScreenRouter's
+ * initialProps or push()). Required props are given safe defaults so the
+ * component is resilient when partially constructed (e.g. in tests).
+ *
+ * Exported for testing.
+ */
+export function WaveMonitorScreen(props: WaveMonitorScreenProps): React.ReactElement {
+  const {
+    waveComplete = false,
+    pendingQuestions = [],
+    ...rest
+  } = props;
+  return <WaveMonitorAdapter waveComplete={waveComplete} pendingQuestions={pendingQuestions} {...rest} />;
+}
+
+// ---------------------------------------------------------------------------
+// WaveMonitorShell — full TUI shell component (uses ScreenRouter internally)
 // ---------------------------------------------------------------------------
 
 export interface WaveMonitorShellProps {
@@ -143,6 +206,21 @@ export interface WaveMonitorShellProps {
 /**
  * WaveMonitorShell — the full TUI tree for the wave monitor.
  *
+ * Uses ScreenRouter internally for screen navigation (splash → monitor → settings)
+ * instead of hand-rolled useState switching. ChromeLayout wraps ScreenRouter
+ * so chrome bars persist across screen transitions. A NavWire component inside
+ * ScreenRouter.children bridges navigation calls from EscMenuProvider into
+ * NavigationContext.
+ *
+ * Tree structure:
+ *   ThemeContext.Provider
+ *     I18nContext.Provider
+ *       DashboardStoreContext.Provider
+ *         EscMenuProvider (onNavigate uses navRef → nav.push/pop)
+ *           ChromeLayout
+ *             ScreenRouter (screens: splash, monitor, settings)
+ *               NavWire (fills navRef — inside NavigationContext)
+ *
  * Exported for testing; InkWomboTUI uses this via inkRender().
  */
 export function WaveMonitorShell({
@@ -166,17 +244,21 @@ export function WaveMonitorShell({
   const theme = getTheme(config.tui?.theme ?? "default");
   const tFn = getLocaleT(config.tui?.locale ?? "en");
 
-  // Derive DashboardStore from the wave state for the context
   const [dashStore, setDashStore] = useState<DashboardStore>(() =>
     buildDashStore(state)
   );
-
-  // Wire notifyRef so the imperative class can push state into React
   const [waveState, setWaveState] = useState<WaveState>(state);
   const [waveComplete, setWaveComplete] = useState(waveCompleteProp);
   const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(
     pendingQuestionsProp
   );
+  const [settingsConfig, setSettingsConfig] = useState<SettingsScreenConfig>({
+    tui: config.tui,
+    devMode: (config as any).devMode ?? false,
+  });
+
+  // navRef bridges EscMenuProvider's onNavigate callback to the inner ScreenRouter
+  const navRef = useRef<NavigationState | null>(null);
 
   useEffect(() => {
     if (!_store) return;
@@ -193,35 +275,6 @@ export function WaveMonitorShell({
     };
   }, [_store, notifyRef]);
 
-  // Navigation state — start on splash (or skip to monitor)
-  const [screen, setScreen] = useState<"splash" | "monitor" | "settings">(
-    skipSplash ? "monitor" : "splash"
-  );
-  const [settingsConfig, setSettingsConfig] = useState<SettingsScreenConfig>({
-    tui: config.tui,
-    devMode: (config as any).devMode ?? false,
-  });
-
-  const handleSplashDone = useCallback(() => {
-    setScreen("monitor");
-  }, []);
-
-  const handleEscNavigate = useCallback((action: "settings" | "quit") => {
-    if (action === "settings") {
-      setScreen("settings");
-    } else if (action === "quit") {
-      onQuit();
-    }
-  }, [onQuit]);
-
-  const handleSettingsBack = useCallback(() => {
-    setScreen("monitor");
-  }, []);
-
-  const handleSettingsSave = useCallback((patched: SettingsScreenConfig) => {
-    setSettingsConfig(patched);
-  }, []);
-
   // Wave summary for ChromeTopBar
   const counts = agentCounts(waveState);
   const waveSummary = {
@@ -230,11 +283,54 @@ export function WaveMonitorShell({
     failed: counts.failed,
   };
 
-  // Screen name for chrome
-  const screenName =
-    screen === "splash" ? "Loading…" :
-    screen === "settings" ? "Settings" :
-    "Wave Monitor";
+  const handleEscNavigate = useCallback(
+    (action: "settings" | "quit") => {
+      if (action === "settings") {
+        navRef.current?.push("settings", {
+          config: settingsConfig as unknown,
+          onSave: (patched: SettingsScreenConfig) => setSettingsConfig(patched),
+          onBack: () => navRef.current?.pop(),
+        } as Record<string, unknown>);
+      } else if (action === "quit") {
+        onQuit();
+      }
+    },
+    [settingsConfig, onQuit]
+  );
+
+  // Build the monitor screen props
+  const monitorProps: WaveMonitorScreenProps = {
+    waveState,
+    waveComplete,
+    pendingQuestions,
+    monitor,
+    interactive,
+    projectRoot,
+    config,
+    onQuit,
+    onRetry,
+    onAnswer,
+    onQuitAfterComplete,
+    onMuxAttach,
+    store: _store,
+  };
+
+  // Splash screen props (onDone navigates to monitor via ScreenRouter.replace)
+  const splashProps: Record<string, unknown> = {
+    onDone: () => navRef.current?.replace("monitor", monitorProps as unknown as Record<string, unknown>),
+    durationMs: splashDurationMs,
+  };
+
+  const screens = {
+    splash: SplashScreen,
+    monitor: WaveMonitorScreen,
+    settings: SettingsScreen,
+  };
+
+  const initialScreen = skipSplash ? "monitor" : "splash";
+  const initialProps: Record<string, unknown> = skipSplash
+    ? (monitorProps as unknown as Record<string, unknown>)
+    : splashProps;
 
   return (
     <ThemeContext.Provider value={theme}>
@@ -242,41 +338,18 @@ export function WaveMonitorShell({
         <DashboardStoreContext.Provider value={dashStore}>
           <EscMenuProvider onNavigate={handleEscNavigate}>
             <ChromeLayout
-              screenName={screenName}
+              screenName="Wave Monitor"
               daemonConnected={false}
-              waveSummary={screen === "monitor" ? waveSummary : undefined}
+              waveSummary={waveSummary}
               locale={config.tui?.locale ?? "en"}
             >
-              {screen === "splash" && (
-                <SplashScreen
-                  onDone={handleSplashDone}
-                  durationMs={splashDurationMs}
-                />
-              )}
-              {screen === "settings" && (
-                <SettingsScreen
-                  config={settingsConfig}
-                  onSave={handleSettingsSave}
-                  onBack={handleSettingsBack}
-                />
-              )}
-              {screen === "monitor" && (
-                <WaveMonitorAdapter
-                  waveState={waveState}
-                  waveComplete={waveComplete}
-                  pendingQuestions={pendingQuestions}
-                  monitor={monitor}
-                  interactive={interactive}
-                  projectRoot={projectRoot}
-                  config={config}
-                  onQuit={onQuit}
-                  onRetry={onRetry}
-                  onAnswer={onAnswer}
-                  onQuitAfterComplete={onQuitAfterComplete}
-                   onMuxAttach={onMuxAttach}
-                  store={_store}
-                />
-              )}
+              <ScreenRouter
+                screens={screens}
+                initialScreen={initialScreen}
+                initialProps={initialProps}
+              >
+                <NavWire navRef={navRef} />
+              </ScreenRouter>
             </ChromeLayout>
           </EscMenuProvider>
         </DashboardStoreContext.Provider>
@@ -509,7 +582,8 @@ function WaveMonitorAdapter({
         store.pendingQuestions = store.pendingQuestions.filter(
           (q) => !(q.agentId === agentId && q.id === questionId)
         );
-      }      setAnswerText("");
+      }
+      setAnswerText("");
       const remaining = pendingQuestions.filter(
         (q) => !(q.agentId === agentId && q.id === questionId)
       );

@@ -12,14 +12,15 @@
  * Commands (retry, HITL answer, pin/skip) are sent to the daemon instead of
  * being handled locally.
  *
- * The full React tree is now routed through the TUI shell:
+ * The full React tree is routed through the TUI shell using ScreenRouter:
  *
  *   ThemeContext.Provider
  *     I18nContext.Provider
  *       DashboardStoreContext.Provider
- *         EscMenuProvider
+ *         EscMenuProvider (onNavigate via navRef bridge)
  *           ChromeLayout
- *             SplashScreen / DaemonMonitorAdapter / SettingsScreen
+ *             ScreenRouter (splash → monitor → settings)
+ *               NavWire (fills navRef — inside NavigationContext)
  *
  * Usage:
  *   const tui = new InkDaemonTUI({ client, projectRoot, config, onQuit });
@@ -31,6 +32,7 @@
 import React, {
   useState,
   useEffect,
+  useRef,
   useCallback,
   type MutableRefObject,
 } from "react";
@@ -56,6 +58,7 @@ import type {
   SchedulerState,
 } from "../daemon/protocol";
 import { TuiSession, getStdin } from "./tui-session";
+import { ScreenRouter, useNavigation, type NavigationState } from "./router";
 import { ChromeLayout } from "./chrome";
 import { EscMenuProvider } from "./esc-menu";
 import { SplashScreen } from "./splash-screen";
@@ -152,7 +155,84 @@ function buildDashStore(store: DaemonStore): DashboardStore {
 }
 
 // ---------------------------------------------------------------------------
-// DaemonMonitorShell — full TUI shell component
+// NavWire — fills a navRef from inside NavigationContext
+// ---------------------------------------------------------------------------
+
+/**
+ * Invisible component rendered as ScreenRouter child.
+ * Wires the current useNavigation() handle into a mutable ref so that
+ * components outside NavigationContext (like EscMenuProvider's onNavigate
+ * callback) can call push/pop/replace.
+ */
+function NavWire({ navRef }: { navRef: MutableRefObject<NavigationState | null> }): null {
+  const nav = useNavigation();
+  navRef.current = nav;
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// DaemonMonitorScreen — router-compatible screen component
+// ---------------------------------------------------------------------------
+
+/**
+ * Props for DaemonMonitorScreen when used as a ScreenRouter screen.
+ * These are passed via `initialProps` or `push("monitor", props)`.
+ */
+export interface DaemonMonitorScreenProps {
+  scheduler: SchedulerState | null;
+  agents: DaemonAgentState[];
+  pendingQuestions: HitlQuestion[];
+  allComplete: boolean;
+  activityLogs: Map<string, ActivityEntry[]>;
+  systemMessages: ActivityEntry[];
+  tokenUsage: Map<string, { inputTokens: number; outputTokens: number; totalCost: number }>;
+  client: DaemonClient;
+  projectRoot: string;
+  config: WomboConfig;
+  onQuit: () => void;
+  onQuitAfterComplete: () => void;
+  store: DaemonStore;
+}
+
+/**
+ * DaemonMonitorScreen — a ScreenRouter-compatible screen component.
+ *
+ * Thin wrapper over DaemonMonitorAdapter, designed for use in a ScreenRouter
+ * screen map. Receives all its data via props (passed through ScreenRouter's
+ * initialProps or push()). Required props are given safe defaults so the
+ * component is resilient when partially constructed (e.g. in tests).
+ *
+ * Exported for testing.
+ */
+export function DaemonMonitorScreen(props: DaemonMonitorScreenProps): React.ReactElement {
+  const {
+    scheduler = null,
+    agents = [],
+    pendingQuestions = [],
+    allComplete = false,
+    activityLogs = new Map(),
+    systemMessages = [],
+    tokenUsage = new Map(),
+    store = createEmptyStore(),
+    ...rest
+  } = props;
+  return (
+    <DaemonMonitorAdapter
+      scheduler={scheduler}
+      agents={agents}
+      pendingQuestions={pendingQuestions}
+      allComplete={allComplete}
+      activityLogs={activityLogs}
+      systemMessages={systemMessages}
+      tokenUsage={tokenUsage}
+      store={store}
+      {...rest}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DaemonMonitorShell — full TUI shell component (uses ScreenRouter internally)
 // ---------------------------------------------------------------------------
 
 export interface DaemonMonitorShellProps {
@@ -177,6 +257,21 @@ export interface DaemonMonitorShellProps {
 
 /**
  * DaemonMonitorShell — the full TUI tree for the daemon monitor.
+ *
+ * Uses ScreenRouter internally for screen navigation (splash → monitor → settings)
+ * instead of hand-rolled useState switching. ChromeLayout wraps ScreenRouter
+ * so chrome bars persist across screen transitions. A NavWire component inside
+ * ScreenRouter.children bridges navigation calls from EscMenuProvider into
+ * NavigationContext.
+ *
+ * Tree structure:
+ *   ThemeContext.Provider
+ *     I18nContext.Provider
+ *       DashboardStoreContext.Provider
+ *         EscMenuProvider (onNavigate uses navRef → nav.push/pop)
+ *           ChromeLayout
+ *             ScreenRouter (screens: splash, monitor, settings)
+ *               NavWire (fills navRef — inside NavigationContext)
  *
  * Exported for testing; InkDaemonTUI uses this via inkRender().
  */
@@ -208,6 +303,9 @@ export function DaemonMonitorShell({
     devMode: (config as any).devMode ?? false,
   });
 
+  // navRef bridges EscMenuProvider's onNavigate callback to the inner ScreenRouter
+  const navRef = useRef<NavigationState | null>(null);
+
   // Wire up the notify callback
   useEffect(() => {
     notifyRef.current = () => {
@@ -222,42 +320,61 @@ export function DaemonMonitorShell({
     };
   }, [store, notifyRef]);
 
-  // Navigation state
-  const [screen, setScreen] = useState<"splash" | "monitor" | "settings">(
-    skipSplash ? "monitor" : "splash"
+  const handleEscNavigate = useCallback(
+    (action: "settings" | "quit") => {
+      if (action === "settings") {
+        navRef.current?.push("settings", {
+          config: settingsConfig as unknown,
+          onSave: (patched: SettingsScreenConfig) => setSettingsConfig(patched),
+          onBack: () => navRef.current?.pop(),
+        } as Record<string, unknown>);
+      } else if (action === "quit") {
+        onQuit();
+      }
+    },
+    [settingsConfig, onQuit]
   );
 
-  const handleSplashDone = useCallback(() => {
-    setScreen("monitor");
-  }, []);
-
-  const handleEscNavigate = useCallback((action: "settings" | "quit") => {
-    if (action === "settings") {
-      setScreen("settings");
-    } else if (action === "quit") {
-      onQuit();
-    }
-  }, [onQuit]);
-
-  const handleSettingsBack = useCallback(() => {
-    setScreen("monitor");
-  }, []);
-
-  const handleSettingsSave = useCallback((patched: SettingsScreenConfig) => {
-    setSettingsConfig(patched);
-  }, []);
-
   // Wave summary for ChromeTopBar
-  const waveSummary = screen === "monitor" ? {
+  const waveSummary = {
     running: dashStore.running,
     done: dashStore.done,
     failed: dashStore.failed,
-  } : undefined;
+  };
 
-  const screenName =
-    screen === "splash" ? "Loading…" :
-    screen === "settings" ? "Settings" :
-    "Wave Monitor";
+  // Build the monitor screen props
+  const monitorProps: DaemonMonitorScreenProps = {
+    scheduler,
+    agents,
+    pendingQuestions,
+    allComplete,
+    activityLogs: store.activityLogs,
+    systemMessages: store.systemMessages,
+    tokenUsage: store.tokenUsage,
+    client,
+    projectRoot,
+    config,
+    onQuit,
+    onQuitAfterComplete,
+    store,
+  };
+
+  // Splash screen props (onDone navigates to monitor via ScreenRouter.replace)
+  const splashProps: Record<string, unknown> = {
+    onDone: () => navRef.current?.replace("monitor", monitorProps as unknown as Record<string, unknown>),
+    durationMs: splashDurationMs,
+  };
+
+  const screens = {
+    splash: SplashScreen,
+    monitor: DaemonMonitorScreen,
+    settings: SettingsScreen,
+  };
+
+  const initialScreen = skipSplash ? "monitor" : "splash";
+  const initialProps: Record<string, unknown> = skipSplash
+    ? (monitorProps as unknown as Record<string, unknown>)
+    : splashProps;
 
   return (
     <ThemeContext.Provider value={theme}>
@@ -265,41 +382,18 @@ export function DaemonMonitorShell({
         <DashboardStoreContext.Provider value={dashStore}>
           <EscMenuProvider onNavigate={handleEscNavigate}>
             <ChromeLayout
-              screenName={screenName}
+              screenName="Wave Monitor"
               daemonConnected={true}
               waveSummary={waveSummary}
               locale={config.tui?.locale ?? "en"}
             >
-              {screen === "splash" && (
-                <SplashScreen
-                  onDone={handleSplashDone}
-                  durationMs={splashDurationMs}
-                />
-              )}
-              {screen === "settings" && (
-                <SettingsScreen
-                  config={settingsConfig}
-                  onSave={handleSettingsSave}
-                  onBack={handleSettingsBack}
-                />
-              )}
-              {screen === "monitor" && (
-                <DaemonMonitorAdapter
-                  scheduler={scheduler}
-                  agents={agents}
-                  pendingQuestions={pendingQuestions}
-                  allComplete={allComplete}
-                  activityLogs={store.activityLogs}
-                  systemMessages={store.systemMessages}
-                  tokenUsage={store.tokenUsage}
-                  client={client}
-                  projectRoot={projectRoot}
-                  config={config}
-                  onQuit={onQuit}
-                  onQuitAfterComplete={onQuitAfterComplete}
-                  store={store}
-                />
-              )}
+              <ScreenRouter
+                screens={screens}
+                initialScreen={initialScreen}
+                initialProps={initialProps}
+              >
+                <NavWire navRef={navRef} />
+              </ScreenRouter>
             </ChromeLayout>
           </EscMenuProvider>
         </DashboardStoreContext.Provider>

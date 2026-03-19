@@ -11,7 +11,7 @@
  *   - Calling stop() before start() is a no-op
  *   - TuiSession.isActive() reflects lifecycle state
  *   - installGuard / removeGuard wires process exit handlers
- *   - getStdin() returns process.stdin directly (no proxy needed)
+ *   - getStdin() returns a stable proxy with fixed isTTY (prevents chrome bars from disappearing)
  *   - stdinIsTTY captures the startup isTTY value
  */
 
@@ -39,9 +39,15 @@ describe("TuiSession", () => {
     expect(typeof stdinIsTTY).toBe("boolean");
   });
 
-  test("getStdin() returns process.stdin (no proxy)", async () => {
+  test("getStdin() returns a stable proxy (not process.stdin directly)", async () => {
     const { getStdin } = await import("../../src/ink/tui-session");
-    expect(getStdin()).toBe(process.stdin);
+    const stdin = getStdin();
+    // It should be a proxy, not the raw stdin object
+    expect(stdin).not.toBe(process.stdin);
+    // isTTY is hardcoded from startup — consistent regardless of Ink unmount corruption
+    expect(typeof stdin.isTTY).toBe("boolean");
+    // Calling getStdin() twice returns the same cached proxy
+    expect(getStdin()).toBe(stdin);
   });
 
   test("TuiSession.isActive() is false before start()", async () => {
