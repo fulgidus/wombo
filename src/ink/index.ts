@@ -280,3 +280,13 @@ export {
   type NavigationState,
   type ScreenRouterProps,
 } from "./router";
+
+// Theme system (swappable color/icon tokens)
+export {
+  THEMES,
+  getTheme,
+  ThemeContext,
+  useTheme,
+  type ThemeTokens,
+  type ThemeName,
+} from "./theme";

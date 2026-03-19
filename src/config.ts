@@ -102,6 +102,8 @@ export interface WomboConfig {
   merge: MergeEscalationConfig;
   /** Developer mode: enables hidden features like fake task seeding in TUI */
   devMode: boolean;
+  /** TUI appearance configuration */
+  tui: TuiConfig;
 }
 
 /** Configuration for browser-based verification and testing */
@@ -152,6 +154,20 @@ export interface TddConfig {
   strictTdd: boolean;
   /** Test command timeout in milliseconds (default: 120_000) */
   testTimeout: number;
+}
+
+/** TUI (terminal user interface) configuration */
+export interface TuiConfig {
+  /**
+   * Active color/icon theme preset.
+   * @see src/ink/theme.ts for available presets.
+   */
+  theme: "default" | "high-contrast" | "minimal";
+  /**
+   * Locale identifier for i18n string lookup.
+   * Currently only 'en' is shipped; skeleton for future locales.
+   */
+  locale: string;
 }
 
 /** Maximum tier the merge conflict pipeline will escalate to */
@@ -242,6 +258,10 @@ export const DEFAULT_CONFIG: WomboConfig = {
     maxEscalation: "tier4",
   },
   devMode: false,
+  tui: {
+    theme: "default",
+    locale: "en",
+  },
 };
 
 // ---------------------------------------------------------------------------
