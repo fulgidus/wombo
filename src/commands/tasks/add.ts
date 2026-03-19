@@ -4,7 +4,7 @@
  * Usage:
  *   woco tasks add <id> --title "Task Title" [--description "..."]
  *                   [--priority medium] [--difficulty easy] [--effort PT2H]
- *                   [--depends-on "task1,task2"]
+ *                   [--depends-on "task1,task2"] [--quest <quest-id>]
  */
 
 import type { WomboConfig } from "../../config";
@@ -22,6 +22,7 @@ import {
 } from "../../lib/task-schema";
 import { outputError, outputMessage, type OutputFormat } from "../../lib/output";
 import { validateEnum } from "../../lib/validate";
+import { loadQuest } from "../../lib/quest-store";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -37,6 +38,7 @@ export interface TasksAddOptions {
   difficulty?: Difficulty;
   effort?: string;
   dependsOn?: string[];
+  quest?: string;
   outputFmt?: OutputFormat;
   dryRun?: boolean;
 }
@@ -78,6 +80,15 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
 
   const data = loadFeatures(projectRoot, config);
 
+  // Validate quest exists if provided
+  if (opts.quest) {
+    const quest = loadQuest(projectRoot, opts.quest);
+    if (!quest) {
+      outputError(fmt, `Quest "${opts.quest}" not found. Use \`woco quest list\` to see available quests.`);
+      return;
+    }
+  }
+
   // Check for duplicate ID
   const existingIds = allFeatureIds(data);
   if (existingIds.includes(opts.id)) {
@@ -107,6 +118,11 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
     feature.depends_on = opts.dependsOn;
   }
 
+  // Associate with quest
+  if (opts.quest) {
+    feature.quest = opts.quest;
+  }
+
   // Dry-run: show what would be added without writing
   if (opts.dryRun) {
     outputMessage(fmt, `[dry-run] Would add task: ${opts.id} — ${opts.title}`, {
@@ -117,6 +133,7 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
       difficulty: feature.difficulty,
       effort: feature.effort,
       depends_on: feature.depends_on,
+      quest: feature.quest,
     });
     return;
   }
@@ -132,12 +149,16 @@ export async function cmdTasksAdd(opts: TasksAddOptions): Promise<void> {
     difficulty: feature.difficulty,
     effort: feature.effort,
     depends_on: feature.depends_on,
+    quest: feature.quest,
   });
 
   if (fmt === "text") {
     console.log(`  priority: ${feature.priority}, difficulty: ${feature.difficulty}, effort: ${feature.effort}`);
     if (feature.depends_on.length > 0) {
       console.log(`  depends on: ${feature.depends_on.join(", ")}`);
+    }
+    if (feature.quest) {
+      console.log(`  quest: ${feature.quest}`);
     }
   }
 }
