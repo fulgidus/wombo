@@ -1,6 +1,13 @@
 /**
  * bun-stdin.ts — Stable stdin wrapper for sequential Ink renders.
  *
+ * @deprecated Use `getStdin()` from `./tui-session` instead.
+ *
+ * This module is kept for backward compatibility with the existing standalone
+ * run-*.tsx launchers (run-quest-wizard, run-progress, etc.) that each call
+ * inkRender() independently. Once those launchers are migrated to the
+ * ScreenRouter (tui-dashboard task), this file can be deleted.
+ *
  * Problem: Bun's `process.stdin.isTTY` can become `undefined` after an
  * Ink instance calls `stdin.setRawMode(false)` on unmount. The next
  * `render()` call creates a new `App` component that captures

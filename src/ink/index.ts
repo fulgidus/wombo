@@ -247,6 +247,14 @@ export {
   type TerminalSize,
 } from "./use-terminal-size";
 
+// TUI session lifecycle manager (alt-screen + guard ownership)
+export {
+  TuiSession,
+  getStdin,
+  stdinIsTTY,
+  type TuiSessionOptions,
+} from "./tui-session";
+
 // Screen router (single render() lifetime, stack-based navigator)
 export {
   NavigationContext,
