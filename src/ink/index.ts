@@ -217,13 +217,17 @@ export {
 // Wave monitor adapter (imperative wrapper for launch.ts / resume.ts)
 export {
   InkWomboTUI,
+  WaveMonitorShell,
   type InkTUIOptions,
+  type WaveMonitorShellProps,
 } from "./run-wave-monitor";
 
 // Daemon-backed wave monitor adapter (WebSocket client for daemon TUI)
 export {
   InkDaemonTUI,
+  DaemonMonitorShell,
   type InkDaemonTUIOptions,
+  type DaemonMonitorShellProps,
 } from "./run-daemon-monitor";
 
 // Task graph utilities

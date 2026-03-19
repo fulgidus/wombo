@@ -1,0 +1,16 @@
+id: tui-runtime-wiring
+title: Wire new TUI shell into run-wave-monitor and run-daemon-monitor
+description: ""
+status: done
+completion: 100
+difficulty: medium
+priority: high
+depends_on: []
+effort: PT1H
+started_at: 2026-03-19T20:38:52.191Z
+ended_at: 2026-03-19T20:48:53.025Z
+constraints: []
+forbidden: []
+references: []
+notes: []
+subtasks: []

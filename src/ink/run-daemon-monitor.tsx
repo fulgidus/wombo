@@ -12,6 +12,15 @@
  * Commands (retry, HITL answer, pin/skip) are sent to the daemon instead of
  * being handled locally.
  *
+ * The full React tree is now routed through the TUI shell:
+ *
+ *   ThemeContext.Provider
+ *     I18nContext.Provider
+ *       DashboardStoreContext.Provider
+ *         EscMenuProvider
+ *           ChromeLayout
+ *             SplashScreen / DaemonMonitorAdapter / SettingsScreen
+ *
  * Usage:
  *   const tui = new InkDaemonTUI({ client, projectRoot, config, onQuit });
  *   tui.start();
@@ -19,7 +28,12 @@
  *   tui.stop();
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  type MutableRefObject,
+} from "react";
 import { render as inkRender, type Instance as InkInstance } from "ink";
 import { WaveMonitorView, type AgentInfo, type AgentCounts } from "./wave-monitor";
 import { QuestionPopupView } from "./question-popup";
@@ -41,8 +55,18 @@ import type {
   DaemonAgentState,
   SchedulerState,
 } from "../daemon/protocol";
-import { enterAltScreen, exitAltScreen, isAltScreenActive, installAltScreenGuard } from "./alt-screen";
-import { getStableStdin } from "./bun-stdin";
+import { TuiSession, getStdin } from "./tui-session";
+import { ChromeLayout } from "./chrome";
+import { EscMenuProvider } from "./esc-menu";
+import { SplashScreen } from "./splash-screen";
+import { SettingsScreen, type SettingsScreenConfig } from "./settings-screen";
+import { ThemeContext, getTheme } from "./theme";
+import { I18nContext, getLocaleT } from "./i18n";
+import {
+  DashboardStoreContext,
+  type DashboardStore,
+  type DashboardAgent,
+} from "./dashboard";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +85,7 @@ export interface InkDaemonTUIOptions {
 
 /**
  * Mutable store bridging daemon events → React state.
- * The React component polls this at a fixed interval.
+ * notify() flushes state directly into React (no polling interval).
  */
 interface DaemonStore {
   scheduler: SchedulerState | null;
@@ -76,8 +100,6 @@ interface DaemonStore {
   tokenUsage: Map<string, { inputTokens: number; outputTokens: number; totalCost: number }>;
   /** Whether all agents are in terminal states. */
   allComplete: boolean;
-  /** Bumped on every mutation for React change detection. */
-  version: number;
 }
 
 function createEmptyStore(): DaemonStore {
@@ -89,40 +111,228 @@ function createEmptyStore(): DaemonStore {
     pendingQuestions: [],
     tokenUsage: new Map(),
     allComplete: false,
-    version: 0,
+  };
+}
+
+const TERMINAL_STATUSES: AgentStatus[] = ["completed", "verified", "failed", "merged"];
+
+// ---------------------------------------------------------------------------
+// Helper: build DashboardStore from DaemonStore
+// ---------------------------------------------------------------------------
+
+function buildDashStore(store: DaemonStore): DashboardStore {
+  const agents: DashboardAgent[] = store.agents.map((a) => ({
+    id: a.featureId,
+    status: a.status,
+  }));
+  let running = 0;
+  let done = 0;
+  let failed = 0;
+  for (const a of store.agents) {
+    if (a.status === "running" || a.status === "installing") running++;
+    else if (a.status === "completed" || a.status === "verified" || a.status === "merged") done++;
+    else if (a.status === "failed") failed++;
+  }
+  return {
+    agents,
+    running,
+    done,
+    failed,
+    total: agents.length,
   };
 }
 
 // ---------------------------------------------------------------------------
-// React adapter component
+// DaemonMonitorShell — full TUI shell component
 // ---------------------------------------------------------------------------
 
-interface DaemonAdapterProps {
-  store: DaemonStore;
+export interface DaemonMonitorShellProps {
+  /**
+   * Internal mutable store — used by InkDaemonTUI to push daemon events into React.
+   * If omitted, the shell starts with an empty store (useful for tests/standalone rendering).
+   * @internal
+   */
+  _store?: DaemonStore;
   client: DaemonClient;
   projectRoot: string;
   config: WomboConfig;
   onQuit: () => void;
   onQuitAfterComplete: () => void;
   /** Ref the class fills with a function to flush store → React state. */
-  notifyRef: React.MutableRefObject<(() => void) | null>;
+  notifyRef: MutableRefObject<(() => void) | null>;
+  /** Duration for splash screen (ms). Default 1500. Pass 0 to test without timer. */
+  splashDurationMs?: number;
+  /** If true, skip splash and show monitor directly. Useful for tests. */
+  skipSplash?: boolean;
 }
 
-const TERMINAL_STATUSES: AgentStatus[] = ["completed", "verified", "failed", "merged"];
-
-function DaemonMonitorAdapter({
-  store,
+/**
+ * DaemonMonitorShell — the full TUI tree for the daemon monitor.
+ *
+ * Exported for testing; InkDaemonTUI uses this via inkRender().
+ */
+export function DaemonMonitorShell({
+  _store: storeProp,
   client,
   projectRoot,
   config,
   onQuit,
   onQuitAfterComplete,
   notifyRef,
-}: DaemonAdapterProps): React.ReactElement {
+  splashDurationMs = 1500,
+  skipSplash = false,
+}: DaemonMonitorShellProps): React.ReactElement {
+  const theme = getTheme(config.tui?.theme ?? "default");
+  const tFn = getLocaleT(config.tui?.locale ?? "en");
+
+  // Use provided store or create an empty one
+  const store = storeProp ?? createEmptyStore();
+
+  // Reactive state driven by notifyRef
   const [scheduler, setScheduler] = useState<SchedulerState | null>(store.scheduler);
   const [agents, setAgents] = useState<DaemonAgentState[]>(store.agents);
   const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(store.pendingQuestions);
   const [allComplete, setAllComplete] = useState(store.allComplete);
+  const [dashStore, setDashStore] = useState<DashboardStore>(() => buildDashStore(store));
+  const [settingsConfig, setSettingsConfig] = useState<SettingsScreenConfig>({
+    tui: config.tui,
+    devMode: (config as any).devMode ?? false,
+  });
+
+  // Wire up the notify callback
+  useEffect(() => {
+    notifyRef.current = () => {
+      setScheduler(store.scheduler ? { ...store.scheduler } : null);
+      setAgents([...store.agents]);
+      setPendingQuestions([...store.pendingQuestions]);
+      setAllComplete(store.allComplete);
+      setDashStore(buildDashStore(store));
+    };
+    return () => {
+      notifyRef.current = null;
+    };
+  }, [store, notifyRef]);
+
+  // Navigation state
+  const [screen, setScreen] = useState<"splash" | "monitor" | "settings">(
+    skipSplash ? "monitor" : "splash"
+  );
+
+  const handleSplashDone = useCallback(() => {
+    setScreen("monitor");
+  }, []);
+
+  const handleEscNavigate = useCallback((action: "settings" | "quit") => {
+    if (action === "settings") {
+      setScreen("settings");
+    } else if (action === "quit") {
+      onQuit();
+    }
+  }, [onQuit]);
+
+  const handleSettingsBack = useCallback(() => {
+    setScreen("monitor");
+  }, []);
+
+  const handleSettingsSave = useCallback((patched: SettingsScreenConfig) => {
+    setSettingsConfig(patched);
+  }, []);
+
+  // Wave summary for ChromeTopBar
+  const waveSummary = screen === "monitor" ? {
+    running: dashStore.running,
+    done: dashStore.done,
+    failed: dashStore.failed,
+  } : undefined;
+
+  const screenName =
+    screen === "splash" ? "Loading…" :
+    screen === "settings" ? "Settings" :
+    "Wave Monitor";
+
+  return (
+    <ThemeContext.Provider value={theme}>
+      <I18nContext.Provider value={tFn}>
+        <DashboardStoreContext.Provider value={dashStore}>
+          <EscMenuProvider onNavigate={handleEscNavigate}>
+            <ChromeLayout
+              screenName={screenName}
+              daemonConnected={true}
+              waveSummary={waveSummary}
+              locale={config.tui?.locale ?? "en"}
+            >
+              {screen === "splash" && (
+                <SplashScreen
+                  onDone={handleSplashDone}
+                  durationMs={splashDurationMs}
+                />
+              )}
+              {screen === "settings" && (
+                <SettingsScreen
+                  config={settingsConfig}
+                  onSave={handleSettingsSave}
+                  onBack={handleSettingsBack}
+                />
+              )}
+              {screen === "monitor" && (
+                <DaemonMonitorAdapter
+                  scheduler={scheduler}
+                  agents={agents}
+                  pendingQuestions={pendingQuestions}
+                  allComplete={allComplete}
+                  activityLogs={store.activityLogs}
+                  systemMessages={store.systemMessages}
+                  tokenUsage={store.tokenUsage}
+                  client={client}
+                  projectRoot={projectRoot}
+                  config={config}
+                  onQuit={onQuit}
+                  onQuitAfterComplete={onQuitAfterComplete}
+                  store={store}
+                />
+              )}
+            </ChromeLayout>
+          </EscMenuProvider>
+        </DashboardStoreContext.Provider>
+      </I18nContext.Provider>
+    </ThemeContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DaemonMonitorAdapter — content component (inner screen)
+// ---------------------------------------------------------------------------
+
+interface DaemonAdapterProps {
+  scheduler: SchedulerState | null;
+  agents: DaemonAgentState[];
+  pendingQuestions: HitlQuestion[];
+  allComplete: boolean;
+  activityLogs: Map<string, ActivityEntry[]>;
+  systemMessages: ActivityEntry[];
+  tokenUsage: Map<string, { inputTokens: number; outputTokens: number; totalCost: number }>;
+  client: DaemonClient;
+  projectRoot: string;
+  config: WomboConfig;
+  onQuit: () => void;
+  onQuitAfterComplete: () => void;
+  store: DaemonStore;
+}
+
+function DaemonMonitorAdapter({
+  scheduler,
+  agents,
+  pendingQuestions: pendingQuestionsProp,
+  allComplete,
+  activityLogs,
+  systemMessages,
+  tokenUsage,
+  client,
+  projectRoot,
+  onQuit,
+  onQuitAfterComplete,
+  store,
+}: DaemonAdapterProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showBuildLog, setShowBuildLog] = useState(false);
@@ -131,18 +341,11 @@ function DaemonMonitorAdapter({
   const [showQuestionPopup, setShowQuestionPopup] = useState(false);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answerText, setAnswerText] = useState("");
-
-  // Wire up the notify callback so the class can trigger React state updates
-  // directly instead of relying on a polling interval reading a mutable store.
+  // Local copy of pending questions synced from parent
+  const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(pendingQuestionsProp);
   useEffect(() => {
-    notifyRef.current = () => {
-      setScheduler(store.scheduler ? { ...store.scheduler } : null);
-      setAgents([...store.agents]);
-      setPendingQuestions([...store.pendingQuestions]);
-      setAllComplete(store.allComplete);
-    };
-    return () => { notifyRef.current = null; };
-  }, [store, notifyRef]);
+    setPendingQuestions(pendingQuestionsProp);
+  }, [pendingQuestionsProp]);
 
   // Build AgentInfo array from daemon agent state
   const agentInfos: AgentInfo[] = agents.map((a) => ({
@@ -153,7 +356,7 @@ function DaemonMonitorAdapter({
     retries: a.retries,
     effortEstimateMs: a.effortEstimateMs,
     buildPassed: a.buildPassed,
-    buildOutput: a.error, // Use error field as build output fallback
+    buildOutput: a.error,
   }));
 
   // Agent counts
@@ -175,17 +378,14 @@ function DaemonMonitorAdapter({
   // Activity log for selected agent
   const selectedAgent = agents[selectedIndex];
   const activityLog = selectedAgent
-    ? store.activityLogs.get(selectedAgent.featureId) ?? []
+    ? activityLogs.get(selectedAgent.featureId) ?? []
     : [];
-
-  // System messages
-  const systemMessages = store.systemMessages;
 
   // Token usage totals
   let totalTokens = 0;
   let totalCost = 0;
   const agentTokens = new Map<string, number>();
-  for (const [fid, usage] of store.tokenUsage) {
+  for (const [fid, usage] of tokenUsage) {
     totalTokens += usage.inputTokens + usage.outputTokens;
     totalCost += usage.totalCost;
     agentTokens.set(fid, usage.inputTokens + usage.outputTokens);
@@ -204,44 +404,38 @@ function DaemonMonitorAdapter({
     if (!selectedAgent) return;
     const retryableStatuses: AgentStatus[] = ["failed", "retry"];
     if (!retryableStatuses.includes(selectedAgent.status)) {
-      // Flash a message in the activity log
-      const logs = store.activityLogs.get(selectedAgent.featureId);
+      const logs = activityLogs.get(selectedAgent.featureId);
       if (logs) {
         logs.push({
           timestamp: new Date().toISOString().slice(11, 19),
           text: `!! Cannot retry — agent status is "${selectedAgent.status}" (must be failed or retry)`,
         });
-        
       }
       return;
     }
     try {
       client.retryAgent(selectedAgent.featureId);
-      const logs = store.activityLogs.get(selectedAgent.featureId);
+      const logs = activityLogs.get(selectedAgent.featureId);
       if (logs) {
         logs.push({
           timestamp: new Date().toISOString().slice(11, 19),
           text: `>> Retry requested — sent to daemon`,
         });
-        
       }
     } catch {
       // Client not connected — ignore
     }
-  }, [selectedAgent, client, store]);
+  }, [selectedAgent, client, activityLogs]);
 
   const handleAttach = useCallback(() => {
     if (!selectedAgent) return;
 
-    // In daemon mode, always show log overlay (no tmux support yet)
     if (logFileContent !== null) {
-      // Toggle off
       setLogFileContent(null);
       setLogFileAgentId(null);
       return;
     }
 
-    // Try to read the log file
     const { readFileSync } = require("node:fs");
     const { resolve } = require("node:path");
     const logPath = resolve(
@@ -259,7 +453,6 @@ function DaemonMonitorAdapter({
     } catch {
       content = `No log file found at ${logPath}`;
     }
-    // Truncate to last 200 lines
     const lines = content.split("\n");
     const truncated = lines.length > 200 ? lines.slice(-200).join("\n") : content;
     setLogFileContent(truncated);
@@ -277,13 +470,12 @@ function DaemonMonitorAdapter({
   const handleOpenQuestions = useCallback(() => {
     if (pendingQuestions.length === 0) {
       if (selectedAgent) {
-        const logs = store.activityLogs.get(selectedAgent.featureId);
+        const logs = activityLogs.get(selectedAgent.featureId);
         if (logs) {
           logs.push({
             timestamp: new Date().toISOString().slice(11, 19),
             text: `-- No pending HITL questions`,
           });
-          
         }
       }
       return;
@@ -291,7 +483,7 @@ function DaemonMonitorAdapter({
     setQuestionIndex(0);
     setAnswerText("");
     setShowQuestionPopup(true);
-  }, [pendingQuestions, selectedAgent, store]);
+  }, [pendingQuestions, selectedAgent, activityLogs]);
 
   const handleEscape = useCallback(() => {
     if (showQuestionPopup) {
@@ -311,14 +503,12 @@ function DaemonMonitorAdapter({
       } catch {
         // Client not connected
       }
-      // Remove from local pending list
       setPendingQuestions((prev) =>
         prev.filter((q) => !(q.agentId === agentId && q.id === questionId))
       );
       store.pendingQuestions = store.pendingQuestions.filter(
         (q) => !(q.agentId === agentId && q.id === questionId)
       );
-      
       setAnswerText("");
       const remaining = pendingQuestions.filter(
         (q) => !(q.agentId === agentId && q.id === questionId)
@@ -418,17 +608,17 @@ export class InkDaemonTUI {
   private quitResolve: (() => void) | null = null;
   private unsubscribers: Array<() => void> = [];
   /** Ref wired to the React component's flush function. */
-  private notifyRef: React.MutableRefObject<(() => void) | null> = React.createRef() as React.MutableRefObject<(() => void) | null>;
+  private notifyRef: MutableRefObject<(() => void) | null> = { current: null };
 
-  /** Whether we entered the alt screen ourselves */
-  private ownsAltScreen = false;
-  private removeAltScreenGuard: (() => void) | null = null;
+  /** TuiSession owns alt-screen lifecycle (replaces direct enterAltScreen calls). */
+  _session: TuiSession;
 
   constructor(opts: InkDaemonTUIOptions) {
     this.client = opts.client;
     this.store = createEmptyStore();
     this.projectRoot = opts.projectRoot;
     this.config = opts.config;
+    this._session = new TuiSession();
     // Wrap onQuit so pressing Q also resolves waitForQuit()
     this.onQuitCallback = () => {
       opts.onQuit();
@@ -450,11 +640,7 @@ export class InkDaemonTUI {
    * request an initial state snapshot.
    */
   start(): void {
-    if (!isAltScreenActive()) {
-      enterAltScreen();
-      this.ownsAltScreen = true;
-      this.removeAltScreenGuard = installAltScreenGuard();
-    }
+    this._session.start();
     this.subscribeToDaemonEvents();
     this.mount();
 
@@ -472,14 +658,7 @@ export class InkDaemonTUI {
   stop(): void {
     this.unsubscribeAll();
     this.unmount();
-    if (this.ownsAltScreen) {
-      if (this.removeAltScreenGuard) {
-        this.removeAltScreenGuard();
-        this.removeAltScreenGuard = null;
-      }
-      exitAltScreen();
-      this.ownsAltScreen = false;
-    }
+    this._session.stop();
   }
 
   /**
@@ -524,7 +703,7 @@ export class InkDaemonTUI {
           });
         }
         this.checkCompletion();
-      this.notify();
+        this.notify();
       })
     );
 
@@ -542,7 +721,7 @@ export class InkDaemonTUI {
           timestamp: new Date().toISOString().slice(11, 19),
           text: evt.activity,
         });
-      this.notify();
+        this.notify();
       })
     );
 
@@ -556,7 +735,7 @@ export class InkDaemonTUI {
           text: evt.questionText,
           timestamp: new Date().toISOString(),
         });
-      this.notify();
+        this.notify();
       })
     );
 
@@ -573,7 +752,7 @@ export class InkDaemonTUI {
           timestamp: new Date().toISOString().slice(11, 19),
           text: `[build] ${evt.passed ? "PASSED" : "FAILED"}${evt.output ? ` — ${evt.output.slice(0, 100)}` : ""}`,
         });
-      this.notify();
+        this.notify();
       })
     );
 
@@ -586,7 +765,7 @@ export class InkDaemonTUI {
           timestamp: new Date().toISOString().slice(11, 19),
           text: `[merge] ${evt.success ? "SUCCESS" : `FAILED: ${evt.error ?? "unknown"}`}`,
         });
-      this.notify();
+        this.notify();
       })
     );
 
@@ -600,7 +779,7 @@ export class InkDaemonTUI {
           outputTokens: (existing?.outputTokens ?? 0) + evt.outputTokens,
           totalCost: (existing?.totalCost ?? 0) + (evt.cost ?? 0),
         });
-      this.notify();
+        this.notify();
       })
     );
 
@@ -616,7 +795,7 @@ export class InkDaemonTUI {
           text: `[scheduler] ${evt.status}${evt.reason ? ` — ${evt.reason}` : ""}`,
         });
         this.checkCompletion();
-      this.notify();
+        this.notify();
       })
     );
 
@@ -628,11 +807,10 @@ export class InkDaemonTUI {
           timestamp: new Date().toISOString().slice(11, 19),
           text: `[${evt.level}] ${evt.message}`,
         });
-        // Keep bounded
         if (this.store.systemMessages.length > 200) {
           this.store.systemMessages.splice(0, this.store.systemMessages.length - 200);
         }
-      this.notify();
+        this.notify();
       })
     );
 
@@ -644,7 +822,7 @@ export class InkDaemonTUI {
           timestamp: new Date().toISOString().slice(11, 19),
           text: `[daemon] Daemon is shutting down`,
         });
-      this.notify();
+        this.notify();
       })
     );
   }
@@ -713,7 +891,6 @@ export class InkDaemonTUI {
       logs = [];
       this.store.activityLogs.set(featureId, logs);
     }
-    // Keep bounded
     if (logs.length > 500) {
       logs.splice(0, logs.length - 500);
     }
@@ -736,8 +913,8 @@ export class InkDaemonTUI {
   private mount(): void {
     process.stdin.resume(); // keep event loop alive between renders
     this.inkInstance = inkRender(
-      <DaemonMonitorAdapter
-        store={this.store}
+      <DaemonMonitorShell
+        _store={this.store}
         client={this.client}
         projectRoot={this.projectRoot}
         config={this.config}
@@ -748,7 +925,7 @@ export class InkDaemonTUI {
           this.resolveQuit();
         }}
       />,
-      { exitOnCtrlC: false, stdin: getStableStdin() }
+      { exitOnCtrlC: false, stdin: getStdin() }
     );
   }
 

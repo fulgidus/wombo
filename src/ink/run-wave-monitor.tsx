@@ -12,12 +12,30 @@
  *   await tui.waitForQuit();
  *   tui.stop();
  *
- * Internally it mounts a React component tree via ink's render() and
- * bridges imperative state pushes to React state via a shared ref +
- * polling interval.
+ * Internally it mounts a React component tree via ink's render(). The tree
+ * is now routed through the full TUI shell:
+ *
+ *   ThemeContext.Provider
+ *     I18nContext.Provider
+ *       DashboardStoreContext.Provider
+ *         ScreenRouter (splash → wave-monitor)
+ *           EscMenuProvider
+ *             ChromeLayout
+ *               WaveMonitorAdapter (content screen)
+ *
+ * The imperative SharedStore + polling pattern is replaced with a reactive
+ * notifyRef pattern (same as InkDaemonTUI): callers push state changes by
+ * mutating the store and calling notify(), which calls the React setState
+ * flush function wired via notifyRef.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  type MutableRefObject,
+} from "react";
 import { render as inkRender, type Instance as InkInstance } from "ink";
 import { WaveMonitorView, type AgentInfo, type AgentCounts } from "./wave-monitor";
 import { QuestionPopupView } from "./question-popup";
@@ -29,7 +47,19 @@ import type { HitlQuestion } from "../lib/hitl-channel";
 import { tmuxHasSession, tmuxAttach } from "../lib/tmux";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { enterAltScreen, exitAltScreen, isAltScreenActive, installAltScreenGuard } from "./alt-screen";
+import { TuiSession, getStdin } from "./tui-session";
+import { ScreenRouter, type ScreenMap } from "./router";
+import { ChromeLayout } from "./chrome";
+import { EscMenuProvider } from "./esc-menu";
+import { SplashScreen } from "./splash-screen";
+import { SettingsScreen, type SettingsScreenConfig } from "./settings-screen";
+import { ThemeContext, getTheme } from "./theme";
+import { I18nContext, getLocaleT } from "./i18n";
+import {
+  DashboardStoreContext,
+  type DashboardStore,
+  type DashboardAgent,
+} from "./dashboard";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,22 +88,32 @@ export interface InkTUIOptions {
 
 /**
  * Shared mutable store bridging imperative calls → React state.
- * The React component polls this at a fixed interval to pick up changes.
+ * notify() (via notifyRef) flushes pending state directly into React
+ * without a polling interval.
  */
 interface SharedStore {
   state: WaveState;
   waveComplete: boolean;
   pendingQuestions: HitlQuestion[];
-  /** Bumped on every external mutation to let React detect changes cheaply. */
-  version: number;
 }
 
 // ---------------------------------------------------------------------------
-// React adapter component
+// WaveMonitorShell — full TUI shell component
 // ---------------------------------------------------------------------------
 
-interface AdapterProps {
-  store: SharedStore;
+export interface WaveMonitorShellProps {
+  /** Current wave state. */
+  state: WaveState;
+  /** Whether the wave has completed. */
+  waveComplete?: boolean;
+  /** Pending HITL questions. */
+  pendingQuestions?: HitlQuestion[];
+  /**
+   * Internal shared store reference — used by InkWomboTUI to push mutations.
+   * If omitted, the component operates in read-only mode from the `state` prop.
+   * @internal
+   */
+  _store?: SharedStore;
   monitor: ProcessMonitor;
   interactive: boolean;
   projectRoot: string;
@@ -81,17 +121,26 @@ interface AdapterProps {
   onQuit: () => void;
   onRetry?: (featureId: string) => void;
   onAnswer?: (agentId: string, questionId: string, answerText: string) => void;
-  /** Called when user presses Q after wave complete — resolves waitForQuit(). */
   onQuitAfterComplete: () => void;
-  /**
-   * Called when the user presses Enter to attach to a tmux session.
-   * The adapter unmounts, attaches, then remounts.
-   */
   onMuxAttach: (featureId: string) => void;
+  /** Ref filled with a flush function by WaveMonitorAdapter. */
+  notifyRef: MutableRefObject<(() => void) | null>;
+  /** Duration for splash screen (ms). Default 1500. Pass 0 to test without timer. */
+  splashDurationMs?: number;
+  /** If true, skip splash and show monitor directly. Useful for tests. */
+  skipSplash?: boolean;
 }
 
-function WaveMonitorAdapter({
-  store,
+/**
+ * WaveMonitorShell — the full TUI tree for the wave monitor.
+ *
+ * Exported for testing; InkWomboTUI uses this via inkRender().
+ */
+export function WaveMonitorShell({
+  state,
+  waveComplete: waveCompleteProp = false,
+  pendingQuestions: pendingQuestionsProp = [],
+  _store,
   monitor,
   interactive,
   projectRoot,
@@ -101,11 +150,187 @@ function WaveMonitorAdapter({
   onAnswer,
   onQuitAfterComplete,
   onMuxAttach,
+  notifyRef,
+  splashDurationMs = 1500,
+  skipSplash = false,
+}: WaveMonitorShellProps): React.ReactElement {
+  const theme = getTheme(config.tui?.theme ?? "default");
+  const tFn = getLocaleT(config.tui?.locale ?? "en");
+
+  // Derive DashboardStore from the wave state for the context
+  const [dashStore, setDashStore] = useState<DashboardStore>(() =>
+    buildDashStore(state)
+  );
+
+  // Wire notifyRef so the imperative class can push state into React
+  const [waveState, setWaveState] = useState<WaveState>(state);
+  const [waveComplete, setWaveComplete] = useState(waveCompleteProp);
+  const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(
+    pendingQuestionsProp
+  );
+
+  useEffect(() => {
+    if (!_store) return;
+    notifyRef.current = () => {
+      const s = _store.state;
+      const cloned: WaveState = { ...s, agents: s.agents.map((a: any) => ({ ...a })) };
+      setWaveState(cloned);
+      setWaveComplete(_store.waveComplete);
+      setPendingQuestions([..._store.pendingQuestions]);
+      setDashStore(buildDashStore(cloned));
+    };
+    return () => {
+      notifyRef.current = null;
+    };
+  }, [_store, notifyRef]);
+
+  // Navigation state — start on splash (or skip to monitor)
+  const [screen, setScreen] = useState<"splash" | "monitor" | "settings">(
+    skipSplash ? "monitor" : "splash"
+  );
+  const [settingsConfig, setSettingsConfig] = useState<SettingsScreenConfig>({
+    tui: config.tui,
+    devMode: (config as any).devMode ?? false,
+  });
+
+  const handleSplashDone = useCallback(() => {
+    setScreen("monitor");
+  }, []);
+
+  const handleEscNavigate = useCallback((action: "settings" | "quit") => {
+    if (action === "settings") {
+      setScreen("settings");
+    } else if (action === "quit") {
+      onQuit();
+    }
+  }, [onQuit]);
+
+  const handleSettingsBack = useCallback(() => {
+    setScreen("monitor");
+  }, []);
+
+  const handleSettingsSave = useCallback((patched: SettingsScreenConfig) => {
+    setSettingsConfig(patched);
+  }, []);
+
+  // Wave summary for ChromeTopBar
+  const counts = agentCounts(waveState);
+  const waveSummary = {
+    running: counts.running,
+    done: counts.completed + counts.verified + counts.merged,
+    failed: counts.failed,
+  };
+
+  // Screen name for chrome
+  const screenName =
+    screen === "splash" ? "Loading…" :
+    screen === "settings" ? "Settings" :
+    "Wave Monitor";
+
+  return (
+    <ThemeContext.Provider value={theme}>
+      <I18nContext.Provider value={tFn}>
+        <DashboardStoreContext.Provider value={dashStore}>
+          <EscMenuProvider onNavigate={handleEscNavigate}>
+            <ChromeLayout
+              screenName={screenName}
+              daemonConnected={false}
+              waveSummary={screen === "monitor" ? waveSummary : undefined}
+              locale={config.tui?.locale ?? "en"}
+            >
+              {screen === "splash" && (
+                <SplashScreen
+                  onDone={handleSplashDone}
+                  durationMs={splashDurationMs}
+                />
+              )}
+              {screen === "settings" && (
+                <SettingsScreen
+                  config={settingsConfig}
+                  onSave={handleSettingsSave}
+                  onBack={handleSettingsBack}
+                />
+              )}
+              {screen === "monitor" && (
+                <WaveMonitorAdapter
+                  waveState={waveState}
+                  waveComplete={waveComplete}
+                  pendingQuestions={pendingQuestions}
+                  monitor={monitor}
+                  interactive={interactive}
+                  projectRoot={projectRoot}
+                  config={config}
+                  onQuit={onQuit}
+                  onRetry={onRetry}
+                  onAnswer={onAnswer}
+                  onQuitAfterComplete={onQuitAfterComplete}
+                   onMuxAttach={onMuxAttach}
+                  store={_store}
+                />
+              )}
+            </ChromeLayout>
+          </EscMenuProvider>
+        </DashboardStoreContext.Provider>
+      </I18nContext.Provider>
+    </ThemeContext.Provider>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Helper: build DashboardStore from WaveState
+// ---------------------------------------------------------------------------
+
+function buildDashStore(state: WaveState): DashboardStore {
+  const agents: DashboardAgent[] = state.agents.map((a) => ({
+    id: a.feature_id,
+    status: a.status,
+  }));
+  const counts = agentCounts(state);
+  return {
+    agents,
+    running: counts.running,
+    done: counts.completed + counts.verified + counts.merged,
+    failed: counts.failed,
+    total: agents.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// WaveMonitorAdapter — content component (inner screen)
+// ---------------------------------------------------------------------------
+
+interface AdapterProps {
+  waveState: WaveState;
+  waveComplete: boolean;
+  pendingQuestions: HitlQuestion[];
+  monitor: ProcessMonitor;
+  interactive: boolean;
+  projectRoot: string;
+  config: WomboConfig;
+  onQuit: () => void;
+  onRetry?: (featureId: string) => void;
+  onAnswer?: (agentId: string, questionId: string, answerText: string) => void;
+  onQuitAfterComplete: () => void;
+  onMuxAttach: (featureId: string) => void;
+  /** Reference to the outer shared store for mutation (HITL answer removal). Optional — only present when driven by InkWomboTUI. */
+  store?: SharedStore;
+}
+
+function WaveMonitorAdapter({
+  waveState,
+  waveComplete,
+  pendingQuestions: pendingQuestionsProp,
+  monitor,
+  interactive,
+  projectRoot,
+  config,
+  onQuit,
+  onRetry,
+  onAnswer,
+  onQuitAfterComplete,
+  onMuxAttach,
+  store,
 }: AdapterProps): React.ReactElement {
-  // Local state driven by polling the shared store
-  const [state, setState] = useState<WaveState>(store.state);
-  const [waveComplete, setWaveComplete] = useState(store.waveComplete);
-  const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(store.pendingQuestions);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showBuildLog, setShowBuildLog] = useState(false);
@@ -114,29 +339,14 @@ function WaveMonitorAdapter({
   const [showQuestionPopup, setShowQuestionPopup] = useState(false);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answerText, setAnswerText] = useState("");
-
-  const lastVersionRef = useRef(store.version);
-
-  // Poll the shared store for external updates (every 200ms)
+  // Local copy of pending questions — synced from parent via useEffect
+  const [pendingQuestions, setPendingQuestions] = useState<HitlQuestion[]>(pendingQuestionsProp);
   useEffect(() => {
-    const timer = setInterval(() => {
-      if (store.version !== lastVersionRef.current) {
-        lastVersionRef.current = store.version;
-        // Shallow-clone state so React sees a new reference and actually
-        // re-renders.  The upstream code mutates the WaveState object in
-        // place (Object.assign in updateAgent), so without cloning,
-        // setState(sameRef) is a silent no-op.
-        const s = store.state;
-        setState({ ...s, agents: s.agents.map((a) => ({ ...a })) });
-        setWaveComplete(store.waveComplete);
-        setPendingQuestions([...store.pendingQuestions]);
-      }
-    }, 200);
-    return () => clearInterval(timer);
-  }, [store]);
+    setPendingQuestions(pendingQuestionsProp);
+  }, [pendingQuestionsProp]);
 
   // Build agent info array from state
-  const agents: AgentInfo[] = state.agents.map((a) => ({
+  const agents: AgentInfo[] = waveState.agents.map((a) => ({
     featureId: a.feature_id,
     status: a.status,
     activity: a.activity ?? null,
@@ -148,10 +358,10 @@ function WaveMonitorAdapter({
   }));
 
   // Agent counts
-  const counts = agentCounts(state);
+  const counts = agentCounts(waveState);
 
   // Activity log for the selected agent
-  const selectedAgent = state.agents[selectedIndex];
+  const selectedAgent = waveState.agents[selectedIndex];
   const activityLog = selectedAgent
     ? monitor.getActivityLog(selectedAgent.feature_id)
     : [];
@@ -168,7 +378,7 @@ function WaveMonitorAdapter({
   const totalTokens = allRecords.reduce((sum, r) => sum + r.total_tokens, 0);
   const totalCost = allRecords.reduce((sum, r) => sum + r.cost, 0);
   const agentTokens = new Map<string, number>();
-  for (const agent of state.agents) {
+  for (const agent of waveState.agents) {
     const summary = monitor.tokenCollector.getSummary(agent.feature_id);
     if (summary) {
       agentTokens.set(agent.feature_id, summary.total_tokens);
@@ -188,7 +398,6 @@ function WaveMonitorAdapter({
     if (!selectedAgent || !onRetry) return;
     const retryableStatuses: AgentStatus[] = ["failed", "retry"];
     if (!retryableStatuses.includes(selectedAgent.status)) {
-      // Flash a message in the activity log
       const logs = monitor.activityLogs.get(selectedAgent.feature_id);
       if (logs) {
         logs.push({
@@ -199,7 +408,6 @@ function WaveMonitorAdapter({
       return;
     }
     onRetry(selectedAgent.feature_id);
-    // Show feedback in activity log
     const logs = monitor.activityLogs.get(selectedAgent.feature_id);
     if (logs) {
       logs.push({
@@ -213,9 +421,7 @@ function WaveMonitorAdapter({
     if (!selectedAgent) return;
 
     if (!interactive) {
-      // Headless mode — show the raw log file in an overlay
       if (logFileContent !== null) {
-        // Toggle off
         setLogFileContent(null);
         setLogFileAgentId(null);
         return;
@@ -235,7 +441,6 @@ function WaveMonitorAdapter({
       } catch {
         content = `No log file found at ${logPath}`;
       }
-      // Truncate to last 200 lines to keep TUI responsive
       const lines = content.split("\n");
       const truncated = lines.length > 200 ? lines.slice(-200).join("\n") : content;
       setLogFileContent(truncated);
@@ -243,7 +448,6 @@ function WaveMonitorAdapter({
       return;
     }
 
-    // Interactive mode — attach to tmux session
     onMuxAttach(selectedAgent.feature_id);
   }, [selectedAgent, interactive, logFileContent, projectRoot, onMuxAttach]);
 
@@ -257,7 +461,6 @@ function WaveMonitorAdapter({
 
   const handleOpenQuestions = useCallback(() => {
     if (pendingQuestions.length === 0) {
-      // Flash a message
       if (selectedAgent) {
         const logs = monitor.activityLogs.get(selectedAgent.feature_id);
         if (logs) {
@@ -290,16 +493,14 @@ function WaveMonitorAdapter({
       if (onAnswer) {
         onAnswer(agentId, questionId, text);
       }
-      // Remove from local pending list
       setPendingQuestions((prev) =>
         prev.filter((q) => !(q.agentId === agentId && q.id === questionId))
       );
-      // Also update the shared store so it stays in sync
-      store.pendingQuestions = store.pendingQuestions.filter(
-        (q) => !(q.agentId === agentId && q.id === questionId)
-      );
-      setAnswerText("");
-      // Close popup if no more questions
+      if (store) {
+        store.pendingQuestions = store.pendingQuestions.filter(
+          (q) => !(q.agentId === agentId && q.id === questionId)
+        );
+      }      setAnswerText("");
       const remaining = pendingQuestions.filter(
         (q) => !(q.agentId === agentId && q.id === questionId)
       );
@@ -330,10 +531,10 @@ function WaveMonitorAdapter({
   return (
     <>
       <WaveMonitorView
-        waveId={state.wave_id}
-        baseBranch={state.base_branch}
+        waveId={waveState.wave_id}
+        baseBranch={waveState.base_branch}
         interactive={interactive}
-        model={state.model ?? null}
+        model={waveState.model ?? null}
         agents={agents}
         counts={counts}
         selectedIndex={selectedIndex}
@@ -403,10 +604,10 @@ export class InkWomboTUI {
 
   private inkInstance: InkInstance | null = null;
   private waveCompleteResolve: (() => void) | null = null;
+  private notifyRef: MutableRefObject<(() => void) | null> = { current: null };
 
-  /** Whether we entered the alt screen ourselves (so we know to exit it) */
-  private ownsAltScreen = false;
-  private removeAltScreenGuard: (() => void) | null = null;
+  /** TuiSession owns alt-screen lifecycle (replaces direct enterAltScreen calls). */
+  _session: TuiSession;
 
   /** Saved originals for console interception */
   private origConsoleLog: typeof console.log = console.log;
@@ -420,7 +621,6 @@ export class InkWomboTUI {
       state: opts.state,
       waveComplete: false,
       pendingQuestions: [],
-      version: 0,
     };
     this.monitor = opts.monitor;
     this.interactive = opts.interactive ?? false;
@@ -430,19 +630,14 @@ export class InkWomboTUI {
     this.onRetry = opts.onRetry;
     this.onAnswer = opts.onAnswer;
     this.onBeforeDestroy = opts.onBeforeDestroy;
+    this._session = new TuiSession();
   }
 
   /**
    * Mount the Ink component tree and start console interception.
-   * If the caller hasn't already entered the alternate screen buffer,
-   * we enter it ourselves so the wave monitor is always fullscreen.
    */
   start(): void {
-    if (!isAltScreenActive()) {
-      enterAltScreen();
-      this.ownsAltScreen = true;
-      this.removeAltScreenGuard = installAltScreenGuard();
-    }
+    this._session.start();
     this.interceptConsole();
     this.mount();
   }
@@ -451,7 +646,6 @@ export class InkWomboTUI {
    * Unmount the Ink component tree and restore console.
    */
   stop(): void {
-    // Flush pending state writes before unmounting.
     if (this.onBeforeDestroy) {
       try {
         this.onBeforeDestroy();
@@ -461,15 +655,7 @@ export class InkWomboTUI {
     }
     this.restoreConsole();
     this.unmount();
-    // Exit alt screen only if we entered it ourselves
-    if (this.ownsAltScreen) {
-      if (this.removeAltScreenGuard) {
-        this.removeAltScreenGuard();
-        this.removeAltScreenGuard = null;
-      }
-      exitAltScreen();
-      this.ownsAltScreen = false;
-    }
+    this._session.stop();
   }
 
   /**
@@ -477,21 +663,19 @@ export class InkWomboTUI {
    */
   updateState(state: WaveState): void {
     this.store.state = state;
-    this.store.version++;
+    this.notify();
   }
 
   /**
-   * Mark the wave as complete. The TUI stays open so the user can browse
-   * agent logs, build output, etc.
+   * Mark the wave as complete.
    */
   markWaveComplete(): void {
     this.store.waveComplete = true;
-    this.store.version++;
+    this.notify();
   }
 
   /**
    * Returns a Promise that resolves when the user presses q to quit.
-   * Used after wave completion so the TUI stays open for post-mortem browsing.
    */
   waitForQuit(): Promise<void> {
     return new Promise<void>((resolve) => {
@@ -500,11 +684,19 @@ export class InkWomboTUI {
   }
 
   /**
-   * Update pending HITL questions. Called from the monitoring loop.
+   * Update pending HITL questions.
    */
   setPendingQuestions(questions: HitlQuestion[]): void {
     this.store.pendingQuestions = questions;
-    this.store.version++;
+    this.notify();
+  }
+
+  // -----------------------------------------------------------------------
+  // Notify React
+  // -----------------------------------------------------------------------
+
+  private notify(): void {
+    this.notifyRef.current?.();
   }
 
   // -----------------------------------------------------------------------
@@ -520,14 +712,12 @@ export class InkWomboTUI {
       const text = args
         .map((a) => (typeof a === "string" ? a : JSON.stringify(a)))
         .join(" ");
-      // Strip ANSI codes for clean display
       const clean = text.replace(/\x1b\[[0-9;]*m/g, "");
       if (!clean.trim()) return;
       this.systemMessages.push({
         timestamp: new Date().toISOString().slice(11, 19),
         text: clean,
       });
-      // Keep bounded
       if (this.systemMessages.length > 200) {
         this.systemMessages.splice(0, this.systemMessages.length - 200);
       }
@@ -554,8 +744,11 @@ export class InkWomboTUI {
     (this.monitor as any)._systemMessages = this.systemMessages;
 
     this.inkInstance = inkRender(
-      <WaveMonitorAdapter
-        store={this.store}
+      <WaveMonitorShell
+        state={this.store.state}
+        waveComplete={this.store.waveComplete}
+        pendingQuestions={this.store.pendingQuestions}
+        _store={this.store}
         monitor={this.monitor}
         interactive={this.interactive}
         projectRoot={this.projectRoot}
@@ -571,7 +764,9 @@ export class InkWomboTUI {
           }
         }}
         onMuxAttach={(featureId) => this.handleMuxAttach(featureId)}
-      />
+        notifyRef={this.notifyRef}
+      />,
+      { exitOnCtrlC: false, stdin: getStdin() }
     );
   }
 
@@ -589,7 +784,6 @@ export class InkWomboTUI {
   private handleMuxAttach(featureId: string): void {
     const sessionName = `${this.config.agent.tmuxPrefix}-${featureId}`;
 
-    // Check if tmux session exists
     if (!tmuxHasSession(sessionName)) {
       const logs = this.monitor.activityLogs.get(featureId);
       if (logs) {
@@ -598,7 +792,7 @@ export class InkWomboTUI {
           text: `!! No tmux session '${sessionName}' found`,
         });
       }
-      this.store.version++;
+      this.notify();
       return;
     }
 
