@@ -314,3 +314,14 @@ export {
   type EscMenuProviderProps,
   type EscMenuState,
 } from "./esc-menu";
+
+// Settings screen (view/edit config.json interactively)
+export {
+  SettingsScreen,
+  SettingsSection,
+  SettingsField,
+  type SettingsScreenProps,
+  type SettingsSectionProps,
+  type SettingsFieldProps,
+  type SettingsScreenConfig,
+} from "./settings-screen";
