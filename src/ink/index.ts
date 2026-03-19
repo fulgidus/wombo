@@ -332,3 +332,15 @@ export {
   SPLASH_TEXTS,
   type SplashScreenProps,
 } from "./splash-screen";
+
+// Dashboard screen (default screen after splash, context-driven live state)
+export {
+  DashboardScreen,
+  DashboardAgentRow,
+  DashboardStoreContext,
+  useDashboardStore,
+  type DashboardScreenProps,
+  type DashboardAgentRowProps,
+  type DashboardStore,
+  type DashboardAgent,
+} from "./dashboard";
