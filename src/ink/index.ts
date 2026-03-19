@@ -302,3 +302,15 @@ export {
   type TFunction,
   type StringsMap,
 } from "./i18n";
+
+// ESC menu overlay (global floating menu, keyboard-driven)
+export {
+  EscMenu,
+  EscMenuItem,
+  EscMenuProvider,
+  useEscMenu,
+  type EscMenuProps,
+  type EscMenuItemProps,
+  type EscMenuProviderProps,
+  type EscMenuState,
+} from "./esc-menu";
