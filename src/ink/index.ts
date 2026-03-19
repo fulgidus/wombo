@@ -246,3 +246,15 @@ export {
   useTerminalSize,
   type TerminalSize,
 } from "./use-terminal-size";
+
+// Screen router (single render() lifetime, stack-based navigator)
+export {
+  NavigationContext,
+  useNavigation,
+  ScreenRouter,
+  type ScreenKey,
+  type ScreenMap,
+  type StackEntry,
+  type NavigationState,
+  type ScreenRouterProps,
+} from "./router";
