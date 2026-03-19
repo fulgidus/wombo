@@ -161,6 +161,11 @@ const addCommand = defineCommand({
       description: "Comma-separated dependency IDs",
       required: false,
     },
+    quest: {
+      type: "string",
+      description: "Associate task with a quest ID",
+      required: false,
+    },
     dryRun: {
       type: "boolean",
       description: "Show what would be added without writing",
@@ -179,7 +184,7 @@ const addCommand = defineCommand({
     const fmt = resolveOutputFormat(args.output);
 
     if (!args.id || !args.title) {
-      outputError(fmt, "Usage: woco tasks add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>]");
+      outputError(fmt, "Usage: woco tasks add <id> <title> [--desc <desc>] [--priority <p>] [--difficulty <d>] [--effort <e>] [--depends-on <ids>] [--quest <quest-id>]");
       return;
     }
 
@@ -193,6 +198,7 @@ const addCommand = defineCommand({
       difficulty: args.difficulty as Difficulty | undefined,
       effort: args.effort,
       dependsOn: args.dependsOn ? args.dependsOn.split(",").map((s: string) => s.trim()) : undefined,
+      quest: args.quest,
       outputFmt: fmt,
       dryRun: args.dryRun,
     });
