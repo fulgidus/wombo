@@ -1257,7 +1257,7 @@ export class AgentRunner {
         this.resetTaskToPlanned(agent.featureId);
         // Clean up worktree if present
         if (agent.worktree) {
-          try { removeWorktree(agent.worktree, this.projectRoot); } catch { /* best-effort */ }
+          try { removeWorktree(this.projectRoot, agent.worktree); } catch { /* best-effort */ }
         }
         // Remove from daemon state entirely (scheduler will re-submit from disk)
         this.state.removeAgent(agent.featureId);
@@ -1270,7 +1270,7 @@ export class AgentRunner {
         if (agent.retries >= agent.maxRetries) {
           this.resetTaskToPlanned(agent.featureId);
           if (agent.worktree) {
-            try { removeWorktree(agent.worktree, this.projectRoot); } catch { /* best-effort */ }
+            try { removeWorktree(this.projectRoot, agent.worktree); } catch { /* best-effort */ }
           }
           this.state.removeAgent(agent.featureId);
         } else {
