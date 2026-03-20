@@ -91,30 +91,153 @@ bug is invisible and will never be fixed.
 wombo/
   package.json              # name: wombo-combo, version in sync with git tags
   src/
-    index.ts                # CLI entry point, arg parsing, command routing
+    index.ts                # CLI entry point, global flag extraction, citty routing
     config.ts               # WomboConfig type, defaults, loader, validator
     commands/
-      init.ts               # Interactive guided setup (Prompter class)
-      launch.ts             # Launch a wave of agents
-      resume.ts             # Resume a stopped wave
-      status.ts             # Show wave status
-      verify.ts             # Build verification
-      merge.ts              # Merge verified branches
-      retry.ts              # Retry a failed agent
-      cleanup.ts            # Remove worktrees and sessions
-      tasks/
-        list.ts, add.ts, set-status.ts, check.ts, archive.ts, show.ts
+      citty/                # All citty command definitions
+        router.ts           # isCittyCommand / runCittyCommand / resolveGlobalFlagsAndCommand
+        global-flags.ts     # extractGlobalFlags helper
+        init.ts, launch.ts, resume.ts, status.ts, verify.ts, merge.ts
+        retry.ts, abort.ts, cleanup.ts, history.ts, logs.ts, usage.ts
+        upgrade.ts, completion.ts, tasks.ts, quest.ts, genesis.ts
+        wishlist.ts, tui.ts, daemon.ts, describe.ts, help.ts, version.ts
+      # Legacy shim files (delegate to citty/ equivalents):
+      init.ts, launch.ts, resume.ts, status.ts, verify.ts, merge.ts
+      retry.ts, abort.ts, cleanup.ts, history.ts, logs.ts, usage.ts
+      upgrade.ts, completion.ts, genesis.ts, quest.ts, tui.ts
+      tasks/                # Task subcommand shims
     lib/
-      tasks.ts              # Task file I/O, types, ensureTasksFile guard
+      tasks.ts              # Task file I/O, filtering, selection strategies
+      task-store.ts         # Per-file task persistence (tasks/ directory)
+      task-schema.ts        # Task type definitions and schema validation
       state.ts              # Wave state persistence
       prompt.ts             # Agent prompt generation
+      prompt-compress.ts    # Prompt compression utilities
       launcher.ts           # Process spawning
-      monitor.ts            # ProcessMonitor
+      monitor.ts            # ProcessMonitor (activity stream parsing)
+      interactive-monitor.ts # Interactive wave monitor logic
       worktree.ts           # Git worktree management
       merger.ts             # Git merge operations
       verifier.ts           # Build verification logic
-      ui.ts                 # Console dashboard
-      tui.ts                # neo-blessed TUI
+      tdd-verifier.ts       # TDD file coverage verification
+      test-detection.ts     # Detects test files for TDD checks
+      test-runner.ts        # Runs bun test, captures results
+      ui.ts                 # Console dashboard (ANSI, non-Ink fallback)
+      schema.ts             # Declarative command registry for introspection
+      schema-types.ts       # CommandDef / FlagDef types (no circular deps)
+      citty-bridge.ts       # Maps citty arg definitions → CommandDef
+      citty-registry.ts     # Builds COMMAND_REGISTRY from citty definitions
+      history.ts            # Wave history records I/O
+      token-usage.ts        # Token usage tracking
+      token-collector.ts    # Aggregates usage across agents
+      hitl-channel.ts       # Human-in-the-loop messaging channel
+      hitl-ask.ts           # HITL ask utility
+      output.ts             # Structured output formatting (json/table)
+      quest.ts              # Quest type definitions and helpers
+      quest-store.ts        # Quest file persistence
+      quest-planner.ts      # Quest-to-task planning logic
+      genesis-planner.ts    # Genesis vision-to-task planning
+      errand-planner.ts     # Errand planning utilities
+      agent-registry.ts     # Agent registry for multi-agent coordination
+      project-store.ts      # .wombo-combo/ project config persistence
+      wishlist-store.ts     # Wishlist item persistence
+      validate.ts           # Input validation helpers
+      templates.ts          # Template file loading
+      tmux.ts               # Tmux session management
+      tui-session.ts        # TUI session state persistence
+      onboarding-helpers.ts # Init/onboarding shared logic
+      portless.ts           # Portless server URL helpers
+      browser.ts            # Browser automation for verifier
+      browser-verifier.ts   # Browser-based build verification
+      conflict-hunks.ts     # Git conflict hunk parsing
+      dependency-graph.ts   # Task dependency graph utilities
+      format-converter.ts   # Format conversion utilities
+      fake-agent-runner.ts  # Fake agent for dry-run/testing
+      toon.ts               # Toon animation system
+      toon-spec.ts          # Toon animation specs
+      subagents/
+        scout.ts            # Scout subagent for codebase exploration
+    ink/                    # Ink (React) TUI components
+      router.tsx            # ScreenRouter — stack-based screen navigator
+      app.tsx               # Minimal App shell component (proof-of-concept)
+      shell.tsx             # Full shell with header, keybind handler, clean exit
+      chrome.tsx            # Persistent chrome bar overlay
+      dashboard.tsx         # Live wave dashboard screen
+      wave-monitor.tsx      # WaveMonitorView — agent table + preview pane
+      run-wave-monitor.tsx  # Mounts wave monitor with state polling
+      run-daemon-monitor.tsx # Mounts daemon monitor screen
+      run-tui-app.tsx       # Top-level TUI app entry (ScreenRouter + screens)
+      run-app.tsx           # inkRender() wrapper for generic app
+      run-review.tsx        # Review screen runner
+      run-progress.tsx      # Progress screen runner
+      run-preflight.tsx     # Preflight check screen runner
+      run-quest-picker.tsx  # Quest picker runner
+      run-quest-wizard.tsx  # Quest creation wizard runner
+      run-errand-wizard.tsx # Errand wizard runner
+      run-task-browser.tsx  # Task browser screen runner
+      run-wishlist-picker.tsx # Wishlist picker runner
+      task-browser.tsx      # Interactive task browser component
+      task-graph.ts         # Task dependency graph renderer
+      quest-picker.tsx      # Quest selection UI
+      quest-wizard.tsx      # Quest creation wizard UI
+      plan-review.tsx       # Plan review screen
+      review-list.tsx       # Review list component
+      genesis-review.tsx    # Genesis plan review screen
+      errand-wizard.tsx     # Errand wizard UI
+      progress.tsx          # Progress indicator component
+      status-view.tsx       # Status display component
+      settings-screen.tsx   # Settings screen
+      splash-screen.tsx     # Splash screen
+      esc-menu.tsx          # Escape menu overlay
+      modal.tsx             # Modal dialog component
+      confirm.tsx           # Confirmation dialog
+      question-popup.tsx    # Inline question popup
+      text-input.tsx        # Text input component
+      text-buffer.ts        # Text buffer for input handling
+      text-input-harness.tsx # Test harness for text input
+      select-input.tsx      # Selectable list component
+      usage-overlay.tsx     # Token usage overlay
+      wishlist-overlay.tsx  # Wishlist quick-add overlay
+      wishlist-picker.tsx   # Wishlist item picker
+      use-text-input.ts     # useTextInput hook
+      use-spinner.ts        # useSpinner hook
+      use-review-list.ts    # useReviewList hook
+      use-wishlist-store.ts # useWishlistStore hook
+      use-terminal-size.ts  # useTerminalSize hook
+      tui-constants.ts      # Shared TUI constants (colors, icons, helpers)
+      tui-session.ts        # TUI session state hook/utilities
+      alt-screen.ts         # Alt-screen enter/exit helpers
+      bun-stdin.ts          # Bun stdin compatibility shim
+      open-editor.ts        # Open $EDITOR for file editing
+      theme.ts              # Color theme definitions
+      i18n.ts               # Internationalisation strings
+      strings/              # Localised string tables
+      init-app.tsx          # Init wizard app component
+      init-form.tsx         # Init form fields
+      init-detect.ts        # Project type detection for init
+      init-writer.ts        # Writes .wombo-combo/ config from init form
+      init-cmd.test.ts      # Init command integration tests
+      onboarding/           # Onboarding wizard components
+        onboarding-app.tsx
+        onboarding-wizard.tsx
+        onboarding-utils.ts
+        step-wizard.tsx
+        section-picker.tsx
+        field-editor.tsx
+        profile-review.tsx
+        progress-view.tsx
+        confirm-dialog.tsx
+        run-onboarding.ts
+    daemon/                 # Background daemon for async agent scheduling
+      daemon.ts             # Daemon process main loop
+      launcher.ts           # Daemon process spawning
+      scheduler.ts          # Task scheduling logic
+      agent-runner.ts       # Runs agents inside the daemon
+      client.ts             # Daemon IPC client
+      protocol.ts           # IPC message protocol types
+      state.ts              # Daemon state persistence
+      pid-utils.ts          # PID file management
+      index.ts              # Daemon entry point
     templates/
       tasks.yml             # Template with full schema docs
 ```
@@ -149,6 +272,14 @@ All wombo-combo files live under `.wombo-combo/`:
   `src/commands/citty/router.ts` maps command names and aliases to citty
   command definitions. Schema introspection (`woco describe`) uses the
   separate `COMMAND_REGISTRY` in `src/lib/schema.ts`.
+- **TUI framework:** [Ink](https://github.com/vadimdemedes/ink) (React for
+  terminals). All interactive terminal UI lives in `src/ink/`. The TUI uses
+  a stack-based `ScreenRouter` (see `src/ink/router.tsx`) that is mounted
+  once per session — do NOT spawn separate `inkRender()` calls to switch
+  screens; instead use `push`, `pop`, `replace`, or `reset` from
+  `useNavigation()`. Each `run-*.tsx` file is an entry point that calls
+  `inkRender()` exactly once. Screens are registered in the `ScreenMap`
+  passed to `ScreenRouter`.
 - **YAML library:** `yaml` (v2). Use `YAML.parse()` / `YAML.stringify()`.
 
 ## Testing and verification
@@ -180,6 +311,14 @@ and use `*.test.ts` naming.
   not `[]`. `loadTasks()` normalizes this: `parsed.tasks ?? parsed.features ?? null`.
 - **`import.meta.dir`:** Gives the directory of the current source file in Bun.
   Used in `src/lib/tasks.ts` to resolve the template path.
+- **Ink raw-mode errors:** Ink throws recoverable raw-mode errors as uncaught
+  exceptions when stdin loses TTY status or during React re-render cycles.
+  These are non-fatal — the global `uncaughtException` handler in `index.ts`
+  silently swallows them (see the `"Raw mode is not supported"` guard).
+- **ScreenRouter is a singleton per session:** The `ScreenRouter` in
+  `src/ink/router.tsx` must be mounted exactly once. Do NOT unmount and
+  remount it to switch screens. Use `push`/`pop`/`replace`/`reset` from
+  `useNavigation()` to navigate between screens instead.
 
 ## Feature backlog
 
