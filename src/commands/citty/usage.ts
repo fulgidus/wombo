@@ -8,7 +8,8 @@
 import { defineCommand } from "citty";
 import { loadConfig, validateConfig, isProjectInitialized } from "../../config";
 import { resolveOutputFormat } from "../../lib/output";
-import { cmdUsage, type UsageGroupBy, VALID_USAGE_GROUP_BY } from "../usage";
+import { cmdUsage, type UsageGroupBy, VALID_USAGE_GROUP_BY, VALID_EXPORT_FORMATS } from "../usage";
+import type { ExportFormat } from "../../lib/analytics-export";
 
 export const usageCommand = defineCommand({
   meta: {
@@ -42,6 +43,16 @@ export const usageCommand = defineCommand({
       description: "Output format: text, json, or toon",
       required: false,
     },
+    export: {
+      type: "string",
+      description: "Export format: csv, json, or html (writes to --export-file)",
+      required: false,
+    },
+    "export-file": {
+      type: "string",
+      description: "Output file path for export (default: usage-export.<format>)",
+      required: false,
+    },
   },
   async run({ args }) {
     const projectRoot = process.cwd();
@@ -62,6 +73,16 @@ export const usageCommand = defineCommand({
     // Validate --format value
     const usageFormat = (args.format === "json" ? "json" : "table") as "table" | "json";
 
+    // Validate --export value
+    const exportFmt = args.export as ExportFormat | undefined;
+    if (exportFmt && !VALID_EXPORT_FORMATS.includes(exportFmt)) {
+      console.error(`Invalid --export value: "${exportFmt}". Valid values: ${VALID_EXPORT_FORMATS.join(", ")}`);
+      process.exit(1);
+    }
+
+    // Resolve export file path (use provided --export-file or default to usage-export.<format>)
+    const exportFile = args["export-file"] ?? (exportFmt ? `usage-export.${exportFmt}` : undefined);
+
     await cmdUsage({
       projectRoot,
       config,
@@ -70,6 +91,8 @@ export const usageCommand = defineCommand({
       until: args.until,
       usageFormat,
       outputFmt: resolveOutputFormat(args.output),
+      export: exportFmt,
+      exportFile,
     });
   },
 });

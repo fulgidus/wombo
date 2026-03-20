@@ -26,6 +26,10 @@ import {
   type GroupableField,
 } from "../lib/token-usage";
 import { output, outputError, type OutputFormat } from "../lib/output";
+import {
+  writeExport,
+  type ExportFormat,
+} from "../lib/analytics-export";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,6 +47,9 @@ export const VALID_USAGE_GROUP_BY: readonly string[] = [
   "harness",
 ];
 
+/** Valid --export format values */
+export const VALID_EXPORT_FORMATS: readonly string[] = ["csv", "json", "html"];
+
 export interface UsageCommandOptions {
   projectRoot: string;
   config: WomboConfig;
@@ -56,6 +63,10 @@ export interface UsageCommandOptions {
   usageFormat: "table" | "json";
   /** Global output format (--output text|json|toon) */
   outputFmt: OutputFormat;
+  /** Export format: csv, json, or html (omit to skip export) */
+  export?: ExportFormat;
+  /** File path for the export output (required when --export is set) */
+  exportFile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +279,20 @@ export async function cmdUsage(opts: UsageCommandOptions): Promise<void> {
       outputError(outputFmt, err.message);
       return; // unreachable
     }
+  }
+
+  // Handle --export flag: write export file regardless of whether records exist
+  if (opts.export) {
+    const exportFmt = opts.export;
+    const exportFile = opts.exportFile ?? `usage-export.${exportFmt}`;
+    await writeExport(records, exportFmt, exportFile);
+    if (outputFmt !== "json") {
+      console.log(`\nExported ${records.length} records to: ${exportFile}\n`);
+    } else {
+      console.log(JSON.stringify({ exported: true, format: exportFmt, file: exportFile, record_count: records.length }));
+    }
+    // If there are no records, we can still return after export (skip table rendering)
+    if (records.length === 0) return;
   }
 
   if (records.length === 0) {
