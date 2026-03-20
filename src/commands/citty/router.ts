@@ -36,6 +36,7 @@ import { genesisCommand } from "./genesis";
 import { wishlistCommand } from "./wishlist";
 import { tuiCommand } from "./tui";
 import { daemonCommand } from "./daemon";
+import { uninstallCommand } from "./uninstall";
 
 /**
  * Set of all command names / aliases that are handled by citty.
@@ -99,6 +100,9 @@ const CITTY_COMMANDS = new Set([
     // --- Daemon management ---
     "daemon",
     "dm",         // alias for daemon
+    // --- Uninstall ---
+    "uninstall",
+    "un",         // alias for uninstall
 ]);
 
 /**
@@ -299,6 +303,11 @@ export async function runCittyCommand(
         case "daemon":
         case "dm":
             await runCommand(daemonCommand, { rawArgs: injectDefaultSubcommand("daemon", rawArgs) });
+            break;
+
+        case "uninstall":
+        case "un":
+            await runCommand(uninstallCommand, { rawArgs });
             break;
 
         default:
