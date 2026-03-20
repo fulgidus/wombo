@@ -1,0 +1,5 @@
+fake-agent marker
+task:      fake-test-quest-32-mmzcdenc-1774042987842
+agent:     fake-agent
+timestamp: 2026-03-20T21:43:08.961Z
+sleep_ms:  1081
