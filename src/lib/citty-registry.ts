@@ -43,6 +43,7 @@ import { helpCommand } from "../commands/citty/help";
 import { versionCommand } from "../commands/citty/version";
 import { describeCommand } from "../commands/citty/describe";
 import { daemonCommand } from "../commands/citty/daemon";
+import { uninstallCommand } from "../commands/citty/uninstall";
 
 // ---------------------------------------------------------------------------
 // Registry entry type
@@ -252,6 +253,28 @@ const ENTRIES: RegistryEntry[] = [
       description: "Kills tmux sessions, removes worktrees, removes state and log files.",
       flagOverrides: {
         dryRun: { description: "Show what would be cleaned up without removing", default: false },
+      },
+    },
+  },
+
+  // --- uninstall ----------------------------------------------------------
+  {
+    cittyCmd: uninstallCommand,
+    meta: {
+      summary: "Remove .wombo-combo/ directory, git hooks, and optionally the global binary",
+      aliases: ["un"],
+      mutating: true,
+      supportsDryRun: true,
+      completionSummary: "Uninstall wombo-combo",
+      description:
+        "Removes the .wombo-combo/ configuration directory, uninstalls git hooks " +
+        "(pre-push, post-merge), and optionally removes the global woco binary. " +
+        "Use --keep-data to preserve tasks and history. Use --dry-run to preview.",
+      flagOverrides: {
+        dryRun: { description: "Show what would be removed without doing it", default: false },
+        keepData: { description: "Preserve history and tasks data (only remove config/state/logs)", default: false },
+        force: { description: "Skip confirmation prompt", default: false },
+        removeBinary: { description: "Also remove the global woco binary", default: false },
       },
     },
   },
