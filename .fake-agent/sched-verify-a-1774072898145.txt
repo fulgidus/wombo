@@ -1,0 +1,5 @@
+fake-agent marker
+task:      sched-verify-a-1774072898145
+agent:     fake-agent
+timestamp: 2026-03-21T06:01:43.177Z
+sleep_ms:  5000
