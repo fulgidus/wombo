@@ -8,3 +8,4 @@ dist/
 .wombo-combo/usage.jsonl
 *.tmp
 *.bak
+.wombo-combo/daemon-state.json
