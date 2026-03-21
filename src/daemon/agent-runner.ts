@@ -21,7 +21,7 @@ import type { Task, Feature, FeaturesFile } from "../lib/tasks";
 import { loadFeatures, parseDurationMinutes } from "../lib/tasks";
 import { saveTaskToStore } from "../lib/task-store";
 import { createWorktree, installDeps, worktreePath, featureBranchName, removeWorktree } from "../lib/worktree";
-import { launchHeadless, retryHeadless, launchConflictResolver, isProcessRunning } from "../lib/launcher";
+import { launchHeadless, retryHeadless, launchConflictResolver, isProcessRunning, FAKE_AGENT_SENTINEL } from "../lib/launcher";
 import type { LaunchResult } from "../lib/launcher";
 import { ProcessMonitor } from "../lib/monitor";
 import type { MonitorCallbacks } from "../lib/monitor";
@@ -131,8 +131,8 @@ export class AgentRunner {
   private state: DaemonState;
   private monitor: ProcessMonitor;
 
-  /** Stagger delay between launches to avoid SQLite races (ms). */
-  private static readonly LAUNCH_STAGGER_MS = 800;
+  /** Stagger delay between concurrent launch starts (ms). */
+  private static readonly LAUNCH_STAGGER_MS = 250;
 
   /** Queue for staggered launches. */
   private launchQueue: Array<() => Promise<void>> = [];
@@ -302,9 +302,22 @@ export class AgentRunner {
   private async doLaunch(featureId: string, task: Task): Promise<void> {
     const agent = this.state.getAgent(featureId);
     if (!agent) return;
+    // Re-entrancy guard: if a duplicate doLaunch was enqueued (e.g. the
+    // scheduler tick fired before the first fire-and-forget set us to
+    // "installing"), bail out silently. Single-threaded JS ensures the first
+    // call already advanced the status before any await yields.
+    if (agent.status !== "queued") return;
 
     try {
       this.state.updateAgentStatus(featureId, "installing", "Creating worktree");
+
+      // Reflect in task file so TUI shows in-progress immediately
+      const taskOnDisk = this.loadTask(featureId);
+      if (taskOnDisk && taskOnDisk.status === "planned") {
+        taskOnDisk.status = "in_progress";
+        taskOnDisk.started_at = new Date().toISOString();
+        saveTaskToStore(this.projectRoot, this.config, taskOnDisk);
+      }
 
       // Create worktree
       const wt = await createWorktree(
@@ -315,9 +328,11 @@ export class AgentRunner {
       );
       this.state.updateAgent(featureId, { worktree: wt });
 
-      // Install dependencies
-      this.state.updateAgentActivity(featureId, "Installing dependencies...");
-      await installDeps(wt, featureId, this.config);
+      // Install dependencies (skip for fake-agent — it has no deps)
+      if (agent.agentName !== FAKE_AGENT_SENTINEL) {
+        this.state.updateAgentActivity(featureId, "Installing dependencies...");
+        await installDeps(wt, featureId, this.config);
+      }
 
       // Resolve quest context if applicable
       let questContext: any = undefined;
@@ -404,6 +419,14 @@ export class AgentRunner {
   private async handleBuildVerification(featureId: string): Promise<void> {
     const agent = this.state.getAgent(featureId);
     if (!agent) return;
+
+    // Skip build verification for fake-agent tasks — go straight to merge
+    if (agent.agentName === FAKE_AGENT_SENTINEL) {
+      agent.buildPassed = true;
+      this.state.updateAgentStatus(featureId, "verified", "Build skipped (fake-agent)");
+      await this.attemptMerge(featureId);
+      return;
+    }
 
     this.state.updateAgentActivity(featureId, "Running build verification...");
 
@@ -634,14 +657,29 @@ export class AgentRunner {
         }
 
         if (branchExists) {
+          // Verify baseBranch is a valid ref before testing ancestry.
+          // If baseBranch doesn't exist (e.g. a deleted quest branch), skip
+          // the check — we can't confirm ancestry but shouldn't block the update.
+          let baseBranchExists = true;
           try {
-            execSync(
-              `git merge-base --is-ancestor "${branch}" "${baseBranch}"`,
-              { cwd: this.projectRoot, stdio: "pipe" }
-            );
+            execSync(`git rev-parse --verify "${baseBranch}"`, {
+              cwd: this.projectRoot,
+              stdio: "pipe",
+            });
           } catch {
-            // Not an ancestor — refuse to mark as done
-            return;
+            baseBranchExists = false;
+          }
+
+          if (baseBranchExists) {
+            try {
+              execSync(
+                `git merge-base --is-ancestor "${branch}" "${baseBranch}"`,
+                { cwd: this.projectRoot, stdio: "pipe" }
+              );
+            } catch {
+              // Not an ancestor — refuse to mark as done
+              return;
+            }
           }
         }
         // Branch ref is gone — can't verify ancestry, but the branch was
@@ -1318,12 +1356,11 @@ export class AgentRunner {
     this.isProcessingQueue = true;
     while (this.launchQueue.length > 0) {
       const fn = this.launchQueue.shift()!;
-      try {
-        await fn();
-      } catch {
-        // Individual launch errors are handled inside doLaunch
-      }
-      // Stagger between launches
+      // Fire-and-forget: doLaunch (worktree creation + installDeps + agent spawn)
+      // runs concurrently so multiple tasks can set up in parallel.
+      // Errors are handled inside doLaunch itself.
+      fn().catch(() => {});
+      // Stagger next launch start to avoid concurrent worktree/fs write races.
       if (this.launchQueue.length > 0) {
         await new Promise((resolve) =>
           setTimeout(resolve, AgentRunner.LAUNCH_STAGGER_MS)
@@ -1340,8 +1377,18 @@ export class AgentRunner {
   /** Resolve the base branch for a task (quest branch or project base). */
   private resolveBaseBranch(task: Task): string {
     if (task.quest) {
-      // Quest tasks fork from the quest branch
-      return `quest/${task.quest}`;
+      const questBranch = `quest/${task.quest}`;
+      // Only use the quest branch if it actually exists in git
+      try {
+        const result = execSync(`git branch --list "${questBranch}"`, {
+          cwd: this.projectRoot,
+          encoding: "utf-8",
+          stdio: "pipe",
+        }).trim();
+        if (result) return questBranch;
+      } catch {
+        // fall through
+      }
     }
     return this.state.getBaseBranch();
   }

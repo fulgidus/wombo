@@ -25,8 +25,6 @@ export interface TUISession {
   sortBy: SortField;
   /** Sort direction */
   sortOrder: SortOrder;
-  /** Max concurrent agents for launches from the TUI */
-  maxConcurrent: number;
   /** Which view was last active */
   lastView: "browser" | "monitor";
   /** Collapsed stream group IDs (for tree display) */
@@ -43,7 +41,6 @@ const DEFAULT_SESSION: TUISession = {
   selected: [],
   sortBy: "priority",
   sortOrder: "desc",
-  maxConcurrent: 5,
   lastView: "browser",
   collapsed: [],
 };

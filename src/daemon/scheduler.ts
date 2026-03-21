@@ -350,14 +350,35 @@ export class Scheduler {
     }
   }
 
-  /** Retry a failed agent. */
+  /** Retry a failed agent. Resets retry count if exhausted (user-initiated). */
   retryAgent(featureId: string): void {
-    if (this.deps.state.retryAgent(featureId)) {
-      // Re-set to queued so the next tick picks it up
-      this.deps.state.updateAgentStatus(featureId, "queued", "Retry requested");
+    // Always remove from submittedTasks so the file-scan path can re-pick the task
+    // if the agent is no longer in state (zombie reaped, daemon restarted, etc.)
+    this.submittedTasks.delete(featureId);
+
+    const agent = this.deps.state.getAgent(featureId);
+    if (!agent) {
+      // Agent was removed from state — the task file was (or will be) set to "planned"
+      // by handleRetry in the TUI. Removing from submittedTasks above is enough;
+      // the next tick will re-pick it as a fresh task.
       if (this.deps.state.getSchedulerStatus() === "running") {
         this.tick();
       }
+      return;
+    }
+
+    // Agent is still in state — reset and re-queue
+    if (!this.deps.state.retryAgent(featureId)) {
+      // Retries exhausted — force-reset so user-initiated retry always works
+      agent.retries = 0;
+      agent.error = null;
+      agent.buildPassed = null;
+      agent.completedAt = null;
+    }
+    // Re-set to queued so the next tick picks it up via launchAgent
+    this.deps.state.updateAgentStatus(featureId, "queued", "Retry requested by user");
+    if (this.deps.state.getSchedulerStatus() === "running") {
+      this.tick();
     }
   }
 

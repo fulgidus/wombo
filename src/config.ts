@@ -5,8 +5,8 @@
  * All values have sensible defaults so minimal config works out of the box.
  */
 
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { resolve, dirname } from "node:path";
 
 // ---------------------------------------------------------------------------
 // .wombo-combo directory constant
@@ -168,6 +168,19 @@ export interface TuiConfig {
    * Currently only 'en' is shipped; skeleton for future locales.
    */
   locale: string;
+  /**
+   * When true, the splash screen checks npm for a newer version of
+   * wombo-combo on startup and notifies the user if one is available.
+   * Default: true
+   */
+  checkForUpdates: boolean;
+  /**
+   * When true, any available update found during the splash preflight
+   * check is installed automatically (bun add -g wombo-combo@<version>)
+   * without requiring a keypress.
+   * Default: false
+   */
+  autoInstallUpdates: boolean;
 }
 
 /** Maximum tier the merge conflict pipeline will escalate to */
@@ -261,6 +274,8 @@ export const DEFAULT_CONFIG: WomboConfig = {
   tui: {
     theme: "default",
     locale: "en",
+    checkForUpdates: true,
+    autoInstallUpdates: false,
   },
 };
 
@@ -404,4 +419,36 @@ export function isProjectInitialized(projectRoot: string): boolean {
  */
 export function generateDefaultConfig(): string {
   return JSON.stringify(DEFAULT_CONFIG, null, 2) + "\n";
+}
+
+/**
+ * Persist a (partial) config object to .wombo-combo/config.json.
+ *
+ * The on-disk file is updated with only the keys present in `partial` — existing
+ * keys that are not in `partial` are preserved. This makes it safe to call from
+ * the settings screen without accidentally wiping fields the UI doesn't expose.
+ *
+ * If the config file does not exist yet, a fresh one is created.
+ */
+export function saveConfig(projectRoot: string, partial: Partial<WomboConfig>): void {
+  const configPath = resolve(projectRoot, CONFIG_FILE);
+  const dir = dirname(configPath);
+
+  // Ensure .wombo-combo/ directory exists
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  // Read existing on-disk config (if any) to preserve fields we're not updating
+  let existing: Partial<WomboConfig> = {};
+  if (existsSync(configPath)) {
+    try {
+      existing = JSON.parse(readFileSync(configPath, "utf-8")) as Partial<WomboConfig>;
+    } catch {
+      // If it's unreadable, start fresh
+    }
+  }
+
+  const merged = deepMerge(existing as WomboConfig, partial);
+  writeFileSync(configPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
 }

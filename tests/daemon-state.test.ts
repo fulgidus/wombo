@@ -939,13 +939,13 @@ describe("scheduler setters", () => {
     state.destroy();
   });
 
-  test("setMaxConcurrent clamps to minimum 1", () => {
+  test("setMaxConcurrent allows 0 (unlimited) and clamps negative to 0", () => {
     const state = new DaemonState(tempDir);
     state.setMaxConcurrent(0);
-    expect(state.getMaxConcurrent()).toBe(1);
+    expect(state.getMaxConcurrent()).toBe(0);
 
     state.setMaxConcurrent(-5);
-    expect(state.getMaxConcurrent()).toBe(1);
+    expect(state.getMaxConcurrent()).toBe(0);
     state.destroy();
   });
 

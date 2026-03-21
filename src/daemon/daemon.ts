@@ -15,7 +15,8 @@
  */
 
 import { resolve } from "node:path";
-import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync } from "node:fs";
+import { existsSync, writeFileSync, unlinkSync, readFileSync, mkdirSync, watch as fsWatch } from "node:fs";
+import type { FSWatcher } from "node:fs";
 import { loadConfig, validateConfig, WOMBO_DIR } from "../config";
 import type { WomboConfig } from "../config";
 import { DaemonState } from "./state";
@@ -105,6 +106,12 @@ export class Daemon {
   /** Timer for HITL question polling. */
   private hitlPollTimer: ReturnType<typeof setInterval> | null = null;
 
+  /** inotify/FSEvents watcher on the tasks directory. */
+  private tasksWatcher: FSWatcher | null = null;
+
+  /** Debounce timer for tasks-dir change events. */
+  private tasksNudgeTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Set of known question IDs (to avoid re-emitting events). */
   private knownQuestionIds: Set<string> = new Set();
 
@@ -167,6 +174,11 @@ export class Daemon {
     // Start HITL question polling (filesystem-based detection)
     this.startHitlPolling();
 
+    // Watch tasks directory for changes so any writer (CLI, scripts, manual
+    // edits) wakes the scheduler without polling. Uses inotify on Linux /
+    // FSEvents on macOS — kernel events, zero overhead at rest.
+    this.startTasksWatcher();
+
     // Register signal handlers
     this.registerSignalHandlers();
 
@@ -227,6 +239,16 @@ export class Daemon {
     if (this.hitlPollTimer) {
       clearInterval(this.hitlPollTimer);
       this.hitlPollTimer = null;
+    }
+
+    // Stop tasks directory watcher
+    if (this.tasksNudgeTimer) {
+      clearTimeout(this.tasksNudgeTimer);
+      this.tasksNudgeTimer = null;
+    }
+    if (this.tasksWatcher) {
+      this.tasksWatcher.close();
+      this.tasksWatcher = null;
     }
 
     this.log("info", "Daemon stopped");
@@ -503,6 +525,51 @@ export class Daemon {
       this.log("info", `HITL answer delivered for ${payload.featureId}`);
     } catch (err: any) {
       this.log("error", `HITL answer delivery failed for ${payload.featureId}: ${err.message}`);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Tasks directory watcher (inotify / FSEvents — not polling)
+  // -------------------------------------------------------------------------
+
+  /** Debounce window: coalesce rapid bulk writes before nudging the scheduler. */
+  private static readonly TASKS_NUDGE_DEBOUNCE_MS = 300;
+
+  /**
+   * Watch the tasks directory with kernel file-change events.
+   *
+   * Any write to a task YAML file (status change, new task, etc.) fires the
+   * watcher. We debounce 300 ms to coalesce bulk writes, then nudge the
+   * scheduler so it picks up newly-planned tasks immediately — no polling
+   * required, zero CPU overhead at rest.
+   */
+  private startTasksWatcher(): void {
+    const tasksDir = resolve(
+      this.projectRoot,
+      WOMBO_DIR,
+      this.config.tasksDir ?? "tasks"
+    );
+
+    if (!existsSync(tasksDir)) return;
+
+    try {
+      this.tasksWatcher = fsWatch(tasksDir, { persistent: false }, () => {
+        // Debounce: reset the timer on every event so a burst of writes
+        // (e.g. bulk task generation) collapses into a single nudge.
+        if (this.tasksNudgeTimer) clearTimeout(this.tasksNudgeTimer);
+        this.tasksNudgeTimer = setTimeout(() => {
+          this.tasksNudgeTimer = null;
+          const status = this.state.getSchedulerStatus();
+          if (status === "idle" || status === "shutdown") {
+            this.scheduler.start();
+          }
+          this.scheduler.nudge();
+        }, Daemon.TASKS_NUDGE_DEBOUNCE_MS);
+      });
+    } catch {
+      // Non-fatal: watcher unavailable (e.g. network fs, container limits).
+      // Scheduler still works; tasks just won't be auto-picked until next tick.
+      this.log("warn", "Could not watch tasks dir — scheduler will rely on tick interval");
     }
   }
 

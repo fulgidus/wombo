@@ -200,7 +200,8 @@ export class DaemonState {
   }
 
   setMaxConcurrent(n: number): void {
-    this.scheduler.maxConcurrent = Math.max(1, n);
+    // 0 means unlimited; negative values clamp to 0 (unlimited); positive values kept as-is
+    this.scheduler.maxConcurrent = Math.max(0, n);
     this.scheduleSave();
   }
 
@@ -327,8 +328,9 @@ export class DaemonState {
     );
   }
 
-  /** Number of available concurrency slots. */
+  /** Number of available concurrency slots. 0 means unlimited. */
   availableSlots(): number {
+    if (this.scheduler.maxConcurrent === 0) return Number.MAX_SAFE_INTEGER;
     return Math.max(0, this.scheduler.maxConcurrent - this.getActiveAgents().length);
   }
 
