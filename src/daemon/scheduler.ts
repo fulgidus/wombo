@@ -37,6 +37,14 @@ export interface SchedulerConfig {
   questId?: string | null;
   /** Override max concurrency */
   maxConcurrent?: number;
+  /**
+   * Carry-forward concurrency when rebuilding the Scheduler at runtime
+   * (e.g. on cmd:start with a new questId). When set, start() treats this
+   * value as already pinned — it is applied immediately and the config-default
+   * path is skipped. This prevents scheduler reconstruction from resetting
+   * a user-established concurrency value back to the config default.
+   */
+  initialMaxConcurrent?: number;
   /** Override model */
   model?: string | null;
 }
@@ -93,7 +101,16 @@ export class Scheduler {
     // carries an explicit override via SchedulerConfig.maxConcurrent).
     // Once pinned, automatic re-triggers (task-file watcher, idle restart)
     // must NOT silently overwrite a runtime value set by the user.
-    if (!this.concurrencyPinned) {
+    //
+    // Special case: when the Scheduler is *reconstructed* at runtime (e.g. on
+    // cmd:start with a new questId), the caller passes `initialMaxConcurrent`
+    // carrying the previously active value. We apply it and pin immediately so
+    // the config-default path below is skipped — preserving whatever concurrency
+    // the user had established before the rebuild.
+    if (this.config.initialMaxConcurrent !== undefined && !this.concurrencyPinned) {
+      state.setMaxConcurrent(this.config.initialMaxConcurrent);
+      this.concurrencyPinned = true;
+    } else if (!this.concurrencyPinned) {
       const effectiveConcurrency =
         this.config.maxConcurrent ?? this.config.config.defaults?.maxConcurrent;
       if (effectiveConcurrency !== undefined) {

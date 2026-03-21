@@ -743,6 +743,84 @@ describe("Scheduler concurrency pinning", () => {
     state.destroy();
   });
 
+  test("3.5 Scheduler reconstructed with initialMaxConcurrent=0 does not reset state to config default", () => {
+    const state = new DaemonState(tempDir);
+    state.addAgent(makeAgent("keep-alive"));
+    state.updateAgentStatus("keep-alive", "running");
+
+    const { runner } = makeMockRunner();
+    // Original scheduler: user pins to infinite (0)
+    const config: SchedulerConfig = {
+      projectRoot: tempDir,
+      config: makeConfig({ defaults: { maxConcurrent: 3, maxRetries: 2 } }),
+      tickIntervalMs: 60000,
+    };
+    const scheduler = new Scheduler(config, { state, runner });
+    scheduler.start();           // applies config default (3), pins
+    scheduler.setConcurrency(0); // user sets infinite
+    expect(state.getMaxConcurrent()).toBe(0);
+    scheduler.shutdown();
+
+    // Daemon rebuilds scheduler (e.g. cmd:start with questId).
+    // Carries forward state.getMaxConcurrent() = 0 via initialMaxConcurrent.
+    const rebuilt: SchedulerConfig = {
+      projectRoot: tempDir,
+      config: makeConfig({ defaults: { maxConcurrent: 3, maxRetries: 2 } }),
+      tickIntervalMs: 60000,
+      questId: "quest-1",
+      initialMaxConcurrent: state.getMaxConcurrent(), // = 0
+    };
+    const scheduler2 = new Scheduler(rebuilt, { state, runner });
+    scheduler2.start();
+
+    // Must remain 0 — not reset to config default (3)
+    expect(state.getMaxConcurrent()).toBe(0);
+    expect(scheduler2.concurrencyPinned).toBe(true);
+    scheduler2.shutdown();
+    state.destroy();
+  });
+
+  test("3.6 Scheduler reconstructed with initialMaxConcurrent=5 starts pinned at 5", () => {
+    const state = new DaemonState(tempDir);
+    state.addAgent(makeAgent("keep-alive"));
+    state.updateAgentStatus("keep-alive", "running");
+
+    const { runner } = makeMockRunner();
+    const rebuilt: SchedulerConfig = {
+      projectRoot: tempDir,
+      config: makeConfig({ defaults: { maxConcurrent: 3, maxRetries: 2 } }),
+      tickIntervalMs: 60000,
+      initialMaxConcurrent: 5,
+    };
+    const scheduler = new Scheduler(rebuilt, { state, runner });
+    scheduler.start();
+
+    expect(state.getMaxConcurrent()).toBe(5);
+    expect(scheduler.concurrencyPinned).toBe(true);
+    scheduler.shutdown();
+    state.destroy();
+  });
+
+  test("3.7 Scheduler cold-start with no initialMaxConcurrent applies config default normally", () => {
+    const state = new DaemonState(tempDir);
+    state.addAgent(makeAgent("keep-alive"));
+    state.updateAgentStatus("keep-alive", "running");
+
+    const { runner } = makeMockRunner();
+    const config: SchedulerConfig = {
+      projectRoot: tempDir,
+      config: makeConfig({ defaults: { maxConcurrent: 7, maxRetries: 2 } }),
+      tickIntervalMs: 60000,
+      // No initialMaxConcurrent
+    };
+    const scheduler = new Scheduler(config, { state, runner });
+    scheduler.start();
+
+    expect(state.getMaxConcurrent()).toBe(7);
+    scheduler.shutdown();
+    state.destroy();
+  });
+
   test("3.4 infinite concurrency: all candidate disk tasks submitted in one tick", () => {
     // We test the tick's slotsForNew logic by pre-populating agents in state
     // as queued (simulating already-submitted tasks) and verifying launchAgent

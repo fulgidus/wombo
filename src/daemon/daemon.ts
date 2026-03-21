@@ -493,12 +493,19 @@ export class Daemon {
     // If specific taskIds or a questId filter is provided, rebuild the
     // scheduler with those constraints. Otherwise just ensure it's running.
     if (payload.taskIds?.length || payload.questId !== undefined) {
+      // Carry forward the current concurrency value so the rebuilt Scheduler
+      // does not reset it to the config default. If payload.maxConcurrent is
+      // set that takes explicit precedence (handled by SchedulerConfig.maxConcurrent).
+      const currentMax = payload.maxConcurrent === undefined
+        ? this.state.getMaxConcurrent()
+        : undefined;
       const schedConfig: SchedulerConfig = {
         projectRoot: this.projectRoot,
         config: this.config,
         taskIds: payload.taskIds,
         questId: payload.questId,
         maxConcurrent: payload.maxConcurrent,
+        initialMaxConcurrent: currentMax,
         model: payload.model,
       };
       this.scheduler.shutdown();
