@@ -1,5 +1,0 @@
-fake-agent marker
-task:      conctest-5-1774061500770
-agent:     fake-agent
-timestamp: 2026-03-21T02:51:48.799Z
-sleep_ms:  8000
