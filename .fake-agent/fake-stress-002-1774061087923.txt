@@ -1,0 +1,5 @@
+fake-agent marker
+task:      fake-stress-002-1774061087923
+agent:     fake-agent
+timestamp: 2026-03-21T02:44:53.406Z
+sleep_ms:  5452
